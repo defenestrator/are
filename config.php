@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'baseUrl' => 'are.test',
+    'baseUrl' => 'http://are.test',
     'production' => false,
     'siteName' => 'Applied Research Equity',
     'siteDescription' => 'Serious Business.',

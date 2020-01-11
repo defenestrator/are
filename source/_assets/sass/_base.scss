@@ -5,15 +5,15 @@ body {
 a {
     @apply .font-semibold;
     @apply .no-underline;
-    @apply .text-blue-600;
+    @apply .text-teal-600;
 
     &:hover {
-        @apply .text-blue-800;
+        @apply .text-teal-800;
     }
 }
 
 blockquote {
-    @apply .border-blue-400;
+    @apply .border-teal-400;
     @apply .border-l-4;
     @apply .font-normal;
     @apply .italic;
@@ -91,7 +91,7 @@ h6 {
 
 hr {
     @apply .border-b;
-    @apply .border-blue-200;
+    @apply .border-teal-200;
     @apply .my-12;
     @apply .rounded-full;
 }
@@ -142,6 +142,6 @@ pre {
 }
 
 ::selection {
-    @apply .bg-blue-500;
+    @apply .bg-teal-500;
     @apply .text-white;
 }

@@ -742,15 +742,15 @@ body {
 a {
   font-weight: 600;
   text-decoration: none;
-  color: #3182ce;
+  color: #319795;
 }
 
 a:hover {
-  color: #2c5282;
+  color: #285e61;
 }
 
 blockquote {
-  border-color: #63b3ed;
+  border-color: #4fd1c5;
   border-left-width: 4px;
   font-weight: 400;
   font-style: italic;
@@ -836,7 +836,7 @@ h6 {
 
 hr {
   border-bottom-width: 1px;
-  border-color: #bee3f8;
+  border-color: #b2f5ea;
   margin-top: 3rem;
   margin-bottom: 3rem;
   border-radius: 9999px;
@@ -893,12 +893,12 @@ pre code {
 }
 
 ::-moz-selection {
-  background-color: #4299e1;
+  background-color: #38b2ac;
   color: #fff;
 }
 
 ::selection {
-  background-color: #4299e1;
+  background-color: #38b2ac;
   color: #fff;
 }
 
@@ -917,7 +917,7 @@ pre code {
   text-decoration: none;
   margin-bottom: 1rem;
   margin-top: 0;
-  color: #2d3748;
+  color: #285e61;
   font-size: .925rem;
 }
 
@@ -984,7 +984,7 @@ pre code {
 }
 
 #mc-embedded-subscribe {
-  background-color: #4299e1;
+  background-color: #38b2ac;
   cursor: pointer;
   line-height: 1.6;
   padding-left: 1.5rem;
@@ -998,7 +998,7 @@ pre code {
 }
 
 #mc-embedded-subscribe:hover {
-  background-color: #3182ce;
+  background-color: #319795;
 }
 
 @media (min-width: 768px) {
