@@ -2,8 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return ['equity' => "The investment we made in ourselves, version " . app()->version()];
+Route::get(uri: '/', action: function (){
+    return view(view: 'home');
 });
 
 require __DIR__.'/auth.php';
