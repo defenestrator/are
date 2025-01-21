@@ -60,8 +60,8 @@
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             let sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-            sleep(3000).then(() => document.getElementById("fade-in-text").style.color = "#CCC").then(() => document.getElementById("fade-in-header").style.opacity = 1);
-            sleep(5000).then(() => document.getElementById("fade-in-header").style.color = "#CCC").then(() => document.getElementById("fade-in-text").style.opacity = 1);
+            sleep(3000).then(() => document.getElementById("fade-in-header").style.color = "#CCC").then(() => document.getElementById("fade-in-header").style.opacity = 1);
+            sleep(5000).then(() => document.getElementById("fade-in-text").style.color = "#CCC").then(() => document.getElementById("fade-in-text").style.opacity = 1);
             sleep(8000).then(() => document.getElementById("fade-in-version").style.color = "#CCC").then(() => document.getElementById("fade-in-version").style.opacity = 1);
             // document.getElementById("fade-in-text").style.opacity = 1;
             // document.getElementById("fade-in-header").style.opacity = 1;
