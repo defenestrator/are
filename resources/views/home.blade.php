@@ -40,14 +40,14 @@
             
         }
         .header, #fade-in-header {
-            transition: opacity 5s ease-in;            
+            transition: all 5s ease-in;            
         }
         .text, #fade-in-text {
-            transition: opacity 2s ease-in;
+            transition: all 2s ease-in;
             
         }
         .version, #fade-in-version {
-            transition: opacity 8s ease-in;
+            transition: all 8s ease-in;
         }
 
     </style>
@@ -60,9 +60,9 @@
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             let sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-            sleep(3000).then(() => document.getElementById("fade-in-header").style.opacity = 1);
-            sleep(5000).then(() => document.getElementById("fade-in-text").style.opacity = 1);
-            sleep(8000).then(() => document.getElementById("fade-in-version").style.opacity = 1);
+            sleep(3000).then.(() => document.getElementById("fade-in-text").style.color = "#CCC").then(() => document.getElementById("fade-in-header").style.opacity = 1);
+            sleep(5000).then.(() => document.getElementById("fade-in-header").style.color = "#CCC").then(() => document.getElementById("fade-in-text").style.opacity = 1);
+            sleep(8000).then.(() => document.getElementById("fade-in-version").style.color = "#CCC").then(() => document.getElementById("fade-in-version").style.opacity = 1);
             // document.getElementById("fade-in-text").style.opacity = 1;
             // document.getElementById("fade-in-header").style.opacity = 1;
             // document.getElementById("fade-in-version").style.opacity = 1;
