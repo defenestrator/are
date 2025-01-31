@@ -10,6 +10,8 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
+use Laravel\Socialite\Facades\Socialite;
+use App\Models\User;
 
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])
@@ -56,4 +58,20 @@ Route::middleware('auth')->group(function () {
 
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
+
+    Route::get('/auth/redirect', function () {
+        return Socialite::driver('twitch')->redirect();
+    });
+        
+    Route::get('/auth/callback', function () {
+        $twitchUser = Socialite::driver('twitch')->user();
+ 
+        $user = User::updateOrCreate(attributes: [
+            'email' => $twitchUser->email,
+        ], values: [
+            'twitch_id' => $twitchUser->id,
+            'name' => $twitchUser->nickname,            
+            'twitch_avatar' => $twitchUser->avatar,
+        ]);
+    });
 });
