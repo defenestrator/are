@@ -54,18 +54,15 @@
 </head>
 <body>
     <div class="container">
-        <h1 class="header" id="fade-in-header">Welcome to ARE</h1>
+        <h1 class="header" id="fade-in-header"><img src="/img/are.png" alt="Applied Research Equity" title="Applied Research Equity" /></h1>
         <p><span class="text" id="fade-in-text">The investment we made in ourselves,</span> <span class="version" id="fade-in-version"> ARE version {{ app()->version() }}, {{ now("America/Denver")->format('Y-m-d H:i:s') }}</span></p>
     </div>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             let sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-            sleep(3000).then(() => document.getElementById("fade-in-header").style.color = "#CCC").then(() => document.getElementById("fade-in-header").style.opacity = 1);
-            sleep(5000).then(() => document.getElementById("fade-in-text").style.color = "#CCC").then(() => document.getElementById("fade-in-text").style.opacity = 1);
-            sleep(8000).then(() => document.getElementById("fade-in-version").style.color = "#CCC").then(() => document.getElementById("fade-in-version").style.opacity = 1);
-            // document.getElementById("fade-in-text").style.opacity = 1;
-            // document.getElementById("fade-in-header").style.opacity = 1;
-            // document.getElementById("fade-in-version").style.opacity = 1;
+            sleep(3000).then(() => document.getElementById("fade-in-header").style.opacity = 1);
+            sleep(5000).then(() => document.getElementById("fade-in-text").style.color = "#d3d3d3").then(() => document.getElementById("fade-in-text").style.opacity = 1);
+            sleep(8000).then(() => document.getElementById("fade-in-version").style.color = "#d3d3d3").then(() => document.getElementById("fade-in-version").style.opacity = 1);
         });
     </script>
 </body>
