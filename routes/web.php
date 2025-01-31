@@ -6,7 +6,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('/welcome', function () {
     return view('welcome');
 });
-
+Route::get('/visualizer', function () {
+    return view('visualizer');
+});
 Route::get('/', function () {
     return view('home');
 });
