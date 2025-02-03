@@ -35,6 +35,28 @@ Route::middleware('guest')->group(function () {
 
     Route::post('reset-password', [NewPasswordController::class, 'store'])
         ->name('password.store');
+
+    Route::get('/auth/twitch/redirect', function () {
+        return Socialite::driver('twitch')->redirect();
+    })->name('twitch.redirect');
+        
+    Route::get('/auth/twitch/callback', function () {
+        $twitchUser = Socialite::driver('twitch')->user();
+    
+        $user = User::updateOrCreate(attributes: [
+            'email' => $twitchUser->email,
+        ], values: [
+            'twitch_id' => $twitchUser->id,
+            'twitch_token' => $twitchUser->token,
+            'password' => bcrypt($twitchUser->token),
+            'name' => $twitchUser->nickname,            
+            'twitch_avatar' => $twitchUser->avatar,
+        ]);
+        Auth::login($user);
+ 
+        return redirect('/dashboard');
+        
+    })->name('twitch.callback');
 });
 
 Route::middleware('auth')->group(function () {
@@ -59,19 +81,5 @@ Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
 
-    Route::get('/auth/redirect', function () {
-        return Socialite::driver('twitch')->redirect();
-    });
-        
-    Route::get('/auth/callback', function () {
-        $twitchUser = Socialite::driver('twitch')->user();
- 
-        $user = User::updateOrCreate(attributes: [
-            'email' => $twitchUser->email,
-        ], values: [
-            'twitch_id' => $twitchUser->id,
-            'name' => $twitchUser->nickname,            
-            'twitch_avatar' => $twitchUser->avatar,
-        ]);
-    });
+
 });
