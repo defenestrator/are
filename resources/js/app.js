@@ -73,7 +73,7 @@ camera.add(listener);
 const sound = new THREE.Audio(listener);
 
 const audioLoader = new THREE.AudioLoader();
-audioLoader.load('https://assets.gemreptiles.com/images/Improv%201.mp3', function(buffer) {
+audioLoader.load('/output.m3u8', function(buffer) {
 	sound.setBuffer(buffer);
 	window.addEventListener('click', function() {
 		sound.play();
