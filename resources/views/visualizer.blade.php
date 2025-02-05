@@ -14,7 +14,7 @@
     </style>
 </head>
 <body>
-    <div id="audio" class="hidden"></div>
+    
     <script id="vertexshader" type="vertex">
       uniform float u_time;
 

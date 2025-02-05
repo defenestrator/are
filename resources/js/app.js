@@ -74,12 +74,11 @@ const sound = new THREE.Audio(listener);
 
 // Create an Audio element
 const audioElement = document.createElement('audio');
-audioElement.crossOrigin = 'anonymous';
-audioElement.controls = true;
-audioElement.loop = true; 
-audioElement.style.position = 'absolute';
-audioElement.style.left = '-9999px';
-document.body.appendChild(audioElement);
+// audioElement.crossOrigin = 'anonymous';
+// audioElement.controls = true;
+// audioElement.loop = false; 
+// audioElement.style.display = 'none';
+// document.body.appendChild(audioElement);
 
 
 if (Hls.isSupported()) {
@@ -100,7 +99,7 @@ if (Hls.isSupported()) {
 
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const source = audioContext.createMediaElementSource(audioElement);
-source.connect(audioContext.destination);
+// source.connect(audioContext.destination);
 
 
 const analyser = new THREE.AudioAnalyser(sound, 32);
