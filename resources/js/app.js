@@ -52,7 +52,7 @@ const uniforms = {
 	u_time: {type: 'f', value: 0.0},
 	u_frequency: {type: 'f', value: 0.0},
 	u_red: {type: 'f', value: 1.0},
-	u_green: {type: 'f', value: 1.0},
+	u_green: {type: 'f', value: 0.4},
 	u_blue: {type: 'f', value: 1.0}
 }
 
@@ -76,21 +76,25 @@ const sound = new THREE.Audio(listener);
 const audioElement = document.createElement('audio');
 audioElement.crossOrigin = 'anonymous';
 audioElement.controls = true;
+audioElement.loop = true; 
+audioElement.style.position = 'absolute';
+audioElement.style.left = '-9999px';
 document.body.appendChild(audioElement);
 
 
 if (Hls.isSupported()) {
     const hls = new Hls();
-    hls.loadSource('https://are.test/output.m3u8');
+    hls.loadSource('/output.m3u8');
     hls.attachMedia(audioElement);
     hls.on(Hls.Events.MANIFEST_PARSED, function() {
-
+		// audioElement.muted = true; 
+		// audioElement.play();
     });
 } else if (audioElement.canPlayType('application/vnd.apple.mpegurl')) {
-    audioElement.src = 'https://are.test/output.m3u8';
+    audioElement.src = '/output.m3u8';
     audioElement.addEventListener('loadedmetadata', function() {
-		
-        
+		// audioElement.muted = true; 
+		// audioElement.play();
     });
 }
 
@@ -100,7 +104,7 @@ source.connect(audioContext.destination);
 
 
 const analyser = new THREE.AudioAnalyser(sound, 32);
-
+sound.setMediaElementSource(audioElement);
 document.body.addEventListener('click', function() {
     audioElement.play();
 });
