@@ -74,7 +74,7 @@ const sound = new THREE.Audio(listener);
 
 // Create an Audio element
 const audioElement = document.createElement('audio');
-// audioElement.crossOrigin = 'anonymous';
+audioElement.crossOrigin = 'anonymous';
 // audioElement.controls = true;
 // audioElement.loop = false; 
 // audioElement.style.display = 'none';
