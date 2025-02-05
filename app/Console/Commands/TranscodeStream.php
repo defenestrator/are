@@ -26,7 +26,7 @@ class TranscodeStream extends Command
      */
     public function handle()
     {   
-        $uri = config(key: 'services.twitch.stream_url') . config(key: 'services.twitch.stream_key');
-        Process::run("ffmpeg -i $uri -c:v libx264 -crf 18 -preset veryfast -c:a aac -b:a 48k -f hls -hls_time 10 -hls_list_size 6 -hls_flags delete_segment -start_number 1 public/output.m3u8");
+        // $uri = config(key: 'services.twitch.stream_url') . config(key: 'services.twitch.stream_key');
+        Process::run('ffmpeg -f avfoundation -i ":0" -ac 2 -b:a 48k -f hls -hls_time 10 -hls_list_size 6 -segment_wrap 10 -start_number 1 public/output.m3u8');
     }
 }

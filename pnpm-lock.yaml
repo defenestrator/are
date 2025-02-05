@@ -11,6 +11,9 @@ importers:
       dat.gui:
         specifier: ^0.7.9
         version: 0.7.9
+      hls.js:
+        specifier: ^1.5.20
+        version: 1.5.20
       three:
         specifier: ^0.173.0
         version: 0.173.0
@@ -1124,6 +1127,9 @@ packages:
   hasown@2.0.2:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
+
+  hls.js@1.5.20:
+    resolution: {integrity: sha512-uu0VXUK52JhihhnN/MVVo1lvqNNuhoxkonqgO3IpjvQiGpJBdIXMGkofjQb/j9zvV7a1SW8U9g1FslWx/1HOiQ==}
 
   htmlnano@2.1.1:
     resolution: {integrity: sha512-kAERyg/LuNZYmdqgCdYvugyLWNFAm8MWXpQMz1pLpetmCbFwoMxvkSoaAMlFrOC4OKTWI4KlZGT/RsNxg4ghOw==}
@@ -2938,6 +2944,8 @@ snapshots:
   hasown@2.0.2:
     dependencies:
       function-bind: 1.1.2
+
+  hls.js@1.5.20: {}
 
   htmlnano@2.1.1(postcss@8.5.1):
     dependencies:

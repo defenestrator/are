@@ -21,6 +21,7 @@
     },
     "dependencies": {
         "dat.gui": "^0.7.9",
+        "hls.js": "^1.5.20",
         "three": "^0.173.0"
     }
 }

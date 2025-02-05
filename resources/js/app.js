@@ -1,5 +1,5 @@
 import './bootstrap';
-
+import {Hls} from 'hls.js';
 import Alpine from 'alpinejs';
 import * as THREE from 'three';
 import {GUI} from 'dat.gui';
@@ -72,15 +72,38 @@ camera.add(listener);
 
 const sound = new THREE.Audio(listener);
 
-const audioLoader = new THREE.AudioLoader();
-audioLoader.load('https://assets.gemreptiles.com/images/Improv%201.mp3', function(buffer) {
-	sound.setBuffer(buffer);
-	window.addEventListener('click', function() {
-		sound.play();
-	});
-});
+// Create an Audio element
+const audioElement = document.createElement('audio');
+audioElement.crossOrigin = 'anonymous';
+audioElement.controls = true;
+document.body.appendChild(audioElement);
+
+
+if (Hls.isSupported()) {
+    const hls = new Hls();
+    hls.loadSource('https://are.test/output.m3u8');
+    hls.attachMedia(audioElement);
+    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+
+    });
+} else if (audioElement.canPlayType('application/vnd.apple.mpegurl')) {
+    audioElement.src = 'https://are.test/output.m3u8';
+    audioElement.addEventListener('loadedmetadata', function() {
+		
+        
+    });
+}
+
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const source = audioContext.createMediaElementSource(audioElement);
+source.connect(audioContext.destination);
+
 
 const analyser = new THREE.AudioAnalyser(sound, 32);
+
+document.body.addEventListener('click', function() {
+    audioElement.play();
+});
 
 const gui = new GUI();
 
