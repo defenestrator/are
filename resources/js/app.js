@@ -119,7 +119,7 @@ document.addEventListener('mousemove', function(e) {
 
 const clock = new THREE.Clock();
 function animate() {
-	const elapsed = clock.getElapsedTime() * 0.1; // Slo
+	const elapsed = clock.getElapsedTime() * 0.3; // Slo
 	camera.position.x += (mouseX - camera.position.x) * .05;
 	camera.position.y += (-mouseY - camera.position.y) * 0.5;
 	camera.lookAt(scene.position);
