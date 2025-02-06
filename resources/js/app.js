@@ -75,10 +75,11 @@ const sound = new THREE.Audio(listener);
 const audioLoader = new THREE.AudioLoader();
 audioLoader.load('/Intro.mp3', function(buffer) {
 	sound.setBuffer(buffer);
+	sound.loop = true;
+	sound.setVolume(1);	
 	window.addEventListener('click', function() {
 		sound.play();
-		sound.loop = true;
-		sound.setVolume(1);	
+		
 	});
 });
 
