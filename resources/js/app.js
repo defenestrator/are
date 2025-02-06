@@ -1,5 +1,5 @@
 import './bootstrap';
-import {Hls} from 'hls.js';
+
 import Alpine from 'alpinejs';
 import * as THREE from 'three';
 import {GUI} from 'dat.gui';
@@ -7,6 +7,7 @@ import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer';
 import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass';
 import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass';
+import { mx_bilerp_0 } from 'three/src/nodes/materialx/lib/mx_noise.js';
 
 const renderer = new THREE.WebGLRenderer({antialias: true});
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -71,42 +72,17 @@ const listener = new THREE.AudioListener();
 camera.add(listener);
 
 const sound = new THREE.Audio(listener);
-
-// Create an Audio element
-const audioElement = document.createElement('audio');
-audioElement.crossOrigin = 'anonymous';
-// audioElement.controls = true;
-// audioElement.loop = false; 
-// audioElement.style.display = 'none';
-// document.body.appendChild(audioElement);
-
-
-if (Hls.isSupported()) {
-    const hls = new Hls();
-    hls.loadSource('/output.m3u8');
-    hls.attachMedia(audioElement);
-    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-		// audioElement.muted = true; 
-		// audioElement.play();
-    });
-} else if (audioElement.canPlayType('application/vnd.apple.mpegurl')) {
-    audioElement.src = '/output.m3u8';
-    audioElement.addEventListener('loadedmetadata', function() {
-		// audioElement.muted = true; 
-		// audioElement.play();
-    });
-}
-
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-const source = audioContext.createMediaElementSource(audioElement);
-// source.connect(audioContext.destination);
-
+const audioLoader = new THREE.AudioLoader();
+audioLoader.load('/Intro.mp3', function(buffer) {
+	sound.setBuffer(buffer);
+	window.addEventListener('click', function() {
+		sound.play();
+		sound.loop = true;
+		sound.setVolume(1);	
+	});
+});
 
 const analyser = new THREE.AudioAnalyser(sound, 32);
-sound.setMediaElementSource(audioElement);
-document.body.addEventListener('click', function() {
-    audioElement.play();
-});
 
 const gui = new GUI();
 
@@ -143,11 +119,25 @@ document.addEventListener('mousemove', function(e) {
 
 const clock = new THREE.Clock();
 function animate() {
+	const elapsed = clock.getElapsedTime() * 0.1; // Slo
 	camera.position.x += (mouseX - camera.position.x) * .05;
 	camera.position.y += (-mouseY - camera.position.y) * 0.5;
 	camera.lookAt(scene.position);
-	uniforms.u_time.value = clock.getElapsedTime();
-	uniforms.u_frequency.value = analyser.getAverageFrequency();
+
+    // Smooth color animations: values between 0.2 and 1.0 over time
+    uniforms.u_red.value   = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(elapsed));
+    uniforms.u_green.value = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(elapsed + 2.0));
+    uniforms.u_blue.value  = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(elapsed + 4.0));
+
+    // Smooth bloom animations: values between 0.0 and 0.5 over time
+    bloomPass.threshold = 0.5 * (0.5 + 0.5 * Math.sin(elapsed));
+    bloomPass.strength  = 0.5 * (0.5 + 0.5 * Math.sin(elapsed + 3.0));
+    bloomPass.radius    = 0.5 * (0.5 + 0.5 * Math.sin(elapsed + 6.0));
+
+    uniforms.u_time.value = clock.getElapsedTime();
+    uniforms.u_frequency.value = analyser.getAverageFrequency();
+
+
     bloomComposer.render();
 	requestAnimationFrame(animate);
 }
