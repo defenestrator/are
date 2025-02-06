@@ -116,7 +116,17 @@ document.addEventListener('mousemove', function(e) {
 	mouseX = (e.clientX - windowHalfX) / 100;
 	mouseY = (e.clientY - windowHalfY) / 100;
 });
+const style = document.createElement('style');
+style.innerHTML = `
+.dg .close-button, .dg .open-button {
+  display: none !important;
+}
+`;
+document.head.appendChild(style);
 
+// Also hide the Color and Bloom folders if needed
+colorsFolder.domElement.style.display = 'none';
+bloomFolder.domElement.style.display = 'none';
 const clock = new THREE.Clock();
 function animate() {
 	const elapsed = clock.getElapsedTime() * 0.3; // Slo
