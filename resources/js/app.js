@@ -161,24 +161,24 @@ window.addEventListener('resize', function() {
 });
 
 // Create a container for the Twitch chat overlay
-const chatOverlay = document.createElement('div');
-chatOverlay.style.position = 'absolute';
-chatOverlay.style.top = '0';
-chatOverlay.style.left = '0';
-chatOverlay.style.width = '300px';
-chatOverlay.style.height = '100vh';
-chatOverlay.style.zIndex = '99';
-chatOverlay.style.backgroundColor = 'transparent';
+// const chatOverlay = document.createElement('div');
+// chatOverlay.style.position = 'absolute';
+// chatOverlay.style.top = '0';
+// chatOverlay.style.left = '0';
+// chatOverlay.style.width = '300px';
+// chatOverlay.style.height = '100vh';
+// chatOverlay.style.zIndex = '99';
+// chatOverlay.style.backgroundColor = 'transparent';
 
-const chatIframe = document.createElement('iframe');
-chatIframe.src = `https://streamelements.com/overlay/67a64d12b43ea91fc88cc8ed/rQbLRbTx0vbPrpNfl89rE5MML84cUfbSjyiG66eUk5NvGAoo`;
-chatIframe.style.width = '100%';
-chatIframe.style.height = '70%';
-chatIframe.style.marginLeft = '1em';
-chatIframe.style.marginBottom = '3em';
-chatIframe.style.padding = '2em';
-chatIframe.style.border = 'none';
-chatIframe.style.overflowWrap = 'break-word';
+// const chatIframe = document.createElement('iframe');
+// chatIframe.src = `https://streamelements.com/overlay/67a64d12b43ea91fc88cc8ed/rQbLRbTx0vbPrpNfl89rE5MML84cUfbSjyiG66eUk5NvGAoo`;
+// chatIframe.style.width = '100%';
+// chatIframe.style.height = '70%';
+// chatIframe.style.marginLeft = '1em';
+// chatIframe.style.marginBottom = '3em';
+// chatIframe.style.padding = '2em';
+// chatIframe.style.border = 'none';
+// chatIframe.style.overflowWrap = 'break-word';
 
 // Append the iframe to the overlay, then overlay to the document
 chatOverlay.appendChild(chatIframe);
