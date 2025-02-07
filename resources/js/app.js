@@ -160,6 +160,26 @@ window.addEventListener('resize', function() {
 	bloomComposer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Create a container for the Twitch chat overlay
+const chatOverlay = document.createElement('div');
+chatOverlay.style.position = 'absolute';
+chatOverlay.style.top = '0';
+chatOverlay.style.left = '0';
+chatOverlay.style.width = '300px';
+chatOverlay.style.height = '100vh';
+chatOverlay.style.zIndex = '9999';
+chatOverlay.style.backgroundColor = 'transparent';
+
+const chatIframe = document.createElement('iframe');
+chatIframe.src = `https://streamelements.com/overlay/67a64d12b43ea91fc88cc8ed/rQbLRbTx0vbPrpNfl89rE5MML84cUfbSjyiG66eUk5NvGAoo`;
+chatIframe.style.width = '100%';
+chatIframe.style.height = '100%';
+chatIframe.style.border = 'none';
+
+// Append the iframe to the overlay, then overlay to the document
+chatOverlay.appendChild(chatIframe);
+document.body.appendChild(chatOverlay);
+
 window.Alpine = Alpine;
 
 Alpine.start();
