@@ -176,6 +176,7 @@ chatIframe.style.width = '100%';
 chatIframe.style.height = '100%';
 chatIframe.style.marginLeft = '1em';
 chatIframe.style.marginBottom = '3em';
+chatIframe.style.padding = '2em';
 chatIframe.style.border = 'none';
 
 // Append the iframe to the overlay, then overlay to the document
