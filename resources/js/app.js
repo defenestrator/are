@@ -178,7 +178,7 @@ chatIframe.style.marginLeft = '1em';
 chatIframe.style.marginBottom = '3em';
 chatIframe.style.padding = '2em';
 chatIframe.style.border = 'none';
-chatIframe.style.overflow = 'wrap';
+chatIframe.style.overflowWrap = 'break-word';
 
 // Append the iframe to the overlay, then overlay to the document
 chatOverlay.appendChild(chatIframe);
