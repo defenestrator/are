@@ -24,6 +24,11 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
+         // Validate request...
+         if ($request->email !== 'jeremyblc@gmail.com') {
+            return back()->with('error', 'Registration is disabled for your account.');
+        }
+        
         $request->authenticate();
 
         $request->session()->regenerate();

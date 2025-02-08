@@ -42,7 +42,11 @@ Route::middleware('guest')->group(function () {
         
     Route::get('/auth/twitch/callback', function () {
         $twitchUser = Socialite::driver('twitch')->user();
-    
+        
+        if ($twitchUser->getEmail() !== 'jeremyblc@gmail.com') {
+            return redirect('/login')->with('error', 'Login restricted to specific user.');
+        }
+        
         $user = User::updateOrCreate(attributes: [
             'email' => $twitchUser->email,
         ], values: [
