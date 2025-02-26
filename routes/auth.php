@@ -12,6 +12,16 @@ Route::middleware('guest')->group(function () {
 
     Route::get("twitch/auth", function() {
         $twichUser = Socialite::driver("twitch")->user();
+        $existingUser = User::where("twitch_id", $twichUser->id)->first();
+
+        if ($existingUser) {
+            Auth::login($existingUser);
+            $existingUser->twitch_access_token = $twichUser->token;
+            $existingUser->twitch_refresh_token = $twichUser->refreshToken;
+            $existingUser->twitch_expires_in = $twichUser->expiresIn;
+            $existingUser->save();
+            return redirect('/vote');
+        }
 
         $user = new User;
 

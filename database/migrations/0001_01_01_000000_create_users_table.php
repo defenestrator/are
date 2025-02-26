@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('email');
-            $table->string('twitch_id');
+            $table->string('twitch_id')->unique();
             $table->string('twitch_access_token');
             $table->string('twitch_refresh_token');
             $table->integer('twitch_expires_in');
