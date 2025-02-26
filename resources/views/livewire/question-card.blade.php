@@ -69,6 +69,7 @@ new class extends Component {
                         <flux:menu.item variant="danger" icon="trash">Delete</flux:menu.item>
                     </flux:menu>
                 </flux:dropdown>
+            </div>
         </div>
     </div>
 </div>
