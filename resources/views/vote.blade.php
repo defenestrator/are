@@ -35,11 +35,13 @@ new class extends Component {
     <div>
         <livewire:topic @topic-changed="$refresh" />
 
-        <div class="mt-2" wire:poll.10s>
+        <div class="mt-4" wire:poll.10s>
         @if (Auth::user()->canSubmitQuestion())
                 <form wire:submit="saveQuestion">
-                    <flux:input wire:model="question" label="Question" description="Your Greatest Query" />
-                    <flux:button type="submit">Submit</flux:button>
+                    <flux:input.group>
+                        <flux:input wire:model="question" placeholder="Your Greatest Query" />
+                        <flux:button type="submit" class="cursor-pointer">Submit</flux:button>
+                    </flux:input.group>
                 </form>
         @else
                 @if (DB::table("topics")->count() > 0)
