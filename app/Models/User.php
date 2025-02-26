@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\TwitchSubscription;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -21,6 +21,12 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'twitch_id',
+        'twitch_access_token',
+        'twitch_refresh_token',
+        'twitch_expires_in',
+        'twitch_avatar_url',
+        'twitch_subscription',
     ];
 
     /**
@@ -43,8 +49,7 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'twitch_subscription' => TwitchSubscription::class,
         ];
     }
 

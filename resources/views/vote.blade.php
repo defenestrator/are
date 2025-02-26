@@ -1,6 +1,7 @@
 <x-layouts.app>
     @auth
         {{ Auth::user()->name }}
+        {{ Auth::user()->twitch_subscription }}
     @endauth
 
     @guest
