@@ -55,7 +55,8 @@ new class extends Component {
     }
 } ?>
 
-<div class="p-3 sm:p-4 rounded-lg">
+<div>
+<flux:card class="m-2 max-w-[335px]">
     <div class="flex flex-row sm:items-center gap-2">
         <flux:avatar src="{{ $question->user->twitch_avatar_url }}" size="xs" class="shrink-0" />
 
@@ -117,5 +118,5 @@ new class extends Component {
             @endif
         </div>
     </div>
+</flux:card>
 </div>
-
