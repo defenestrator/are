@@ -19,7 +19,7 @@ class Question extends Model
             ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
             ->orderBy('votes', 'desc')
             ->groupBy('questions.id')
-            ->limit(200)
+            ->limit(50)
             ->with('user')
             ->get();
     }
