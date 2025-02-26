@@ -47,15 +47,28 @@ new class extends Component {
             </div>
         @endif
 
-        <div class="mt-6">
-            <h2>Questions</h2>
-            <ul>
-                @foreach (Question::getSortedQuestions() as $question)
-                    <li wire:key="{{ $question->id }}">
-                        <livewire:question-card :question="$question" :vote-count="$question->votes" :key="$question->id" />
-                    </li>
-                @endforeach
-            </ul>
+        <div class="mt-6 grid grid-cols-2 gap-2">
+            <div wire:poll.10s>
+                <h2>Hot Questions</h2>
+                <ul>
+                    @foreach (Question::getSortedQuestions() as $question)
+                        <li wire:key="{{ $question->id }}">
+                            <livewire:question-card :question="$question" :vote-count="$question->votes" :key="$question->id" />
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+
+            <div wire:poll.10s>
+                <h2>Latest Questions</h2>
+                <ul>
+                    @foreach (Question::getRecentQuestions() as $question)
+                        <li wire:key="{{ $question->id }}">
+                            <livewire:question-card :question="$question" :vote-count="$question->votes" :key="$question->id" />
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
         </div>
     </div>
     @endvolt

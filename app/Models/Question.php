@@ -19,7 +19,19 @@ class Question extends Model
             ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
             ->orderBy('votes', 'desc')
             ->groupBy('questions.id')
-            ->limit(5)
+            ->limit(200)
+            ->with('user')
+            ->get();
+    }
+
+    public static function getRecentQuestions()
+    {
+        return self::query()
+            ->leftJoin('question_votes', 'questions.id', '=', 'question_votes.question_id')
+            ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
+            ->orderBy('id', 'desc')
+            ->groupBy('questions.id')
+            ->limit(50)
             ->with('user')
             ->get();
     }
