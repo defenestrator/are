@@ -49,7 +49,9 @@ new class extends Component {
             <h2>Questions</h2>
             <ul>
                 @foreach (Question::getSortedQuestions() as $question)
-                    <li>{{ $question->question }}</li>
+                    <li>
+                        <x-question-card :question="$question" />
+                    </li>
                 @endforeach
             </ul>
         </div>

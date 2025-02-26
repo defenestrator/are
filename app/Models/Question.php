@@ -17,6 +17,7 @@ class Question extends Model {
             ->orderBy('votes', 'desc')
             ->groupBy('questions.id')
             ->limit(1000)
+            ->with('user')
             ->get();
     }
 }
