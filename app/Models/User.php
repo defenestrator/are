@@ -57,6 +57,10 @@ class User extends Authenticatable
         return $this->hasMany(Question::class);
     }
 
+    public function isAdminUser(): bool {
+        return $this->twitch_id === env("TWITCH_CHANNEL_ID");
+    }
+
     public function canSubmitQuestion(): bool
     {
         if (!$this->twitch_subscription->isSubscribed()) {

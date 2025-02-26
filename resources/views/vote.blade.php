@@ -32,6 +32,8 @@ new class extends Component {
 <x-layouts.app>
     @volt
     <div>
+        <livewire:topic />
+
         @if (Auth::user()->canSubmitQuestion())
             <div>
                 <form wire:submit="saveQuestion">
