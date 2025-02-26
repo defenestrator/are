@@ -27,9 +27,7 @@
         @guest
             <a href="{{ route('login') }}">Login</a>
             @if (request()->query("failed_to_login") == "1")
-                <div class="bg-red-400 space-y-6">
-                    <div>Failed to Login</div>
-                </div>
+                <div class="bg-red-200 p-2 rounded-sm mt-2">Failed to Login</div>
             @endif
         @endguest
     </body>
