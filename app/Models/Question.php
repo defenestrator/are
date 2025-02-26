@@ -27,6 +27,7 @@ class Question extends Model {
             ->leftJoin('question_votes', 'questions.id', '=', 'question_votes.question_id')
             ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
             ->where('questions.id', $this->id)
+            ->groupBy('questions.id')
             ->first()->votes;
     }
 }
