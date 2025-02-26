@@ -32,9 +32,8 @@ class UserFactory extends Factory
             'twitch_access_token' => fake()->unique()->sha256(),
             'twitch_refresh_token' => fake()->unique()->sha256(),
             'twitch_expires_in' => fake()->unique()->randomNumber(4),
-            'twitch_avatar_url' => fake()->unique()->imageUrl(),
+            'twitch_avatar_url' => "https://static-cdn.jtvnw.net/jtv_user_pictures/0744a2a3-109a-4e48-85b1-285221fdeefc-profile_image-300x300.png",
             'twitch_subscription' => TwitchSubscription::Tier1,
         ];
-
     }
 }
