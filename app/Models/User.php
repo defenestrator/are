@@ -53,6 +53,10 @@ class User extends Authenticatable
         ];
     }
 
+    public function questions() {
+        return $this->hasMany(Question::class);
+    }
+
     /**
      * Get the user's initials
      */
