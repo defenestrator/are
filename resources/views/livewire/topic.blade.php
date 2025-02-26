@@ -11,6 +11,13 @@ new class extends Component {
         $this->topic = Topic::first()?->topic;
     }
 
+    public function clear() {
+        if (Auth::user()->isAdminUser()) {
+            DB::table("questions")->delete();
+            DB::table("question_votes")->delete();
+            DB::table("topics")->delete();
+        }
+    }
     public function save() {
         if (Auth::user()->isAdminUser()) {
             DB::table("topics")->delete();
@@ -28,6 +35,7 @@ new class extends Component {
     <form>
         <flux:input wire:model="topic" />
         <flux:button wire:click="save"> Save </flux:button>
+        <flux:button wire:click="clear"> Clear Questions </flux:button>
     </form>
 @else
 {{ Topic::first()?->topic }}
