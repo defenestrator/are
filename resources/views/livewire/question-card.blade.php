@@ -80,7 +80,7 @@ new class extends Component {
 
                 <flux:menu class="min-w-0">
                     @if (Auth::user()->id === $question->user_id)
-                        <flux:modal.trigger name="edit-question">
+                        <flux:modal.trigger name="edit-question-{{ $question->id }}">
                             <flux:menu.item icon="pencil-square">Edit</flux:menu.item>
                         </flux:modal.trigger>
                     @endif
@@ -89,7 +89,7 @@ new class extends Component {
                 </flux:menu>
             </flux:dropdown>
 
-            <flux:modal name="edit-question" class="md:w-96">
+            <flux:modal name="edit-question-{{ $question->id }}" class="md:w-96">
                 <div class="space-y-6">
                     <div>
                         <flux:heading size="lg">Edit Question</flux:heading>
