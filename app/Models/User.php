@@ -57,6 +57,16 @@ class User extends Authenticatable
         return $this->hasMany(Question::class);
     }
 
+    public function canSubmitQuestion(): bool
+    {
+        if (!$this->twitch_subscription->isSubscribed()) {
+            return false;
+        }
+
+        return $this->questions()->doesntExist();
+    }
+
+
     /**
      * Get the user's initials
      */

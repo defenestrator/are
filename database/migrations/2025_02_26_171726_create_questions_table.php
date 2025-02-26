@@ -20,11 +20,11 @@ return new class extends Migration
         });
 
         Schema::create('question_votes', function (Blueprint $table) {
-            $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->foreignId('question_id')->constrained()->onDelete('cascade');
             $table->integer('count');
             $table->timestamps();
+            $table->primary(['user_id', 'question_id']);
         });
 
     }
