@@ -53,6 +53,17 @@ new class extends Component {
 
         Flux::modals()->close();
     }
+
+    public function deleteQuestion()
+    {
+        if (! Auth::user()->isAdminUser()) {
+            return;
+        }
+
+        $this->question->delete();
+
+        $this->dispatch('question-deleted');
+    }
 } ?>
 
 <div>
@@ -84,6 +95,12 @@ new class extends Component {
             <flux:button wire:click="downvote({{ $question->id }})" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2" :loading="false">
                 <flux:icon.hand-thumb-down name="hand-thumb-down" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
             </flux:button>
+
+            @if (Auth::user()->isAdminUser())
+                <flux:button wire:click="deleteQuestion()" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2" :loading="false">
+                    <flux:icon.x-mark name="xmark" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
+                </flux:button>
+            @endif
 
             @if (Auth::user()->id == $question->user_id)
             <flux:dropdown>
