@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
@@ -13,10 +14,14 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        // User::factory()->create([
-        //     'name' => 'Test User',
-        // ]);
+        $user = User::factory()->create();
+        for ($i = 0; $i < 1000; $i++) {
+            DB::table("questions")->insert([
+                "user_id" => $user->id,
+                "question" => "Question $i",
+                "created_at" => now(),
+                "updated_at" => now(),
+            ]);
+        }
     }
 }
