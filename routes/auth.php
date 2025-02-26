@@ -25,7 +25,7 @@ Route::middleware('guest')->group(function () {
 
             $pokiSub = Twitch::checkUserSubscription(
                 $twitchUser->token,
-                env("TWITCH_POKIMANE_ID"),
+                env("TWITCH_FRIENDS_ID"),
                 $twitchUser->id,
             );
 
