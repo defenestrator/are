@@ -11,6 +11,11 @@ new class extends Component {
     public int $voteCount;
     public string $questionBeingEdited;
 
+    public function mount()
+    {
+        $this->questionBeingEdited = $this->question->question;
+    }
+
     public function upvote(Question $question) {
         DB::table('question_votes')->updateOrInsert([
             'question_id' => $question->id,
