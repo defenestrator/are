@@ -3,6 +3,7 @@
 use Livewire\Volt\Component;
 use App\Models\Question;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     public $question = "";
@@ -34,18 +35,20 @@ new class extends Component {
     <div>
         <livewire:topic />
 
+        <div class="mt-2">
         @if (Auth::user()->canSubmitQuestion())
-            <div>
                 <form wire:submit="saveQuestion">
                     <flux:input wire:model="question" label="Question" description="Your Greatest Query" />
                     <flux:button type="submit">Submit</flux:button>
                 </form>
-            </div>
         @else
-            <div>
-                <flux:heading>Question Limit Reached</flux:heading>
-            </div>
+                @if (DB::table("topics")->count() > 0)
+                    <flux:heading>Question Limit Reached</flux:heading>
+                @else
+                    <flux:heading>There is no topic</flux:heading>
+                @endif
         @endif
+        </div>
 
         <div class="mt-6 grid grid-cols-2 gap-2">
             <div wire:poll.30s>

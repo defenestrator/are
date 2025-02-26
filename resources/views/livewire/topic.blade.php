@@ -33,9 +33,11 @@ new class extends Component {
 <div>
 @if (Auth::user()->isAdminUser())
     <form>
-        <flux:input wire:model="topic" />
-        <flux:button wire:click="save"> Save </flux:button>
-        <flux:button wire:click="clear"> Clear Questions </flux:button>
+        <div class="flex gap-4 max-w-xl">
+            <flux:input wire:model="topic" />
+            <flux:button wire:click="save"> Save </flux:button>
+            <flux:button wire:click="clear"> Clear Questions </flux:button>
+        </div>
     </form>
 @else
 {{ Topic::first()?->topic }}
