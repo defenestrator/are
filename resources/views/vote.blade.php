@@ -36,19 +36,19 @@ new class extends Component {
         <livewire:topic @topic-changed="$refresh" />
 
         <div class="mt-4" wire:poll.10s>
-        @if (Auth::user()->canSubmitQuestion())
-                <form wire:submit="saveQuestion">
-                    <flux:input.group>
-                        <flux:input wire:model="question" placeholder="Your Greatest Query" />
-                        <flux:button type="submit" class="cursor-pointer">Submit</flux:button>
-                    </flux:input.group>
-                </form>
-        @else
-                @if (DB::table("topics")->count() > 0)
-                    <flux:heading>Question Limit Reached</flux:heading>
-                @else
-                    <flux:heading>There is no topic</flux:heading>
-                @endif
+            @if (Auth::user()->canSubmitQuestion())
+            <form wire:submit="saveQuestion">
+                <flux:input.group>
+                    <flux:input wire:model="question" placeholder="Your Greatest Query" />
+                    <flux:button type="submit" class="cursor-pointer">Submit</flux:button>
+                </flux:input.group>
+            </form>
+            @else
+            @if (DB::table("topics")->count() > 0)
+                <flux:heading>Question Limit Reached</flux:heading>
+            @else
+                <flux:heading>There is no topic</flux:heading>
+            @endif
         @endif
         </div>
 
