@@ -9,7 +9,6 @@ Route::get('/', function () {
 
 Route::get('vote', function() {
     return view('vote', []);
-
 })
     ->middleware(['auth'])
     ->name('dashboard');
