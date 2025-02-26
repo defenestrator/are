@@ -45,7 +45,7 @@ new class extends Component {
 } ?>
 
 <div>
-    <flux:card class="m-2 rounded-lg max-w-120 bg-zinc-400/5 dark:bg-zinc-900 hover:shadow-lg shadow-zinc-800/50 dark:shadow-zinc-900/50">
+    <flux:card class="m-2 rounded-lg max-w-120 bg-zinc-400/5 dark:bg-zinc-900 hover:scale-105 duration-200 hover:shadow-lg shadow-zinc-800/50 dark:shadow-zinc-900/50">
         <div class="pl-2">
             <flux:text variant="strong">{{ $question->question }}</flux:text>
             <div class="min-h-2"></div>
