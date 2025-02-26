@@ -45,7 +45,7 @@ new class extends Component {
             </div>
         @endif
 
-        <div wire:poll>
+        <div wire:poll.10s>
             <h2>Questions</h2>
             <ul>
                 @foreach (Question::getSortedQuestions() as $question)
