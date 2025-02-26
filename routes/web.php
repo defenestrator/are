@@ -4,7 +4,11 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 Route::get('/', function () {
-    return view('welcome');
+    if (Auth::check()) {
+        return redirect('/vote');
+    } else {
+        return view('welcome');
+    }
 })->name('home');
 
 Route::get('vote', function() {
