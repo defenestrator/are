@@ -7,7 +7,9 @@ Route::get('/', function () {
     return view('welcome');
 })->name('home');
 
-Route::view('vote', 'vote')
+Route::get('vote', function() {
+    return view('vote', []);
+})
     ->middleware(['auth'])
     ->name('dashboard');
 

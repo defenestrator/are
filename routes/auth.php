@@ -8,7 +8,7 @@ use Laravel\Socialite\Facades\Socialite;
 Route::middleware('guest')->group(function () {
     Route::get("login", function() {
         return Socialite::driver("twitch")->redirect();
-    });
+    })->name("login");
 
     Route::get("twitch/auth", function() {
         $twichUser = Socialite::driver("twitch")->user();
