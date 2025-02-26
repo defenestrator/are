@@ -21,7 +21,6 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
-        'password',
     ];
 
     /**
@@ -30,8 +29,10 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $hidden = [
-        'password',
-        'remember_token',
+        'email',
+        'twitch_access_token',
+        'twitch_refresh_token',
+        'twitch_expires_in',
     ];
 
     /**
