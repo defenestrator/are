@@ -16,6 +16,8 @@ new class extends Component {
             DB::table("questions")->delete();
             DB::table("question_votes")->delete();
             DB::table("topics")->delete();
+
+            $this->dispatch("topic-changed");
         }
     }
     public function save() {
@@ -24,6 +26,8 @@ new class extends Component {
             DB::table("topics")->insert([
                 "topic" => $this->topic,
             ]);
+
+            $this->dispatch("topic-changed");
         }
     }
 }

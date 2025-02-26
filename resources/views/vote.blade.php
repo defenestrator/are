@@ -33,9 +33,9 @@ new class extends Component {
 <x-layouts.app>
     @volt
     <div>
-        <livewire:topic />
+        <livewire:topic @topic-changed="$refresh" />
 
-        <div class="mt-2">
+        <div class="mt-2" wire:poll.10s>
         @if (Auth::user()->canSubmitQuestion())
                 <form wire:submit="saveQuestion">
                     <flux:input wire:model="question" label="Question" description="Your Greatest Query" />

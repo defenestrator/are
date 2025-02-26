@@ -88,17 +88,17 @@ new class extends Component {
         <div class="flex items-center gap-0">
             <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 tabular-nums">{{ $voteCount }}</flux:text>
 
-            <flux:button wire:click="upvote({{ $question->id }})" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2" :loading="false">
+            <flux:button wire:click="upvote({{ $question->id }})" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
                 <flux:icon.hand-thumb-up name="hand-thumb-up" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
             </flux:button>
 
-            <flux:button wire:click="downvote({{ $question->id }})" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2" :loading="false">
+            <flux:button wire:click="downvote({{ $question->id }})" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
                 <flux:icon.hand-thumb-down name="hand-thumb-down" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
             </flux:button>
 
             @if (Auth::user()->isAdminUser())
-                <flux:button wire:click="deleteQuestion()" variant="ghost" size="sm" inset="left" class="ml-1 flex items-center gap-2" :loading="false">
-                    <flux:icon.x-mark name="xmark" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
+                <flux:button wire:click="deleteQuestion()" variant="danger" size="sm" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
+                    <flux:icon.x-mark name="xmark" variant="outline" class="size-4 text-white [&_path]:stroke-[2.25]" />
                 </flux:button>
             @endif
 
