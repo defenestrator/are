@@ -20,4 +20,13 @@ class Question extends Model {
             ->with('user')
             ->get();
     }
+
+    public function voteCount(): int
+    {
+        return self::query()
+            ->leftJoin('question_votes', 'questions.id', '=', 'question_votes.question_id')
+            ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
+            ->where('questions.id', $this->id)
+            ->first()->votes;
+    }
 }

@@ -41,16 +41,16 @@ new class extends Component {
             </div>
         @else
             <div>
-                <flux:heading>Question Limit Reach</flux:heading>
+                <flux:heading>Question Limit Reached</flux:heading>
             </div>
         @endif
 
-        <div wire:poll.10s>
+        <div class="mt-6" wire:poll.10s>
             <h2>Questions</h2>
             <ul>
                 @foreach (Question::getSortedQuestions() as $question)
                     <li>
-                        <x-question-card :question="$question" />
+                        <livewire:question-card :question="$question" :vote-count="$question->votes" />
                     </li>
                 @endforeach
             </ul>
