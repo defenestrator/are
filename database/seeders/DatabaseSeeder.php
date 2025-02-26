@@ -15,7 +15,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $user = User::factory()->create();
-        for ($i = 0; $i < 1000; $i++) {
+        for ($i = 0; $i < 100; $i++) {
             DB::table("questions")->insert([
                 "user_id" => $user->id,
                 "question" => "Question $i",

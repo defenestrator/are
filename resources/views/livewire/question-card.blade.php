@@ -84,6 +84,7 @@ new class extends Component {
                 <flux:icon.hand-thumb-down name="hand-thumb-down" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
             </flux:button>
 
+            @if (Auth::user()->id == $question->user_id)
             <flux:dropdown>
                 <flux:button icon="ellipsis-horizontal" variant="subtle" size="sm" />
 
@@ -113,6 +114,7 @@ new class extends Component {
                     </div>
                 </div>
             </flux:modal>
+            @endif
         </div>
     </div>
 </div>
