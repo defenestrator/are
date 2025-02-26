@@ -9,12 +9,6 @@ use Livewire\Volt\Component;
 new class extends Component {
     public Question $question;
     public int $voteCount;
-    public string $questionBeingEdited;
-
-    public function mount()
-    {
-        $this->questionBeingEdited = $this->question->question;
-    }
 
     public function upvote(Question $question) {
         DB::table('question_votes')->updateOrInsert([
@@ -36,22 +30,6 @@ new class extends Component {
         ]);
 
         $this->voteCount = $this->question->voteCount();
-    }
-
-    public function updateQuestion()
-    {
-        if (strlen($this->questionBeingEdited) > 500) {
-            return;
-        }
-
-        if ($this->question->user_id !== Auth::user()->id) {
-            return;
-        }
-
-        $this->question->question = $this->questionBeingEdited;
-        $this->question->save();
-
-        Flux::modals()->close();
     }
 
     public function deleteQuestion()
@@ -100,7 +78,7 @@ new class extends Component {
                         </flux:button>
                         </div>
 
-                        @if (Auth::user()->isAdminUser())
+                        @if (Auth::user()->isAdminUser() || Auth::user()->id === $question->user_id)
                             <flux:button wire:click="deleteQuestion()" variant="danger" size="sm" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
                                 <flux:icon.x-mark name="xmark" variant="outline" class="size-4 text-white [&_path]:stroke-[2.25]" />
                             </flux:button>
@@ -121,36 +99,4 @@ new class extends Component {
             </div>
         </div>
     </flux:card>
-
-    @if (Auth::user()->id == $question->user_id)
-    <flux:dropdown>
-        <flux:button icon="ellipsis-horizontal" variant="subtle" size="sm" />
-
-        <flux:menu class="min-w-0">
-            @if (Auth::user()->id === $question->user_id)
-                <flux:modal.trigger name="edit-question-{{ $question->id }}">
-                    <flux:menu.item icon="pencil-square">Edit</flux:menu.item>
-                </flux:modal.trigger>
-            @endif
-
-            <flux:menu.item variant="danger" icon="trash">Delete</flux:menu.item>
-        </flux:menu>
-    </flux:dropdown>
-
-    <flux:modal name="edit-question-{{ $question->id }}" class="md:w-96">
-        <div class="space-y-6">
-            <div>
-                <flux:heading size="lg">Edit Question</flux:heading>
-            </div>
-
-            <flux:input label="Question" wire:model="questionBeingEdited" :value="$question->question" />
-
-            <div class="flex">
-                <flux:spacer />
-
-                <flux:button type="submit" variant="primary" wire:click="updateQuestion">Save</flux:button>
-            </div>
-        </div>
-    </flux:modal>
-    @endif
 </div>
