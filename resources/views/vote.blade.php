@@ -28,6 +28,10 @@ new class extends Component {
         $this->question = "";
     }
 
+    public function clearUserQuestion() {
+        auth()->user()->questions()->delete();
+    }
+
 } ?>
 
 <x-layouts.app>
@@ -45,7 +49,12 @@ new class extends Component {
             </form>
             @else
             @if (DB::table("topics")->count() > 0)
-                <flux:heading>Question Limit Reached</flux:heading>
+                <div class="items-center flex gap-2">
+                    <flux:heading>Question Limit Reached</flux:heading>
+                    <flux:button wire:click="clearUserQuestion" variant="danger" size="xs" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
+                        <flux:icon.x-mark name="xmark" variant="outline" class="size-4 text-white [&_path]:stroke-[2.25]" />
+                    </flux:button>
+                </div>
             @else
                 <flux:heading>There is no topic</flux:heading>
             @endif
