@@ -40,6 +40,10 @@ new class extends Component {
 
     public function updateQuestion()
     {
+        if (strlen($this->questionBeingEdited) > 500) {
+            return;
+        }
+
         if ($this->question->user_id !== Auth::user()->id) {
             return;
         }
