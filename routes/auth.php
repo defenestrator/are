@@ -37,7 +37,7 @@ Route::middleware('guest')->group(function () {
 
             Auth::login($user);
         } catch (\Exception $e) {
-            return redirect('/welcome?failed_to_login=1');
+            return redirect('/?failed_to_login=1');
         }
 
         return redirect('/vote');
