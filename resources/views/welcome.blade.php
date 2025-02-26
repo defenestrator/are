@@ -27,14 +27,9 @@
         @guest
             <a href="{{ route('login') }}">Login</a>
             @if (request()->query("failed_to_login") == "1")
-            <flux:card class="bg-red space-y-6">
-                <div>
-                    <flux:heading size="lg">Failed to Login</flux:heading>
+                <div class="bg-red-400 space-y-6">
+                    <div>Failed to Login</div>
                 </div>
-                <div>
-                    <flux:heading size="md">Please try again</flux:heading>
-                </div>
-            </flux:card>
             @endif
         @endguest
     </body>
