@@ -44,9 +44,11 @@ new class extends Component {
         </div>
     </form>
 @else
-<div class="bg-yellow-100 dark:bg-yellow-800 font-bold p-4 rounded-md text-zinc-900 dark:text-white">
-{{ Topic::first()?->topic }}
-</div>
+    @if (Topic::first())
+        <div class="bg-yellow-100 dark:bg-yellow-800 font-bold p-4 rounded-md text-zinc-900 dark:text-white">
+            {{ Topic::first()?->topic }}
+        </div>
+    @endif
 @endif
 </div>
 
