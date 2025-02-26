@@ -16,6 +16,14 @@ Route::middleware('guest')->group(function () {
     })->name("login");
 
     Route::get("twitch/auth", function() {
+        // TODO: catch the exception if the user denies the request
+        // TJ WRITE UP A USER STORY FOR THIS
+        // TJ WRITE UP A USER STORY FOR THIS
+        // TJ WRITE UP A USER STORY FOR THIS
+        // TJ WRITE UP A USER STORY FOR THIS
+        // TJ PERFORM A RISK ASSESSMENT FOR THIS
+        // TJ PERFORM QUALITY ASSURANCE FOR THIS
+        // TJ PERFORM QUALITAIVE TESTING FOR THIS
         $twitchUser = Socialite::driver("twitch")->user();
         $twitchSub = Twitch::checkUserSubscription(
             $twitchUser->token,
