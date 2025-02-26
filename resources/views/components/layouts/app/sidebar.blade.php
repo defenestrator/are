@@ -41,13 +41,16 @@
 
                                 <div class="grid flex-1 text-left text-sm leading-tight">
                                     <span class="truncate font-semibold">{{ auth()->user()->name }}</span>
-                                    <span class="truncate text-xs">{{ auth()->user()->email }}</span>
                                 </div>
                             </div>
                         </div>
                     </flux:menu.radio.group>
 
                     <flux:menu.separator />
+
+                    <flux:menu.radio.group>
+                        <flux:menu.item href="{{ route('settings') }}" icon="cog" wire:navigate>Settings</flux:menu.item>
+                    </flux:menu.radio.group>
 
                     <form method="POST" action="{{ route('logout') }}" class="w-full">
                         @csrf
@@ -85,7 +88,6 @@
 
                                 <div class="grid flex-1 text-left text-sm leading-tight">
                                     <span class="truncate font-semibold">{{ auth()->user()->name }}</span>
-                                    <span class="truncate text-xs">{{ auth()->user()->email }}</span>
                                 </div>
                             </div>
                         </div>
@@ -94,7 +96,7 @@
                     <flux:menu.separator />
 
                     <flux:menu.radio.group>
-                        <flux:menu.item href="/settings/profile" icon="cog" wire:navigate>Settings</flux:menu.item>
+                        <flux:menu.item href="{{ route('settings') }}" icon="cog" wire:navigate>Settings</flux:menu.item>
                     </flux:menu.radio.group>
 
                     <flux:menu.separator />

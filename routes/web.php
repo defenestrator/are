@@ -11,14 +11,17 @@ Route::get('/', function () {
     }
 })->name('home');
 
-Route::get('vote', function() {
+Route::get('vote', function () {
     return view('vote', []);
 })
     ->middleware(['auth'])
     ->name('dashboard');
 
 Route::middleware(['auth'])->group(function () {
-    Route::redirect('settings', 'settings/profile');
+    // volt route for settings.profile
+    Route::get('settings', function () {
+        return view('livewire.settings.profile');
+    })->name('settings');
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';

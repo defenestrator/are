@@ -21,7 +21,6 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
-        'email',
         'twitch_id',
         'twitch_access_token',
         'twitch_refresh_token',
@@ -36,7 +35,6 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $hidden = [
-        'email',
         'twitch_access_token',
         'twitch_refresh_token',
         'twitch_expires_in',
@@ -54,7 +52,8 @@ class User extends Authenticatable
         ];
     }
 
-    public function questions() {
+    public function questions()
+    {
         return $this->hasMany(Question::class);
     }
 
@@ -79,7 +78,7 @@ class User extends Authenticatable
     {
         return Str::of($this->name)
             ->explode(' ')
-            ->map(fn (string $name) => Str::of($name)->substr(0, 1))
+            ->map(fn(string $name) => Str::of($name)->substr(0, 1))
             ->implode('');
     }
 }
