@@ -77,25 +77,28 @@ new class extends Component {
                     <flux:text class="text-sm mr-2 text-zinc-500 dark:text-zinc-400 tabular-nums">{{ $voteCount }}</flux:text>
 
                     <div class="flex items-center gap-2">
+                        <div>
                         <flux:button
                                 wire:click="upvote({{ $question->id }})"
                                 variant="ghost"
                                 size="sm"
-                                inset
                                 class="flex items-center"
                                 :loading="false">
                             <flux:icon.hand-thumb-up name="hand-thumb-up" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
                         </flux:button>
+                        </div>
 
+<div>
                         <flux:button
                                 wire:click="downvote({{ $question->id }})"
                                 variant="ghost"
                                 size="sm"
-                                inset
                                 class="flex items-center"
                                 :loading="false">
                             <flux:icon.hand-thumb-down name="hand-thumb-down" variant="outline" class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
+
                         </flux:button>
+                        </div>
 
                         @if (Auth::user()->isAdminUser())
                             <flux:button wire:click="deleteQuestion()" variant="danger" size="sm" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
@@ -105,7 +108,7 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div class="flex items-center">
+                <div class="flex items-center pt-2">
                     <flux:avatar src="{{ $question->user->twitch_avatar_url }}" size="xs" class="shrink-0" />
                     <flux:subheading variant="strong" class="ml-2">
                         {{ $question->user->name }}
