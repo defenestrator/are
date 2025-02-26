@@ -108,11 +108,14 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div class="flex items-center pt-2">
+                <div class="flex items-center pt-2 gap-2">
                     <flux:avatar src="{{ $question->user->twitch_avatar_url }}" size="xs" class="shrink-0" />
-                    <flux:subheading variant="strong" class="ml-2">
+                    <flux:subheading variant="strong">
                         {{ $question->user->name }}
                     </flux:subheading>
+                    @if ($question->user->poki_sub->isSubscribed())
+                        <flux:avatar src="https://static-cdn.jtvnw.net/emoticons/v2/306981855/default/dark/3.0" size="xs" class="shrink-0" />
+                    @endif
                 </div>
 
             </div>

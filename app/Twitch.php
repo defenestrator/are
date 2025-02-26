@@ -4,6 +4,7 @@ namespace App;
 use Illuminate\Support\Facades\Http;
 
 class Twitch {
+
     public static function checkUserSubscription(string $accessToken, string $channelId, string $userId): TwitchSubscription {
         $response = Http::withHeaders([
             'Client-ID' => env('TWITCH_CLIENT_ID'),

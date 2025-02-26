@@ -49,6 +49,7 @@ class User extends Authenticatable
     {
         return [
             'twitch_subscription' => TwitchSubscription::class,
+            'poki_sub' => TwitchSubscription::class,
         ];
     }
 
