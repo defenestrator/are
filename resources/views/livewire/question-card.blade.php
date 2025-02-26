@@ -65,7 +65,10 @@ new class extends Component {
                 <flux:button icon="ellipsis-horizontal" variant="subtle" size="sm" />
 
                 <flux:menu class="min-w-0">
-                    <flux:menu.item icon="pencil-square">Edit</flux:menu.item>
+                    @if (Auth::user()->id === $question->user_id)
+                        <flux:menu.item icon="pencil-square">Edit</flux:menu.item>
+                    @endif
+
                     <flux:menu.item variant="danger" icon="trash">Delete</flux:menu.item>
                 </flux:menu>
             </flux:dropdown>

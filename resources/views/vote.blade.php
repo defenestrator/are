@@ -49,7 +49,7 @@ new class extends Component {
             <h2>Questions</h2>
             <ul>
                 @foreach (Question::getSortedQuestions() as $question)
-                    <li>
+                    <li wire:key="{{ $question->id }}">
                         <livewire:question-card :question="$question" :vote-count="$question->votes" :key="$question->id" />
                     </li>
                 @endforeach
