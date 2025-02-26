@@ -11,13 +11,6 @@ Route::get('/', function () {
     }
 })->name('home');
 
-Route::get('explode', function() {
-    throw new Exception('Boom!');
-})
-    ->middleware(['auth'])
-    ->name('boomboom');
-
-
 Route::get('vote', function() {
     return view('vote', []);
 })
