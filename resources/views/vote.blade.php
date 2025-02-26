@@ -52,8 +52,8 @@ new class extends Component {
                 <h2>Hot Questions</h2>
                 <ul>
                     @foreach (Question::getSortedQuestions() as $question)
-                        <li wire:key="{{ $question->id }}">
-                            <livewire:question-card :question="$question" :vote-count="$question->votes" :key="$question->id" />
+                        <li wire:key="hot-li-{{ $question->id }}">
+                            <livewire:question-card :question="$question" :vote-count="$question->votes" :key="'hot-'.$question->id" />
                         </li>
                     @endforeach
                 </ul>
@@ -63,8 +63,8 @@ new class extends Component {
                 <h2>Latest Questions</h2>
                 <ul>
                     @foreach (Question::getRecentQuestions() as $question)
-                        <li wire:key="{{ $question->id }}">
-                            <livewire:question-card :question="$question" :vote-count="$question->votes" :key="$question->id" />
+                        <li wire:key="recent-li-{{ $question->id }}">
+                            <livewire:question-card :question="$question" :vote-count="$question->votes" :key="'recent-'.$question->id" />
                         </li>
                     @endforeach
                 </ul>
