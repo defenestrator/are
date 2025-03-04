@@ -2,6 +2,7 @@
 
 namespace App;
 
+// GOLANG IN ABSOLUTE SHAMBLES!!!!
 enum TwitchSubscription: string
 {
     case None = "0000";
@@ -13,5 +14,14 @@ enum TwitchSubscription: string
     {
         return $this->value !== "0000";
     }
-}
 
+    public function maxActiveQuestions(): int
+    {
+        return match ($this) {
+            self::Tier1 => 1,
+            self::Tier2 => 2,
+            self::Tier3 => 3,
+            default => 0,
+        };
+    }
+}

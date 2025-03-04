@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Models\UserTwitchSubscription;
+use App\TwitchSubscription;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -14,14 +16,30 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $user = User::factory()->create();
+        User::factory(10)->create();
+        $user = User::first();
+
+        UserTwitchSubscription::insert([
+            "user_id" => $user->id,
+            "broadcaster_id" => "123456789",
+            "twitch_subscription" => TwitchSubscription::Tier1,
+        ]);
+
+        UserTwitchSubscription::insert([
+            "user_id" => $user->id,
+            "broadcaster_id" => "987654321",
+            "twitch_subscription" => TwitchSubscription::Tier3,
+        ]);
+
+        $questions = [];
         for ($i = 0; $i < 100; $i++) {
-            DB::table("questions")->insert([
+            $questions[] = [
                 "user_id" => $user->id,
-                "question" => "Question $i",
+                "question" => fake()->sentence(),
                 "created_at" => now(),
                 "updated_at" => now(),
-            ]);
+            ];
         }
+        DB::table("questions")->insert($questions);
     }
 }

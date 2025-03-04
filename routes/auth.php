@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Models\UserTwitchSubscription;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Laravel\Socialite\Facades\Socialite;
@@ -18,27 +19,35 @@ Route::middleware('guest')->group(function () {
     Route::get("twitch/auth", function () {
         try {
             $twitchUser = Socialite::driver("twitch")->user();
-            $twitchSub = Twitch::checkUserSubscription(
-                $twitchUser->token,
-                env("TWITCH_CHANNEL_ID"),
-                $twitchUser->id,
-            );
 
             $user = User::updateOrCreate([
                 "twitch_id" => $twitchUser->id,
             ], [
                 'name' => $twitchUser->name,
-                'twitch_id' => $twitchUser->id,
-                'twitch_access_token' => $twitchUser->token,
-                'twitch_refresh_token' => $twitchUser->refreshToken,
-                'twitch_expires_in' => $twitchUser->expiresIn,
                 'twitch_avatar_url' => $twitchUser->avatar,
-                'twitch_subscription' => $twitchSub,
-                'poki_sub' => TwitchSubscription::None,
             ]);
+
+            $subscriptions = Twitch::checkUserSubscriptions(
+                $twitchUser->token,
+                UserTwitchSubscription::allBroadcasterIds(),
+                $twitchUser->id,
+            );
+
+            $subscriptions->each(
+                fn($subscription, $broadcaster_id) =>
+                UserTwitchSubscription::updateOrCreate([
+                    "user_id" => $user->id,
+                    "broadcaster_id" => $broadcaster_id,
+                ], [
+                    "twitch_subscription" => $subscription,
+                ])
+            );
 
             Auth::login($user);
         } catch (\Exception $e) {
+            // TODO: Send this to Sentry, because i'm not sure if it should be or not
+            /* report($e); */
+            dd($e);
             return redirect('/?failed_to_login=1');
         }
 

@@ -32,6 +32,8 @@ return [
         "client_id" => env("TWITCH_CLIENT_ID"),
         "client_secret" => env("TWITCH_CLIENT_SECRET"),
         "redirect" => env("TWITCH_REDIRECT_URL"),
+        "broadcaster_id" => env("TWITCH_CHANNEL_ID"),
+        "friend_ids" => array_filter(explode(",", env("TWITCH_FRIEND_IDS", ''))),
     ],
 
 ];
