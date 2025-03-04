@@ -18,7 +18,7 @@ new class extends Component {
     </head>
     <body>
     @volt
-        <flux:card class="m-2 rounded-lg max-w-120 bg-zinc-400/5 dark:bg-zinc-900">
+        <flux:card style="background-color: #fafafa" class="m-2 rounded-lg max-w-120 bg-zinc-400/5 dark:bg-zinc-900">
             <div class="pl-2">
                 <flux:text class="mb-2" variant="strong">{{ $question->question }}</flux:text>
 
