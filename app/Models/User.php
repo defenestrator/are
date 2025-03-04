@@ -76,7 +76,10 @@ class User extends Authenticatable
     {
         $subscription = UserTwitchSubscription::where('user_id', $this->id)
             ->where('twitch_subscription', '>=', TwitchSubscription::Tier1)
-            ->where('broadcaster_id', config('services.twitch.friend_ids'))
+            ->where(function ($query) {
+                $query->whereIn('broadcaster_id', config('services.twitch.friend_ids'))
+                    ->orWhere('broadcaster_id', config('services.twitch.broadcaster_id'));
+            })
             ->orderBy('twitch_subscription', 'desc')
             ->first();
 
