@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Question;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Livewire\Volt\Component;
 
 Route::get('/', function () {
     if (Auth::check()) {
@@ -16,6 +18,12 @@ Route::get('vote', function () {
 })
     ->middleware(['auth'])
     ->name('dashboard');
+
+Route::get('top-vote', function () {
+    return view("top-vote", []);
+})
+    ->middleware(['auth'])
+    ->name('top-vote');
 
 Route::middleware(['auth'])->group(function () {
     // volt route for settings.profile
