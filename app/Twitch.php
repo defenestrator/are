@@ -71,7 +71,7 @@ class Twitch
                 return TwitchSubscription::tryFrom($subscription['tier']);
             }
 
-            dd($response);
+            logger()->warning($response->json());
             return TwitchSubscription::None;
         });
     }
