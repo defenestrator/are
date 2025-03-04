@@ -10,6 +10,15 @@ new class extends Component {
     public Question $question;
     public int $voteCount;
     public array $userVotes;
+    public bool $canEdit;
+
+    public function mount() {
+        if (Auth::user() == null) {
+            $this->canEdit = false;
+        } else {
+            $this->canEdit = Auth::user()->isAdminUser() || Auth::user()->id === $this->question->user_id;
+        }
+    }
 
     public function upvote(Question $question)
     {
@@ -86,7 +95,7 @@ new class extends Component {
                             </flux:button>
                         </div>
 
-                        @if (Auth::user()->isAdminUser() || Auth::user()->id === $question->user_id)
+                        @if ($canEdit)
                             <flux:button wire:click="deleteQuestion()" variant="danger" size="sm" inset="left"
                                 class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">
                                 <flux:icon.x-mark name="xmark" variant="outline"
