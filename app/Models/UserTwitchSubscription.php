@@ -26,16 +26,4 @@ class UserTwitchSubscription extends Model
             'twitch_subscription' => TwitchSubscription::class,
         ];
     }
-
-    public static function broadcasterId(): string
-    {
-        return config('services.twitch.broadcaster_id');
-    }
-
-    public static function allBroadcasterIds(): array
-    {
-        // TODO: Remove these calls to env if I play on deploying with config caching
-        // - falsyvalue
-        return array_merge([config('services.twitch.broadcaster_id')], config('services.twitch.friend_ids'));
-    }
 }

@@ -48,10 +48,28 @@ class User extends Authenticatable
         return $this->hasMany(Question::class);
     }
 
+    static public function getBroadcasterID(): string
+    {
+        return config('services.twitch.broadcaster_id');
+    }
+
+    static public function getAllFriendIDs(): array
+    {
+        return array_merge([self::getBroadcasterID()], config('services.twitch.friend_ids'));
+    }
+
+    public function isBroadcaster(): bool
+    {
+        return $this->twitch_id === self::getBroadcasterID();
+    }
+
     public function isAdminUser(): bool
     {
         // Check if this user is in the list of friend ids
-        return array_search($this->twitch_id, config('services.twitch.friend_ids')) !== false;
+        /* return array_search($this->twitch_id, self::getAllAdminIDs()) !== false; */
+
+        // For now, just let broadcaster be admin. Add mod status later, or include friends as well
+        return $this->isBroadcaster();
     }
 
     public function getHighestSubscription(): TwitchSubscription

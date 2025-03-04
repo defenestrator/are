@@ -29,7 +29,7 @@ Route::middleware('guest')->group(function () {
 
             $subscriptions = Twitch::checkUserSubscriptions(
                 $twitchUser->token,
-                UserTwitchSubscription::allBroadcasterIds(),
+                User::getAllFriendIDs(),
                 $twitchUser->id,
             );
 
