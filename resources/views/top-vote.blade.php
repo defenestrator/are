@@ -24,7 +24,7 @@ new class extends Component {
 
                 <div class="flex jusify-between items-center">
                     <div class="flex items-center mr-auto">
-                        <flux:text class="text-xl w-4 max-w-4 min-w-4 mr-2 text-zinc-500 dark:text-zinc-400 tabular-nums">
+                        <flux:text class="text-xl w-6 max-w-6 min-w-6 mr-2 text-zinc-500 dark:text-zinc-400 tabular-nums">
                             {{ $question->votes }}</flux:text>
 
                         <div class="flex items-center gap-2">
