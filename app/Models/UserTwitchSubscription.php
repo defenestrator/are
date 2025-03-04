@@ -11,6 +11,9 @@ class UserTwitchSubscription extends Model
     /** @use HasFactory<\Database\Factories\UserTwitchSubscriptionFactory> */
     use HasFactory;
 
+    public $incrementing = false;
+    public $primaryKey = ['user_id', 'broadcaster_id'];
+
     protected $fillable = [
         'user_id',
         'broadcaster_id',
