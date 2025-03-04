@@ -22,7 +22,6 @@ Route::get('vote', function () {
 Route::get('top-vote', function () {
     return view("top-vote", []);
 })
-    ->middleware(['auth'])
     ->name('top-vote');
 
 Route::middleware(['auth'])->group(function () {
