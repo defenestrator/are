@@ -16,16 +16,21 @@ return new class extends Migration
         DB::table('sessions')->truncate();
 
         Schema::table('users', function (Blueprint $table) {
-            // Prime.... smh my head
-            $table->dropColumn('poki_sub');
-
-            // Don't need to store access tokens, socialite will handle that
-            $table->dropColumn('twitch_access_token');
-            $table->dropColumn('twitch_refresh_token');
-            $table->dropColumn('twitch_expires_in');
-
-            // Creating new table for this
-            $table->dropColumn('twitch_subscription');
+            if (Schema::hasColumn('users', 'poki_sub')) {
+                $table->dropColumn('poki_sub');
+            }
+            if (Schema::hasColumn('users', 'twitch_access_token')) {
+                $table->dropColumn('twitch_access_token');
+            }
+            if (Schema::hasColumn('users', 'twitch_refresh_token')) {
+                $table->dropColumn('twitch_refresh_token');
+            }
+            if (Schema::hasColumn('users', 'twitch_expires_in')) {
+                $table->dropColumn('twitch_expires_in');
+            }
+            if (Schema::hasColumn('users', 'twitch_subscription')) {
+                $table->dropColumn('twitch_subscription');
+            }
         });
 
         Schema::create('user_twitch_subscriptions', function (Blueprint $table) {
