@@ -18,10 +18,10 @@ enum TwitchSubscription: string
     public function maxActiveQuestions(): int
     {
         return match ($this) {
-            self::Tier1 => 1,
-            self::Tier2 => 2,
-            self::Tier3 => 3,
-            default => 0,
+            self::Tier1 => 2,
+            self::Tier2 => 3,
+            self::Tier3 => 4,
+            default => 1,
         };
     }
 }

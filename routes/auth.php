@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Laravel\Socialite\Facades\Socialite;
 use App\Twitch;
-use App\TwitchSubscription;
 
 Route::middleware('guest')->group(function () {
     Route::get("login", function () {
@@ -56,4 +55,7 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::post('logout', App\Livewire\Actions\Logout::class)
+    ->name('logout');
+
+    Route::get('logout', App\Livewire\Actions\Logout::class)
     ->name('logout');
