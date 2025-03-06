@@ -90,7 +90,7 @@ class User extends Authenticatable
     {
         $subscription = $this->getHighestSubscription();
         if ($subscription === TwitchSubscription::None) {
-            return false;
+            return true;
         }
 
         return DB::table("topics")->count() > 0
