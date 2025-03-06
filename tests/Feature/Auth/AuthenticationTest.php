@@ -1,12 +1,19 @@
 <?php
 
 use App\Models\User;
+<<<<<<< HEAD
+=======
+use Livewire\Volt\Volt as LivewireVolt;
+
+uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+>>>>>>> origin/master
 
 test('login screen can be rendered', function () {
     $response = $this->get('/login');
 
     $response->assertStatus(200);
 });
+<<<<<<< HEAD
 
 test('users can authenticate using the login screen', function () {
     $user = User::factory()->create();
@@ -39,3 +46,5 @@ test('users can logout', function () {
     $this->assertGuest();
     $response->assertRedirect('/');
 });
+=======
+>>>>>>> origin/master

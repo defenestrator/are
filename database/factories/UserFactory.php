@@ -3,8 +3,11 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+<<<<<<< HEAD
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+=======
+>>>>>>> origin/master
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
@@ -23,6 +26,7 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
+<<<<<<< HEAD
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
@@ -41,4 +45,14 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+=======
+
+        // TOOD: This doesn't actually create the right stuff. We will need to do that later.
+        return [
+            'name' => fake()->name(),
+            'twitch_id' => fake()->unique()->randomNumber(8),
+            'twitch_avatar_url' => "https://static-cdn.jtvnw.net/jtv_user_pictures/0744a2a3-109a-4e48-85b1-285221fdeefc-profile_image-300x300.png",
+        ];
+    }
+>>>>>>> origin/master
 }

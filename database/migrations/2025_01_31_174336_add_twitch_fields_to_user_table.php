@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table(table: 'users', callback: function (Blueprint $table): void {
             $table->after(column: 'email', callback: function (Blueprint $table): void {
-                $table->string(column: 'twitch_id')->nullable();
+                
                 $table->string(column: 'twitch_avatar')->nullable();
             });
         });

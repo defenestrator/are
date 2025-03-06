@@ -7,6 +7,7 @@
     <title>Stream Visualizer</title>
     <!-- Styles / Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+<<<<<<< HEAD
     <style>
         body {
             margin: 0;
@@ -129,5 +130,10 @@
             gl_FragColor = vec4(vec3(u_red, u_green, u_blue), 1. );
         }
     </script>
+=======
+</head>
+<body>
+<x-visualizer />  
+>>>>>>> origin/master
 </body>
 </html>

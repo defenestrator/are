@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+<<<<<<< HEAD
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
@@ -27,6 +28,17 @@ return new class extends Migration
             $table->timestamp('created_at')->nullable();
         });
 
+=======
+            $table->string('email');
+            $table->string('twitch_id')->unique();
+            $table->string('twitch_access_token');
+            $table->string('twitch_refresh_token');
+            $table->integer('twitch_expires_in');
+            $table->string('twitch_avatar_url');
+            $table->timestamps();
+        });
+
+>>>>>>> origin/master
         Schema::create('sessions', function (Blueprint $table) {
             $table->string('id')->primary();
             $table->foreignId('user_id')->nullable()->index();
