@@ -25,12 +25,19 @@
         @endauth
 
         @guest
+
             <div class="flex flex-col gap-4">
+                <h1 class="flex dark:text-gray-500 text-gray-800 items-center justify-center text-xl">Applied Research Equity</h1>
+                <div class="flex flex-row p-8">
+                    <img src="{{ asset('/img/are.png') }}" alt="Applied Research Equity Logo" class="w-24 h-24 mx-auto" />
+                </div>
+                
                 <a class="text-white bg-violet-500 hover:bg-violet-600 focus:ring-4 focus:outline-none focus:ring-violet-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-violet-600 dark:hover:bg-violet-700 dark:focus:ring-violet-900" href="{{ route('login') }}">Login</a>
                 @if (request()->query("failed_to_login") == "1")
                     <div class="bg-red-200 p-2 rounded-sm mt-2">Failed to Login</div>
                     <div class="bg-red-200 p-2 rounded-sm mt-2">Failed to Login</div>
                 @endif
+                
             </div>
         @endguest
     </body>
