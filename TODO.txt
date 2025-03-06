@@ -1,0 +1,4 @@
+- Double check that banned users can't submit questions
+
+- Moderator fatures:
+    - Merge questions
