@@ -2,19 +2,12 @@
 
 namespace App\Models;
 
-<<<<<<< HEAD
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-=======
 use App\TwitchSubscription;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
->>>>>>> origin/master
 
 class User extends Authenticatable
 {
@@ -28,13 +21,8 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
-<<<<<<< HEAD
-        'email',
-        'password',
-=======
         'twitch_id',
         'twitch_avatar_url',
->>>>>>> origin/master
     ];
 
     /**
@@ -42,14 +30,7 @@ class User extends Authenticatable
      *
      * @var list<string>
      */
-<<<<<<< HEAD
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
-=======
     protected $hidden = [];
->>>>>>> origin/master
 
     /**
      * Get the attributes that should be cast.
@@ -58,12 +39,6 @@ class User extends Authenticatable
      */
     protected function casts(): array
     {
-<<<<<<< HEAD
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
-=======
         return [];
     }
 
@@ -135,6 +110,5 @@ class User extends Authenticatable
             ->explode(' ')
             ->map(fn(string $name) => Str::of($name)->substr(0, 1))
             ->implode('');
->>>>>>> origin/master
     }
 }
