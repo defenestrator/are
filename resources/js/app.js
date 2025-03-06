@@ -1,6 +1,6 @@
 import './bootstrap';
 
-import Alpine from 'alpinejs';
+// import Alpine from 'alpinejs';
 import * as THREE from 'three';
 import {GUI} from 'dat.gui';
 import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer';
@@ -160,6 +160,6 @@ window.addEventListener('resize', function() {
 	bloomComposer.setSize(window.innerWidth, window.innerHeight);
 });
 
-window.Alpine = Alpine;
+// window.Alpine = Alpine;
 
-Alpine.start();
+// Alpine.start();
