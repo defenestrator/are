@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html class="dark" lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -26,7 +26,7 @@
 
         @guest
             <div class="flex flex-col gap-4">
-                <a class="text-white bg-red-500 hover:bg-red-600 focus:ring-4 focus:outline-none focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900" href="{{ route('login') }}">Login</a>
+                <a class="text-white bg-violet-500 hover:bg-violet-600 focus:ring-4 focus:outline-none focus:ring-violet-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-violet-600 dark:hover:bg-violet-700 dark:focus:ring-violet-900" href="{{ route('login') }}">Login</a>
                 @if (request()->query("failed_to_login") == "1")
                     <div class="bg-red-200 p-2 rounded-sm mt-2">Failed to Login</div>
                     <div class="bg-red-200 p-2 rounded-sm mt-2">Failed to Login</div>
