@@ -1,12 +1,12 @@
 import './bootstrap';
 
 // import Alpine from 'alpinejs';
-import * as THREE from 'three';
-import {GUI} from 'dat.gui';
-import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer';
-import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass';
-import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass';
+// import * as THREE from 'three';
+// import {GUI} from 'dat.gui';
+// import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer';
+// import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass';
+// import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass';
+// import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass';
 
 const renderer = new THREE.WebGLRenderer({antialias: true});
 renderer.setSize(window.innerWidth, window.innerHeight);
