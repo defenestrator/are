@@ -21,4 +21,5 @@ This project has no affiliation with, nor is it endorsed by Laravel, or anyone e
 - are comfortable speaking on stage
 - genuinely enjoy kale
 - can change a tire
-- think real good
+
+@TODO: Add steps to run locally, for fools and legends only.
