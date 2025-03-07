@@ -42,10 +42,14 @@ new class extends Component {
 } ?>
 
 <x-layouts.app>
+    <script>
+        setInterval(function() {
+            location.reload();
+        }, 8000);
+    </script>
     @volt
     <div>
         <livewire:topic @topic-changed="$refresh" />
-        
         <div class="mt-4" wire:poll.keep-alive>
             @if (Auth::user()->canSubmitQuestion())
             <form wire:submit="saveQuestion">
