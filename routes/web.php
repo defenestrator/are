@@ -29,6 +29,13 @@ Route::middleware(['auth'])->group(function () {
     Route::get('settings', function () {
         return view('livewire.settings.profile');
     })->name('settings');
+    Route::get('/visualizer', function () {
+        if (Auth::user()->isBroadcaster()) {
+            return view('visualizer');
+        } else {
+            return redirect('/vote')->with('error', 'You are not authorized to access this page');
+        }
+    })->name('visualizer');
 });
 
 require __DIR__ . '/auth.php';
