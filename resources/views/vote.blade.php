@@ -43,10 +43,16 @@ new class extends Component {
 
 <x-layouts.app>
     @volt
+    <script>
+        setInterval(function() {
+            location.reload();
+        }, 10000);
+    </script>
+
     <div>
         <livewire:topic @topic-changed="$refresh" />
-
-        <div class="mt-4" wire:poll.10s>
+        
+        <div class="mt-4" wire:poll.keep-alive>
             @if (Auth::user()->canSubmitQuestion())
             <form wire:submit="saveQuestion">
                 <flux:input.group>
@@ -69,7 +75,7 @@ new class extends Component {
         </div>
 
         <div class="mt-6 grid sm:grid-cols-2 gap-2">
-            <div wire:poll.30s>
+            <div wire:poll.keep-alive>
                 <h2>Top Suggestions</h2>
                 <ul>
                     @foreach (Question::getSortedQuestions() as $question)
@@ -80,7 +86,7 @@ new class extends Component {
                 </ul>
             </div>
 
-            {{-- <div wire:poll.30s>
+            <div wire:poll.keep-alive>
                 <h2>New Ideas</h2>
                 <ul>
                     @foreach (Question::getRecentQuestions() as $question)
@@ -89,7 +95,7 @@ new class extends Component {
                         </li>
                     @endforeach
                 </ul>
-            </div> --}}
+            </div>
         </div>
     </div>
     @endvolt
