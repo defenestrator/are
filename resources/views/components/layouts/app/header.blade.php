@@ -5,8 +5,6 @@
     </head>
     <body class="min-h-screen bg-white dark:bg-zinc-800">
         <flux:header container class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-            <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
-
             <a href="/vote" class="ml-2 mr-5 flex items-center space-x-2 lg:ml-0" wire:navigate>
                 <x-app-logo class="size-8" href="#"></x-app-logo>
             </a>
@@ -65,15 +63,15 @@
         </flux:header>
 
         <!-- Mobile Menu -->
-        <flux:sidebar stashable sticky class="lg:hidden border-r border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-            <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
+        <flux:sidebar stashable sticky class="hidden border-r border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:sidebar.toggle class="hidden" icon="x-mark" />
 
             <a href="/vote" class="ml-1 flex items-center space-x-2" wire:navigate>
                 <x-app-logo class="size-8" href="#"></x-app-logo>
             </a>
 
             <flux:navlist variant="outline">
-                <flux:navlist.group heading="Topshelf.fm">
+                <flux:navlist.group heading="ARE">
                     <flux:navlist.item icon="hand-thumb-up" href="/vote" wire:navigate>
                     {{ __('Votes') }}
                     </flux:navlist.item>

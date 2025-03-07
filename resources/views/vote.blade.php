@@ -18,13 +18,13 @@ new class extends Component {
     public function saveQuestion()
     {
         $this->validate([
-            'question' => 'required|min:10|max:420',
+            'question' => 'required|min:3|max:420',
         ]);
 
         // TODO: Make this prettier
         if (!auth()->user()->canSubmitQuestion()) {
             throw ValidationException::withMessages([
-                'question' => 'You have reached the question limit',
+                'question' => 'You have reached the suggestion limit',
             ]);
         }
 
@@ -50,7 +50,7 @@ new class extends Component {
             @if (Auth::user()->canSubmitQuestion())
             <form wire:submit="saveQuestion">
                 <flux:input.group>
-                    <flux:input wire:model="question" placeholder="Your Greatest Query" />
+                    <flux:input wire:model="question" placeholder="What should I sing about?" />
                     <flux:button type="submit" class="cursor-pointer">Submit</flux:button>
                 </flux:input.group>
             </form>
@@ -70,7 +70,7 @@ new class extends Component {
 
         <div class="mt-6 grid sm:grid-cols-2 gap-2">
             <div wire:poll.30s>
-                <h2>Hot Questions</h2>
+                <h2>Top Suggestions</h2>
                 <ul>
                     @foreach (Question::getSortedQuestions() as $question)
                         <li wire:key="hot-li-{{ $question->id }}">
@@ -80,8 +80,8 @@ new class extends Component {
                 </ul>
             </div>
 
-            <div wire:poll.30s>
-                <h2>Latest Questions</h2>
+            {{-- <div wire:poll.30s>
+                <h2>New Ideas</h2>
                 <ul>
                     @foreach (Question::getRecentQuestions() as $question)
                         <li wire:key="recent-li-{{ $question->id }}">
@@ -89,7 +89,7 @@ new class extends Component {
                         </li>
                     @endforeach
                 </ul>
-            </div>
+            </div> --}}
         </div>
     </div>
     @endvolt
