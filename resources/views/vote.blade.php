@@ -43,12 +43,6 @@ new class extends Component {
 
 <x-layouts.app>
     @volt
-    <script>
-        setInterval(function() {
-            location.reload();
-        }, 10000);
-    </script>
-
     <div>
         <livewire:topic @topic-changed="$refresh" />
         
