@@ -45,7 +45,7 @@ new class extends Component {
     <script>
         setInterval(function() {
             location.reload();
-        }, 8000);
+        }, 60000);
     </script>
     @volt
     <div>
