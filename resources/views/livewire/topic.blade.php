@@ -46,10 +46,9 @@ new class extends Component {
 @else
 
 @endif
-@if (Topic::first())
 <div class="bg-violet-100 dark:bg-violet-800 font-bold p-4 rounded-md text-zinc-900 dark:text-white">
-    {{ Topic::first()?->topic }}
+    Prime Directive: @if(Topic::count() > 0) {{ Topic::first()?->topic }} @else Be funny. @endif
 </div>
-@endif
+
 </div>
 
