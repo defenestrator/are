@@ -11,7 +11,7 @@
 
             <flux:navbar class="-mb-px max-lg:hidden">
                 <flux:navbar.item icon="hand-thumb-up" href="/vote" :current="request()->routeIs('dashboard')" wire:navigate>
-                    {{ __('Votes') }}
+                    {{ __('Ideas') }}
                 </flux:navbar.item>
             </flux:navbar>
 
