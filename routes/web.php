@@ -38,4 +38,8 @@ Route::middleware(['auth'])->group(function () {
     })->name('visualizer');
 });
 
+Route::get('/visualizer', function () {
+    return view('visualizer');
+})->name('visualizer');
+
 require __DIR__ . '/auth.php';
