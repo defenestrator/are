@@ -139,9 +139,9 @@ function animate() {
     uniforms.u_blue.value  = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(elapsed + 4.0));
 
     // Smooth bloom animations: values between 0.0 and 0.5 over time
-    bloomPass.threshold = 0.5 * (0.5 + 0.5 * Math.sin(elapsed));
-    bloomPass.strength  = 0.5 * (0.5 + 0.5 * Math.sin(elapsed + 3.0));
-    bloomPass.radius    = 0.5 * (0.5 + 0.5 * Math.sin(elapsed + 6.0));
+    bloomPass.threshold = 0.5 * (0.1 + 0.5 * Math.sin(elapsed));
+    bloomPass.strength  = 0.5 * (0.1 + 0.5 * Math.sin(elapsed + 3.0));
+    bloomPass.radius    = 0.5 * (0.1 + 0.5 * Math.sin(elapsed + 6.0));
 
     uniforms.u_time.value = clock.getElapsedTime();
     uniforms.u_frequency.value = analyser.getAverageFrequency();
