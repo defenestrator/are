@@ -1,9 +1,3 @@
-<style>
-    body, div{
-        margin: 0;
-    }
-</style>
-<div></div>
 <script id="vertexshader" type="vertex">
     uniform float u_time;
 
