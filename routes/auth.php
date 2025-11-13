@@ -15,6 +15,10 @@ Route::middleware('guest')->group(function () {
         ])->redirect();
     })->name("login");
 
+    Route::get("login/facebook", function () {
+        return Socialite::driver("facebook")->redirect();
+    })->name("login.facebook");
+
     Route::get("twitch/auth", function () {
         try {
             $twitchUser = Socialite::driver("twitch")->user();
@@ -44,8 +48,27 @@ Route::middleware('guest')->group(function () {
 
             Auth::login($user);
         } catch (\Exception $e) {
-            // TODO: Send this to Sentry, because i'm not sure if it should be or not
-            /* report($e); */
+            dd($e);
+            return redirect('/?failed_to_login=1');
+        }
+
+        return redirect('/vote');
+    });
+
+    Route::get("facebook/auth", function () {
+        try {
+            $facebookUser = Socialite::driver("facebook")->user();
+
+            $user = User::updateOrCreate([
+                "facebook_id" => $facebookUser->id,
+            ], [
+                'name' => $facebookUser->name,
+                'email' => $facebookUser->email,
+                'facebook_avatar_url' => $facebookUser->avatar,
+            ]);
+
+            Auth::login($user);
+        } catch (\Exception $e) {
             dd($e);
             return redirect('/?failed_to_login=1');
         }

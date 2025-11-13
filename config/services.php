@@ -36,4 +36,10 @@ return [
         "friend_ids" => array_filter(explode(",", env("TWITCH_FRIEND_IDS", ''))),
     ],
 
+    "facebook" => [
+        "client_id" => env("FACEBOOK_CLIENT_ID"),
+        "client_secret" => env("FACEBOOK_CLIENT_SECRET"),
+        "redirect" => env("FACEBOOK_REDIRECT_URL"),
+    ],
+
 ];

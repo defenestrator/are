@@ -21,8 +21,11 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'email',
         'twitch_id',
         'twitch_avatar_url',
+        'facebook_id',
+        'facebook_avatar_url',
     ];
 
     /**
