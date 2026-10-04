@@ -110,11 +110,20 @@ class User extends Authenticatable
         return $this->twitch_id !== null && in_array($this->twitch_id, self::getBroadcasterIDs(), true);
     }
 
+    /**
+     * Memoised per user instance for the request (keyed on the Twitch ID and
+     * served channels), so every @can('moderate') does not re-query. Bans
+     * are deliberately not memoised: the moderate gate checks isBanned()
+     * live, so a ban landing mid-request still takes effect.
+     */
     public function isModerator(): bool
     {
-        return $this->twitch_id !== null && TwitchModerator::where('twitch_user_id', $this->twitch_id)
-            ->whereIn('broadcaster_id', self::getBroadcasterIDs())
-            ->exists();
+        $twitchId = $this->twitch_id;
+        $broadcasterIds = self::getBroadcasterIDs();
+
+        return $twitchId !== null && once(fn () => TwitchModerator::where('twitch_user_id', $twitchId)
+            ->whereIn('broadcaster_id', $broadcasterIds)
+            ->exists());
     }
 
     public function isAdminUser(): bool

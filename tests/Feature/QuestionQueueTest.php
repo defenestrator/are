@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserTwitchSubscription;
 use App\TwitchSubscription;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Once;
 use Livewire\Volt\Volt;
 
 function subscribe(User $user, TwitchSubscription $tier, string $broadcasterId = '1000'): void
@@ -170,6 +171,9 @@ test('the vote page runs the same queries for one card as for a full queue', fun
         Question::query()->delete();
         Question::factory()->count($questions)->for(User::factory())->create();
 
+        // actingAs() reuses one User instance across requests; a real request
+        // loads it fresh, so clear the per-instance once() memo between them.
+        Once::flush();
         DB::flushQueryLog();
         DB::enableQueryLog();
         $response = $this->get('/vote')->assertOk();

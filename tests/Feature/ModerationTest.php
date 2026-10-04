@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\UserBan;
 use App\Moderation;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -85,6 +86,45 @@ test('a banned moderator loses moderator powers', function () {
 
     expect(fn () => Moderation::ban($mod, User::factory()->create(), 10))->toThrow(AuthorizationException::class);
     $this->actingAs($mod)->get('/moderation')->assertRedirect('/?banned=1');
+});
+
+function moderatorQueries(callable $callback): int
+{
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $callback();
+    DB::disableQueryLog();
+
+    return collect(DB::getQueryLog())->filter(fn (array $q) => str_contains($q['query'], 'twitch_moderators'))->count();
+}
+
+test('a page with many moderate checks runs one moderator query', function (bool $isModerator) {
+    $user = $isModerator ? moderator() : User::factory()->create();
+    $this->actingAs($user);
+    $template = str_repeat("@can('moderate') yes @endcan ", 10);
+
+    $count = moderatorQueries(function () use ($template, $isModerator) {
+        expect(substr_count(Blade::render($template), 'yes'))->toBe($isModerator ? 10 : 0);
+    });
+
+    expect($count)->toBe(1);
+})->with(['viewer' => false, 'moderator' => true]);
+
+test('the vote page runs one moderator query however many checks it renders', function () {
+    $this->actingAs(moderator());
+    Question::factory()->count(3)->create();
+
+    expect(moderatorQueries(fn () => $this->get('/vote')->assertOk()))->toBe(1);
+});
+
+test('a ban that lands mid-request revokes moderate on the same user instance', function () {
+    $mod = moderator();
+    expect($mod->can('moderate'))->toBeTrue();
+
+    Moderation::ban(User::factory()->create(['twitch_id' => '1000']), $mod, null);
+
+    // The moderator lookup is memoised; the ban check is not.
+    expect(moderatorQueries(fn () => expect($mod->can('moderate'))->toBeFalse()))->toBe(0);
 });
 
 test('merging moves votes to the kept question without double-counting', function () {
