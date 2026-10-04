@@ -1,7 +1,9 @@
 <?php
 
 use Livewire\Volt\Component;
+use App\Exceptions\QuestionRejected;
 use App\Models\Question;
+use App\QuestionQueue;
 use Illuminate\Validation\ValidationException;
 use App\Models\Topic;
 use Illuminate\Support\Facades\Gate;
@@ -20,25 +22,17 @@ new class extends Component {
     public function saveQuestion()
     {
         $this->validate([
-            'question' => 'required|min:3|max:420',
+            'question' => QuestionQueue::QUESTION_RULES,
         ]);
 
-        // TODO: Make this prettier
-        if (auth()->user()->isBanned()) {
+        // The same rules as !q in chat.
+        try {
+            QuestionQueue::submit(auth()->user(), $this->question);
+        } catch (QuestionRejected $e) {
             throw ValidationException::withMessages([
-                'question' => 'You are banned or timed out in this channel.',
+                'question' => $e->getMessage(),
             ]);
         }
-
-        if (!auth()->user()->canSubmitQuestion()) {
-            throw ValidationException::withMessages([
-                'question' => 'You have reached the suggestion limit',
-            ]);
-        }
-
-        auth()->user()->questions()->create([
-            'question' => $this->question,
-        ]);
 
         $this->question = "";
     }

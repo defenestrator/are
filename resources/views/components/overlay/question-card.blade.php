@@ -44,6 +44,8 @@
         <div class="flex items-center gap-2 font-semibold tabular-nums">
             <flux:icon.hand-thumb-up variant="outline" class="size-[1.2em] [&_path]:stroke-[2.25]" />
             <span>{{ $question->votes ?? 0 }}</span>
+            {{-- The number viewers vote with in chat: !vote <number> --}}
+            <span class="ml-2 text-white/50">!vote {{ $question->id }}</span>
         </div>
 
         <div class="flex min-w-0 items-center gap-3">

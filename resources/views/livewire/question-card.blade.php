@@ -1,9 +1,10 @@
 <?php
 
+use App\Exceptions\QuestionRejected;
 use App\Models\Question;
 use App\Moderation;
+use App\QuestionQueue;
 use Flux\Flux;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
@@ -34,47 +35,29 @@ new class extends Component {
 
     public function upvote(Question $question)
     {
-        if (! $this->canVote($question)) {
-            return;
-        }
-
-        DB::table('question_votes')->updateOrInsert(
-            [
-                'question_id' => $question->id,
-                'user_id' => Auth::user()->id,
-            ],
-            [
-                'count' => 1,
-            ],
-        );
-
-        $this->voteCount = $this->question->voteCount();
-        $this->userVotes[$question->id] = 1;
+        $this->vote($question, 1);
     }
 
     public function downvote(Question $question)
     {
-        if (! $this->canVote($question)) {
+        $this->vote($question, -1);
+    }
+
+    // The same rules as !vote in chat.
+    private function vote(Question $question, int $direction): void
+    {
+        if (! Auth::check()) {
             return;
         }
 
-        DB::table('question_votes')->updateOrInsert(
-            [
-                'question_id' => $question->id,
-                'user_id' => Auth::user()->id,
-            ],
-            [
-                'count' => -1,
-            ],
-        );
+        try {
+            QuestionQueue::vote(Auth::user(), $question, $direction);
+        } catch (QuestionRejected) {
+            return;
+        }
 
         $this->voteCount = $this->question->voteCount();
-        $this->userVotes[$question->id] = -1;
-    }
-
-    private function canVote(Question $question): bool
-    {
-        return Auth::check() && ! Auth::user()->isBanned() && $question->archived_at === null;
+        $this->userVotes[$question->id] = $direction;
     }
 
     public function deleteQuestion()
@@ -91,7 +74,8 @@ new class extends Component {
 <div>
     <div class="card m-2 rounded-lg max-w-120 bg-zinc-400/5 dark:bg-zinc-900">
         <div class="pl-2">
-            <p class="bold text-lg my-2 py-2">{{ $question->question }}</p>
+            {{-- The number viewers vote with in chat: !vote <number> --}}
+            <p class="bold text-lg my-2 py-2"><span class="mr-1 text-sm font-normal tabular-nums text-zinc-500 dark:text-zinc-400" title="Vote in chat with !vote {{ $question->id }}">#{{ $question->id }}</span> {{ $question->question }}</p>
             <div class="min-h-2"></div>
 
             <div class="flex jusify-between items-center">
