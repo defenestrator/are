@@ -1,0 +1,43 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "x6TqOHmHqB5K3Kd4iJ3bmuvT2ow",
+  "items": [
+    {
+      "kind": "youtube#video",
+      "etag": "J8eEMHpGsYqXr8lDqiXhU7nOv4s",
+      "id": "edosLive001",
+      "snippet": {
+        "publishedAt": "2026-10-04T18:00:00Z",
+        "channelId": "UCedosMainChannel00000000",
+        "title": "EDOS live: building with agents",
+        "liveBroadcastContent": "live"
+      },
+      "liveStreamingDetails": {
+        "actualStartTime": "2026-10-04T18:01:12Z",
+        "scheduledStartTime": "2026-10-04T18:00:00Z",
+        "concurrentViewers": "212",
+        "activeLiveChatId": "Cg0KC2Vkb3NMaXZlMDAxKicKGFVDZWRvc01haW5DaGFubmVsMDAwMDAwMDA"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "pT3JdqvJx2c9Wq3n2QwqzXbQq1k",
+      "id": "edosLive002",
+      "snippet": {
+        "publishedAt": "2026-10-04T18:00:00Z",
+        "channelId": "UCedosSecondChannel000000",
+        "title": "EDOS live (second channel)",
+        "liveBroadcastContent": "live"
+      },
+      "liveStreamingDetails": {
+        "actualStartTime": "2026-10-04T18:01:40Z",
+        "concurrentViewers": "48",
+        "activeLiveChatId": "Cg0KC2Vkb3NMaXZlMDAyKicKGFVDZWRvc1NlY29uZENoYW5uZWwwMDAwMDA"
+      }
+    }
+  ],
+  "pageInfo": {
+    "totalResults": 2,
+    "resultsPerPage": 2
+  }
+}

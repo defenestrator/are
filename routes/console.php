@@ -3,6 +3,7 @@
 use App\Jobs\PostWeeklyAttributionSummary;
 use App\Models\ChatCommandRun;
 use App\Models\LinkCode;
+use App\Models\YouTubeLiveChat;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -50,3 +51,9 @@ Artisan::command('attribution:weekly-summary {--week= : A Y-m-d date in the week
 
     return 0;
 })->purpose('Queue the weekly attribution summary for Slack or Discord');
+
+// Restarts YouTube live chat polling whose job chain was lost (#24).
+Schedule::call(fn () => YouTubeLiveChat::resumeStalled())
+    ->everyMinute()
+    ->name('youtube-chat-watchdog')
+    ->withoutOverlapping();

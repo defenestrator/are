@@ -1,0 +1,114 @@
+{
+  "kind": "youtube#liveChatMessageListResponse",
+  "etag": "mK3zt3SVYJwhB9d0p3cJ1Wz6p0A",
+  "nextPageToken": "GIDw5pDy8YgDIKKF7JDy8YgD",
+  "pollingIntervalMillis": 5113,
+  "pageInfo": {
+    "totalResults": 4,
+    "resultsPerPage": 4
+  },
+  "items": [
+    {
+      "kind": "youtube#liveChatMessage",
+      "etag": "a1",
+      "id": "LCC.backlog-before-start",
+      "snippet": {
+        "type": "textMessageEvent",
+        "liveChatId": "Cg0KC2Vkb3NMaXZlMDAxKicKGFVDZWRvc01haW5DaGFubmVsMDAwMDAwMDA",
+        "authorChannelId": "UCviewerYouTube0000000000",
+        "publishedAt": "2026-10-04T18:05:00.000000+00:00",
+        "hasDisplayContent": true,
+        "displayMessage": "!q an old question from before ARE started reading",
+        "textMessageDetails": {
+          "messageText": "!q an old question from before ARE started reading"
+        }
+      },
+      "authorDetails": {
+        "channelId": "UCviewerYouTube0000000000",
+        "channelUrl": "http://www.youtube.com/channel/UCviewerYouTube0000000000",
+        "displayName": "Kale Fan",
+        "profileImageUrl": "https://yt3.ggpht.com/example",
+        "isVerified": false,
+        "isChatOwner": false,
+        "isChatSponsor": false,
+        "isChatModerator": false
+      }
+    },
+    {
+      "kind": "youtube#liveChatMessage",
+      "etag": "a2",
+      "id": "LCC.q-from-youtube",
+      "snippet": {
+        "type": "textMessageEvent",
+        "liveChatId": "Cg0KC2Vkb3NMaXZlMDAxKicKGFVDZWRvc01haW5DaGFubmVsMDAwMDAwMDA",
+        "authorChannelId": "UCviewerYouTube0000000000",
+        "publishedAt": "2026-10-04T19:00:01.250000+00:00",
+        "hasDisplayContent": true,
+        "displayMessage": "!q sing about kale on YouTube",
+        "textMessageDetails": {
+          "messageText": "!q sing about kale on YouTube"
+        }
+      },
+      "authorDetails": {
+        "channelId": "UCviewerYouTube0000000000",
+        "channelUrl": "http://www.youtube.com/channel/UCviewerYouTube0000000000",
+        "displayName": "Kale Fan",
+        "profileImageUrl": "https://yt3.ggpht.com/example",
+        "isVerified": false,
+        "isChatOwner": false,
+        "isChatSponsor": false,
+        "isChatModerator": false
+      }
+    },
+    {
+      "kind": "youtube#liveChatMessage",
+      "etag": "a3",
+      "id": "LCC.superchat",
+      "snippet": {
+        "type": "superChatEvent",
+        "liveChatId": "Cg0KC2Vkb3NMaXZlMDAxKicKGFVDZWRvc01haW5DaGFubmVsMDAwMDAwMDA",
+        "authorChannelId": "UCviewerYouTube0000000000",
+        "publishedAt": "2026-10-04T19:00:02.000000+00:00",
+        "hasDisplayContent": true,
+        "displayMessage": "$5.00 from Kale Fan: \"!q a paid question\"",
+        "superChatDetails": {
+          "amountMicros": "5000000",
+          "currency": "USD",
+          "amountDisplayString": "$5.00",
+          "userComment": "!q a paid question",
+          "tier": 2
+        }
+      },
+      "authorDetails": {
+        "channelId": "UCviewerYouTube0000000000",
+        "displayName": "Kale Fan",
+        "isChatOwner": false,
+        "isChatSponsor": false,
+        "isChatModerator": false
+      }
+    },
+    {
+      "kind": "youtube#liveChatMessage",
+      "etag": "a4",
+      "id": "LCC.stranger",
+      "snippet": {
+        "type": "textMessageEvent",
+        "liveChatId": "Cg0KC2Vkb3NMaXZlMDAxKicKGFVDZWRvc01haW5DaGFubmVsMDAwMDAwMDA",
+        "authorChannelId": "UCstrangerNotLinked000000",
+        "publishedAt": "2026-10-04T19:00:03.000000+00:00",
+        "hasDisplayContent": true,
+        "displayMessage": "!q who links me?",
+        "textMessageDetails": {
+          "messageText": "!q who links me?"
+        }
+      },
+      "authorDetails": {
+        "channelId": "UCstrangerNotLinked000000",
+        "displayName": "Stranger",
+        "isChatOwner": false,
+        "isChatSponsor": false,
+        "isChatModerator": false
+      }
+    }
+  ]
+}
