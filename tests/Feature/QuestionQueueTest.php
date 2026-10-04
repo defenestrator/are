@@ -151,16 +151,6 @@ test('authors can delete their own question but not someone else\'s', function (
     expect(Question::pluck('id')->all())->toBe([$theirs->id]);
 });
 
-test('the top-vote overlay renders with an empty queue', function () {
-    $this->get('/top-vote')->assertOk();
-});
-
-test('the top-vote overlay shows the leading active question', function () {
-    $question = Question::factory()->for(User::factory())->create(['question' => 'Sing about tea']);
-
-    $this->get('/top-vote')->assertOk()->assertSee('Sing about tea');
-});
-
 test('a Facebook-only user can be created without Twitch fields', function () {
     $user = User::create(['name' => 'Facebook Person', 'facebook_id' => 'fb-1', 'email' => 'fb@example.com']);
 

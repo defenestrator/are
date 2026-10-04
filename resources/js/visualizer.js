@@ -5,7 +5,13 @@ import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass';
 import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass';
         
-const renderer = new THREE.WebGLRenderer({antialias: true});
+// On /overlay/visualizer, clear to transparent so OBS composites the sphere
+// over the scene. The standalone /visualizer page keeps its black background.
+const isOverlay = document.documentElement.dataset.overlay !== undefined;
+const renderer = new THREE.WebGLRenderer({antialias: true, alpha: isOverlay});
+if (isOverlay) {
+    renderer.setClearColor(0x000000, 0);
+}
 const container = document.getElementById('visualizer-container');
 if (container) {
     const containerRect = container.getBoundingClientRect();
@@ -156,7 +162,14 @@ function animate() {
     uniforms.u_frequency.value = analyser.getAverageFrequency();
 
 
-    bloomComposer.render();
+    // UnrealBloomPass spreads the sphere's alpha across the whole frame, which
+    // would lay a dark wash over the stream. Overlays render the scene directly
+    // and get their glow from a CSS drop-shadow instead (see app.css).
+    if (isOverlay) {
+        renderer.render(scene, camera);
+    } else {
+        bloomComposer.render();
+    }
     requestAnimationFrame(animate);
 }
 animate();

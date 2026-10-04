@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\Overlay;
+use App\Models\OverlayToken;
 use App\Models\Question;
 use App\Models\Topic;
 use App\Models\User;
@@ -27,17 +29,20 @@ test('the settings page renders for a signed-in viewer', function () {
 });
 
 test('the top-vote overlay renders the leading question for guests', function () {
+    $token = OverlayToken::issue(Overlay::TopVote);
     $author = User::factory()->create(['name' => 'Tea Sommelier']);
     Question::factory()->for($author)->create(['question' => 'Earl Grey or Assam?']);
 
-    $this->get('/top-vote')
+    $this->get(route('overlay.show', ['overlay' => 'top-vote', 'token' => $token]))
         ->assertOk()
         ->assertSee('Earl Grey or Assam?')
         ->assertSee('Tea Sommelier');
 });
 
 test('the top-vote overlay renders with an empty queue', function () {
-    $this->get('/top-vote')->assertOk();
+    $token = OverlayToken::issue(Overlay::TopVote);
+
+    $this->get(route('overlay.show', ['overlay' => 'top-vote', 'token' => $token]))->assertOk();
 });
 
 test('the visualizer renders', function () {

@@ -52,7 +52,7 @@ class Question extends Model
             ->get();
     }
 
-    public static function getRecentQuestions()
+    public static function getRecentQuestions($limit = 50)
     {
         return self::query()
             ->active()
@@ -60,7 +60,7 @@ class Question extends Model
             ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
             ->orderBy('id', 'desc')
             ->groupBy('questions.id')
-            ->limit(50)
+            ->limit($limit)
             ->with('user')
             ->get();
     }

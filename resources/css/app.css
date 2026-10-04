@@ -7,6 +7,8 @@
 @source '../../vendor/livewire/flux/stubs/**/*.blade.php';
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* OBS overlays: style the 9:16 Shorts canvas with `vertical:` utilities. */
+@custom-variant vertical (&:where([data-layout=vertical], [data-layout=vertical] *));
 
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
@@ -64,3 +66,51 @@ select:focus[data-flux-control] {
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */
+
+/*
+ * OBS overlays (/overlay/*). The page must stay transparent so OBS composites
+ * it over the scene; only the panels themselves are painted.
+ */
+html[data-overlay],
+html[data-overlay] body {
+    background: transparent !important;
+}
+
+/* Stands in for the bloom pass, which cannot keep the background transparent. */
+html[data-overlay='visualizer'] #visualizer-container canvas {
+    filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.55)) drop-shadow(0 0 22px rgb(255 120 220 / 0.45));
+}
+
+/* The visualizer's dat.gui panel is a control surface, not stream content. */
+html[data-overlay] .dg.ac {
+    display: none !important;
+}
+
+.overlay-panel {
+    background: rgb(12 12 16 / 0.82);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(14px);
+    color: #fff;
+}
+
+@keyframes overlay-in {
+    from {
+        opacity: 0;
+        transform: translateY(0.75rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.overlay-enter {
+    animation: overlay-in 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .overlay-enter {
+        animation: none;
+    }
+}

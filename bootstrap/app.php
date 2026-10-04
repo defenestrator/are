@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'not-banned' => \App\Http\Middleware\EnsureNotBanned::class,
+            'overlay.token' => \App\Http\Middleware\EnsureOverlayToken::class,
         ]);
 
         // Twitch signs EventSub webhooks with HMAC; there is no CSRF token to check.

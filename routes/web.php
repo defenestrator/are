@@ -19,11 +19,6 @@ Route::get('vote', function () {
     ->middleware(['auth', 'not-banned'])
     ->name('dashboard');
 
-Route::get('top-vote', function () {
-    return view("top-vote", []);
-})
-    ->name('top-vote');
-
 Route::middleware(['auth', 'not-banned'])->group(function () {
     // volt route for settings.profile
     Route::get('settings', function () {
@@ -42,3 +37,4 @@ Route::get('/visualizer', function () {
 })->name('visualizer');
 
 require __DIR__ . '/auth.php';
+require __DIR__ . '/overlays.php';
