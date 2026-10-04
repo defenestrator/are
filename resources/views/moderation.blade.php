@@ -78,7 +78,7 @@ new class extends Component {
             'questions' => Question::getSortedQuestions(),
             'users' => $term === ''
                 ? collect()
-                : User::where('name', 'like', '%' . addcslashes($term, '%_\\') . '%')->orderBy('name')->limit(20)->get(),
+                : User::whereNameContains($term)->orderBy('name')->limit(20)->get(),
             'bans' => UserBan::inEffect()->with('user', 'moderator')->latest('id')->get(),
             'actions' => ModerationAction::with('moderator')->latest('id')->limit(50)->get(),
         ];

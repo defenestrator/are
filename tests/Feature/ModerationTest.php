@@ -340,3 +340,28 @@ test('the page hides Lift on a banned moderator from other moderators, and calli
     $this->actingAs($broadcaster);
     fragment('moderation', 'moderation')->assertSeeHtml('wire:click="unban('.$rogue->id.')"');
 });
+
+test('moderators can find a user whose name contains an underscore', function () {
+    $mod = User::factory()->create();
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $mod->twitch_id]);
+    User::factory()->create(['name' => 'Bob_Ross']);
+    $this->actingAs($mod)->get('/moderation')->assertOk();   // registers the fragment
+
+    Livewire::test(FragmentAlias::encode('moderation', resource_path('views/moderation.blade.php')))
+        ->set('search', 'Bob_Ross')
+        ->assertSeeHtml('wire:key="mu-');
+});
+
+test('name search treats LIKE wildcards and the escape character literally', function () {
+    foreach (['Bob_Ross', 'BobXRoss', '100% Kale', '100 Kale', 'Bang!Bang', 'a\\b'] as $name) {
+        User::factory()->create(['name' => $name]);
+    }
+
+    $find = fn (string $term) => User::whereNameContains($term)->orderBy('name')->pluck('name')->all();
+
+    expect($find('Bob_Ross'))->toBe(['Bob_Ross'])
+        ->and($find('100%'))->toBe(['100% Kale'])
+        ->and($find('g!B'))->toBe(['Bang!Bang'])
+        ->and($find('a\\b'))->toBe(['a\\b'])
+        ->and($find('ross'))->toEqualCanonicalizing(['Bob_Ross', 'BobXRoss']);
+});

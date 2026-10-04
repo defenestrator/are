@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\TwitchSubscription;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -11,7 +13,7 @@ use Illuminate\Support\Str;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
     /**
@@ -43,6 +45,23 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [];
+    }
+
+    /**
+     * Users whose name contains $term literally: % and _ match themselves.
+     * The escape character is ! rather than a backslash, because a backslash
+     * inside the ESCAPE literal needs quoting differently on MySQL than on
+     * SQLite and PostgreSQL, which also have no default escape character.
+     *
+     * @param  Builder<User>  $query
+     */
+    public function scopeWhereNameContains(Builder $query, string $term): void
+    {
+        $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term);
+
+        $column = $query->getQuery()->getGrammar()->wrap($query->qualifyColumn('name'));
+
+        $query->whereRaw("{$column} like ? escape '!'", ['%'.$escaped.'%']);
     }
 
     public function questions()
