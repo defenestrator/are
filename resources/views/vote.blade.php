@@ -13,18 +13,11 @@ use Livewire\Attributes\Computed;
 new class extends Component {
     public $question = "";
 
-    /**
-     * A topic change is rare and alters the submit form, so it re-renders the
-     * page. The busy `questions` channel is handled in the browser instead (see
-     * resources/js/live-queue.js): votes and removals never cost the server a
-     * request, and new questions trigger one jittered refresh.
-     */
-    public function getListeners(): array
-    {
-        return [
-            'echo:topic,TopicChanged' => '$refresh',
-        ];
-    }
+    // Live updates are handled in the browser (resources/js/live-queue.js): the
+    // busy `questions` channel without a server request per vote, and topic
+    // changes with one jittered refresh. There are no Livewire echo listeners,
+    // which would log "Laravel Echo cannot be found" on every load without
+    // Reverb (#125).
 
     /**
      * @return array{top: \Illuminate\Database\Eloquent\Collection<int, Question>, recent: \Illuminate\Database\Eloquent\Collection<int, Question>, userVotes: array<int, int>}

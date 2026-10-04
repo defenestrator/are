@@ -70,15 +70,26 @@ test('no overlay component handles the questions channel: a vote costs an overla
     Volt::test($component)->dispatch('echo:questions,VoteCast', ['question_id' => 1, 'votes' => 1, 'version' => 1]);
 })->with(['overlays.queue', 'overlays.vote', 'overlays.top-vote'])->throws(EventHandlerDoesNotExist::class);
 
-test('the vote overlay re-renders when the topic changes', function () {
+test('the vote overlay follows the topic in the browser, and its refresh shows the new one', function () {
     OverlayToken::issue(Overlay::Vote);
     Question::factory()->create();
     Topic::set('Old topic');
-    $component = Volt::test('overlays.vote')->assertSee('Old topic');
+    $component = Volt::test('overlays.vote')
+        ->assertSee('Old topic')
+        // live-overlay.js subscribes to `topic` for this overlay only (#125).
+        ->assertSeeHtml('data-live-topic="on"');
 
     Topic::set('New topic');
 
-    $component->dispatch('echo:topic,TopicChanged', ['topic' => 'New topic'])->assertSee('New topic');
+    // TopicChanged makes live-overlay.js call $refresh (polling does the same).
+    $component->call('$refresh')->assertSee('New topic');
+});
+
+test('only the vote overlay subscribes to the topic', function () {
+    Question::factory()->create();
+
+    liveOverlayPage(Overlay::Queue)->assertDontSee('data-live-topic', false);
+    liveOverlayPage(Overlay::TopVote)->assertDontSee('data-live-topic', false);
 });
 
 test('a fallback or heartbeat refresh shows the new total and version', function () {

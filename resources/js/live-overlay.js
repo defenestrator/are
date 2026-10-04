@@ -6,6 +6,7 @@
 //   data-live-mode="recent" newest first (queue)
 //   data-live-limit="5"     how many it shows
 //   data-live="on|off"      "off" once the overlay's token was rotated
+//   data-live-topic="on"    it shows the topic (vote): refresh on TopicChanged
 //
 // - VoteCast: write the total into that question's card when the event's
 //   vote_version is newer than the one shown. Top mode re-sorts and renumbers
@@ -16,6 +17,11 @@
 //   backfill the slice. ids: null (the whole queue) just refreshes.
 // - QuestionSubmitted: refresh, unless top mode is full of questions with
 //   votes, where a new question (0 votes) can't enter.
+// - TopicChanged (public `topic` channel, only with data-live-topic="on"):
+//   refresh. Livewire's own echo listeners are not used: Livewire logs
+//   "Laravel Echo cannot be found" for each one on every load without Reverb,
+//   which OBS writes to its log (#125). Without a socket, the polling
+//   fallback picks up a topic change like any other.
 // Every refresh waits a random 0.5-3 s, and refreshes inside that window
 // share one.
 //
@@ -51,6 +57,7 @@ export function liveOverlay({
 } = {}) {
     return {
         channel: null,
+        topicChannel: null,
         refreshTimer: null,
         pollTimer: null,
         polling: false,
@@ -90,6 +97,11 @@ export function liveOverlay({
                 .listen('QuestionSubmitted', () => this.submitted())
                 .listen('QuestionArchived', (event) => this.archived(event));
 
+            if (this.$root.dataset.liveTopic === 'on') {
+                this.topicChannel = client.channel('topic')
+                    .listen('TopicChanged', () => this.refreshSoon());
+            }
+
             const connector = client.connector;
             if (typeof connector?.onConnectionChange === 'function') {
                 this.stopWatching = connector.onConnectionChange((status) => this.connectionChanged(status));
@@ -101,6 +113,8 @@ export function liveOverlay({
             this.stopped = true;
             EVENTS.forEach((name) => this.channel?.stopListening(name));
             this.channel = null;
+            this.topicChannel?.stopListening('TopicChanged');
+            this.topicChannel = null;
             this.stopWatching?.();
             this.stopWatching = null;
             this.stopPolling();

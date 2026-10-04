@@ -112,7 +112,13 @@ function page(top, recent = [], {status = 'connected'} = {}) {
         setTimer: (fn, ms) => { const id = ++nextId; timers.push({id, fn, ms}); return id; },
         clearTimer: (id) => { timers = timers.filter((t) => t.id !== id); },
     });
-    Object.assign(component, {$root: root, $refs: {top: topList}, $wire: {$refresh: () => refreshes.push(1)}});
+    // $refresh and dispatch() log into one list, so tests can check they go out together.
+    const dispatches = [];
+    const calls = [];
+    Object.assign(component, {$root: root, $refs: {top: topList}, $wire: {
+        $refresh: () => { refreshes.push(1); calls.push('$refresh'); },
+        dispatch: (name) => { dispatches.push(name); calls.push(name); },
+    }});
     component.init();
 
     const order = () => topList.children.map((li) => Number(li.dataset.questionId));
@@ -123,15 +129,69 @@ function page(top, recent = [], {status = 'connected'} = {}) {
     const pending = () => timers;
     const watching = () => watcher !== null;
 
-    return {component, root, refreshes, subscribed, stopped, order, shown, fire, runTimers, pending, setStatus, watching};
+    return {component, root, refreshes, dispatches, calls, subscribed, stopped, order, shown, fire, runTimers, pending, setStatus, watching};
 }
 
-test('subscribes once to the questions channel and stops listening on destroy', () => {
+test('subscribes once to the questions and topic channels and stops listening on destroy', () => {
     const p = page([]);
 
-    assert.deepEqual(p.subscribed, ['questions']);
+    assert.deepEqual(p.subscribed, ['questions', 'topic']);
     p.component.destroy();
-    assert.deepEqual(p.stopped.sort(), ['QuestionArchived', 'QuestionSubmitted', 'VoteCast']);
+    assert.deepEqual(p.stopped.sort(), ['QuestionArchived', 'QuestionSubmitted', 'TopicChanged', 'VoteCast']);
+});
+
+// Topic changes (#125): handled here rather than by a Livewire echo listener.
+
+test('TopicChanged refreshes the page and syncs the topic component together, after the jitter', () => {
+    const p = page([]);
+
+    p.fire('TopicChanged', {topic: 'Kale'});
+    assert.equal(p.refreshes.length, 0, 'not in the same instant for every viewer');
+    assert.equal(p.pending().length, 1);
+
+    p.runTimers();
+    assert.deepEqual(p.calls, ['$refresh', 'topic-sync']);
+});
+
+test('a topic change shares the refresh of a new question, and only one topic-sync goes out', () => {
+    const p = page([]);
+
+    p.fire('QuestionSubmitted', {id: 9});
+    p.fire('TopicChanged', {topic: 'Kale'});
+    p.fire('TopicChanged', {topic: null});
+    p.runTimers();
+
+    assert.deepEqual(p.calls, ['$refresh', 'topic-sync']);
+});
+
+test('a refresh for questions alone does not touch the topic component', () => {
+    const p = page([]);
+
+    p.fire('QuestionSubmitted', {id: 9});
+    p.runTimers();
+
+    assert.deepEqual(p.calls, ['$refresh']);
+});
+
+test('without Echo every fallback poll also syncs the topic component', () => {
+    const p = page([], [], {status: null});
+
+    p.runTimers();
+    p.runTimers();
+
+    assert.deepEqual(p.calls, ['$refresh', 'topic-sync', '$refresh', 'topic-sync']);
+});
+
+test('reconnecting syncs the topic too, since a TopicChanged may have been missed', () => {
+    const p = page([]);
+    p.setStatus('unavailable');
+    p.runTimers();
+    p.calls.length = 0;
+
+    p.setStatus('connected');
+    p.runTimers();
+
+    assert.deepEqual(p.calls, ['$refresh', 'topic-sync']);
 });
 
 test('without Echo (no Reverb key in the build) it subscribes to nothing', () => {

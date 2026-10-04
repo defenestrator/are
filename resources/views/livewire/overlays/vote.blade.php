@@ -7,17 +7,14 @@ use App\Models\Topic;
 
 /*
  * The vote leaderboard: the "Top Suggestions" column of /vote, under the
- * current topic. Kept live by resources/js/live-overlay.js.
+ * current topic. Kept live by resources/js/live-overlay.js, which also
+ * refreshes it on TopicChanged (data-live-topic="on"), so no Livewire echo
+ * listener is needed (#125).
  */
 new class extends PollingOverlay {
     protected function overlay(): Overlay
     {
         return Overlay::Vote;
-    }
-
-    public function getListeners(): array
-    {
-        return ['echo:topic,TopicChanged' => '$refresh'];
     }
 
     public function with(): array
@@ -35,7 +32,7 @@ new class extends PollingOverlay {
 }; ?>
 
 <div class="absolute right-16 top-16 w-[600px] vertical:inset-x-14 vertical:top-[200px] vertical:w-auto">
-    <div x-data="liveOverlay" data-live="{{ $current ? 'on' : 'off' }}" data-live-mode="top" data-live-limit="{{ $limit }}">
+    <div x-data="liveOverlay" data-live="{{ $current ? 'on' : 'off' }}" data-live-mode="top" data-live-limit="{{ $limit }}" data-live-topic="on">
         @if ($questions->isEmpty())
             <x-overlay.empty message="No suggestions to vote on yet." />
         @else

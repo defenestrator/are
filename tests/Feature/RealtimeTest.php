@@ -237,9 +237,9 @@ test('the vote page has no polling and listens on one questions channel in the b
         ->assertSeeHtml('x-ref="top"')
         ->assertSeeHtml('data-vote-count="'.$question->id.'" data-vote-version="0"')
         ->assertSeeHtml('data-question-id="'.$question->id.'"')
-        // Only the rare topic change goes through Livewire.
-        ->assertSee('echo:topic,TopicChanged')
-        ->assertDontSee('echo:questions')
+        // Topic changes are handled in live-queue.js too (#125): no Livewire
+        // echo listener at all, so no "Laravel Echo cannot be found" warning.
+        ->assertDontSee('echo:', false)
         ->assertDontSee("questions.{$question->id}");
 });
 
@@ -327,13 +327,14 @@ test('deleting an account broadcasts that its questions left the queue', functio
     Event::assertDispatched(QuestionArchived::class, fn (QuestionArchived $e) => $e->questionIds === $questions->pluck('id')->all());
 });
 
-test('a TopicChanged broadcast updates the topic shown to viewers', function () {
+test('a topic-sync from the browser updates the topic shown to viewers', function () {
     $this->actingAs(User::factory()->create());
     $topic = Volt::test('topic')->assertSee('Be funny.');
 
     Topic::set('Songs about kale');
 
-    $topic->dispatch('echo:topic,TopicChanged', ['topic' => 'Songs about kale'])->assertSee('Songs about kale');
+    // Sent by live-queue.js on TopicChanged and on every fallback poll (#125).
+    $topic->dispatch('topic-sync')->assertSee('Songs about kale');
 });
 
 test('viewers refreshing together share one pair of queue queries', function () {

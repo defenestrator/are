@@ -82,9 +82,9 @@ function card(id, votes, version, rank) {
  * [id, votes, version]. `status` is the socket state at start, or null for a
  * build without Echo.
  */
-function overlay(rows, {mode = 'top', limit = 3, status = 'connected', live = 'on'} = {}) {
+function overlay(rows, {mode = 'top', limit = 3, status = 'connected', live = 'on', topic = false} = {}) {
     const list = new El('ol').add(...rows.map(([id, votes, version], i) => card(id, votes, version, mode === 'top' ? i + 1 : undefined)));
-    const root = new El('div', {live, liveMode: mode, liveLimit: String(limit)}).add(list);
+    const root = new El('div', {live, liveMode: mode, liveLimit: String(limit), ...(topic ? {liveTopic: 'on'} : {})}).add(list);
 
     let timers = [];
     let nextId = 0;
@@ -352,6 +352,40 @@ test('a burst of events shares one jittered refresh', async () => {
     assert.equal(o.timers().filter((ms) => ms === REFRESH).length, 1);
     await o.tick();
     assert.equal(o.refreshes(), 1);
+});
+
+// TopicChanged (#125): only overlays that show the topic follow it, here
+// rather than through a Livewire echo listener.
+
+test('an overlay that shows the topic refreshes on TopicChanged, after the jitter', () => {
+    const o = overlay([[1, 5]], {topic: true});
+
+    assert.deepEqual(o.subscribed, ['questions', 'topic']);
+
+    o.fire('TopicChanged', {topic: 'Kale'});
+    assert.ok(o.timers().includes(REFRESH));
+    assert.equal(o.refreshes(), 0);
+});
+
+test('overlays that do not show the topic do not subscribe to it', () => {
+    const o = overlay([[1, 5]]);
+
+    assert.deepEqual(o.subscribed, ['questions']);
+});
+
+test('destroy also stops listening for TopicChanged', () => {
+    const o = overlay([[1, 5]], {topic: true});
+
+    o.component.destroy();
+
+    assert.ok(o.stopped.includes('TopicChanged'));
+});
+
+test('without Echo a topic-showing overlay subscribes to nothing and polls', () => {
+    const o = overlay([[1, 5]], {topic: true, status: null});
+
+    assert.deepEqual(o.subscribed, []);
+    assert.deepEqual(o.timers(), [POLL]);
 });
 
 test('destroy unsubscribes and clears its timers', () => {
