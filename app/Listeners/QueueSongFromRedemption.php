@@ -7,6 +7,7 @@ use App\Events\Twitch\RewardRedeemed;
 use App\Exceptions\SongRequestRejected;
 use App\Identities;
 use App\IdentityProvider;
+use App\Jobs\RefundChannelPointRedemption;
 use App\Models\SongRequest;
 use App\Models\TwitchBan;
 use App\Models\User;
@@ -14,22 +15,22 @@ use App\SongRequests;
 
 /**
  * Turns redemptions of the configured song-request reward
- * (music.song_request_reward_id) into song requests, using the redeemer's
- * text as the song. It runs inside the queued redemption job, so it is not
- * queued again. RewardRedeemed fires once per new redemption, and each
+ * (music.song_request_reward_id; one id per served channel, comma-separated)
+ * into song requests, using the redeemer's text as the song. It runs inside
+ * the queued redemption job, so it is not queued again. RewardRedeemed fires once per new redemption, and each
  * redemption makes at most one request.
  *
- * A refused redemption is logged, not refunded: refunding means updating the
- * redemption through Helix, which is a follow-up.
+ * A refused redemption is logged and refunded by a queued
+ * RefundChannelPointRedemption job (#124).
  */
 class QueueSongFromRedemption
 {
     public function handle(RewardRedeemed $event): void
     {
         $redemption = $event->redemption;
-        $rewardId = (string) config('music.song_request_reward_id');
+        $rewardIds = array_filter(array_map('trim', explode(',', (string) config('music.song_request_reward_id'))));
 
-        if ($rewardId === '' || ! hash_equals($rewardId, $redemption->reward_id)) {
+        if (! in_array($redemption->reward_id, $rewardIds, true)) {
             return;
         }
 
@@ -63,6 +64,8 @@ class QueueSongFromRedemption
                 'twitch_user_id' => $redemption->twitch_user_id,
                 'reason' => $e->getMessage(),
             ]);
+
+            RefundChannelPointRedemption::dispatch($redemption->id, $e->getMessage());
         }
     }
 }

@@ -130,7 +130,9 @@ Moderators manage the original music catalogue at `/music/catalogue`. They uploa
 
 Viewers request stream-safe tracks with `!song <title or number>` in chat. They can also redeem the channel-point reward set in `MUSIC_SONG_REQUEST_REWARD_ID`, and the text they enter is the song. A track that is already queued or playing isn't added again. Each person may have `MUSIC_REQUESTS_PER_USER` songs waiting (2 by default) through `!song`; channel-point requests don't count toward that limit. Moderators play, skip and clear requests at `/music/requests`. The `now-playing` overlay shows the request on air, with its title, artist and attribution.
 
-To find the reward's id, redeem it once, then read `reward_id` from the newest row in `channel_point_redemptions`. Twitch's [Get Custom Reward](https://dev.twitch.tv/docs/api/reference/#get-custom-reward) endpoint also lists it. Refused redemptions (an unknown or already-queued song) are logged but not refunded, so the broadcaster refunds them by hand from the Twitch redemption queue.
+Create the reward with `php artisan music:create-song-reward [--broadcaster=ID] [--title="Request a song"] [--cost=500] [--prompt=...]`. It needs the viewer to type a song, and the command prints the reward id for `MUSIC_SONG_REQUEST_REWARD_ID`. Each channel has its own rewards, so list one id per channel, separated by commas. Running the command again reuses the existing reward.
+
+A refused song redemption (an unknown, ambiguous or already-queued song, or a banned viewer) is **refunded automatically**. A queued job cancels it through Helix [Update Redemption Status](https://dev.twitch.tv/docs/api/reference/#update-redemption-status), which returns the points. This needs the `channel:manage:redemptions` scope, so a broadcaster who connected before it was added must reconnect at `/twitch/broadcaster/connect`. Twitch only lets the client id that created a reward update its redemptions. **A reward created in the Twitch dashboard can't be refunded by ARE**: such refunds are logged as warnings and must be done by hand. Use the artisan command instead.
 
 ## Forge deployment and PostgreSQL
 

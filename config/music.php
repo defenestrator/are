@@ -39,8 +39,12 @@ return [
     | for with points, so they do not count against it.
     |
     | song_request_reward_id: the Twitch custom reward whose redemptions
-    | become song requests, using the redeemer's text as the song. Leave it
-    | empty to turn channel-point requests off.
+    | become song requests, using the redeemer's text as the song. Rewards
+    | belong to one channel, so list one id per channel, comma-separated.
+    | Create it with `php artisan music:create-song-reward`, so that refused
+    | requests can be refunded: Twitch only lets the client id that created
+    | a reward update its redemptions. Leave it empty to turn channel-point
+    | requests off.
     |
     */
 

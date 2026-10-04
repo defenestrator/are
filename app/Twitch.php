@@ -42,6 +42,8 @@ class Twitch
      * - user:write:chat         Send Chat Message with the broadcaster's user token
      *   (https://dev.twitch.tv/docs/api/reference/#send-chat-message), for command replies (#89)
      * - channel:read:redemptions  channel.channel_points_custom_reward_redemption.add
+     * - channel:manage:redemptions  Create Custom Rewards and Update Redemption Status, to
+     *   create the song-request reward and refund refused song requests (#124)
      * - channel:read:subscriptions  channel.subscribe, channel.subscription.end
      * - moderator:read:followers  channel.follow v2, with the broadcaster as moderator
      * channel.raid, stream.online and stream.offline need no scope.
@@ -57,6 +59,7 @@ class Twitch
         'channel:bot',
         'user:write:chat',
         'channel:read:redemptions',
+        'channel:manage:redemptions',
         'channel:read:subscriptions',
         'moderator:read:followers',
     ];
@@ -352,6 +355,64 @@ class Twitch
                 'message' => mb_substr($message, 0, 500),
                 'reply_parent_message_id' => $replyParentMessageId,
             ], fn ($value) => $value !== null && $value !== ''));
+    }
+
+    /**
+     * Cancel a channel-point redemption, which returns the points to the
+     * viewer. Twitch only lets the client id that created the reward update
+     * its redemptions, so a reward made in the Twitch dashboard cannot be
+     * refunded here (see music:create-song-reward). Returns Helix's response
+     * without throwing.
+     *
+     * Requires channel:manage:redemptions.
+     *
+     * @see https://dev.twitch.tv/docs/api/reference/#update-redemption-status
+     */
+    public static function cancelRedemption(string $broadcasterId, string $rewardId, string $redemptionId): Response
+    {
+        return self::asBroadcaster($broadcasterId)
+            ->connectTimeout(3)
+            ->timeout(5)
+            ->withQueryParameters([
+                'broadcaster_id' => $broadcasterId,
+                'reward_id' => $rewardId,
+                'id' => $redemptionId,
+            ])
+            ->patch('/channel_points/custom_rewards/redemptions', ['status' => 'CANCELED']);
+    }
+
+    /**
+     * The broadcaster's custom rewards that this app's client id may manage.
+     *
+     * Requires channel:read:redemptions or channel:manage:redemptions.
+     *
+     * @see https://dev.twitch.tv/docs/api/reference/#get-custom-reward
+     */
+    public static function manageableRewards(string $broadcasterId): Response
+    {
+        return self::asBroadcaster($broadcasterId)
+            ->connectTimeout(3)
+            ->timeout(10)
+            ->withQueryParameters(['broadcaster_id' => $broadcasterId, 'only_manageable_rewards' => 'true'])
+            ->get('/channel_points/custom_rewards');
+    }
+
+    /**
+     * Create a custom reward under this app's client id.
+     *
+     * Requires channel:manage:redemptions.
+     *
+     * @param  array<string, mixed>  $reward
+     *
+     * @see https://dev.twitch.tv/docs/api/reference/#create-custom-rewards
+     */
+    public static function createReward(string $broadcasterId, array $reward): Response
+    {
+        return self::asBroadcaster($broadcasterId)
+            ->connectTimeout(3)
+            ->timeout(10)
+            ->withQueryParameters(['broadcaster_id' => $broadcasterId])
+            ->post('/channel_points/custom_rewards', $reward);
     }
 
     public static function setTitle(string $broadcasterId, string $title): void
