@@ -206,6 +206,9 @@ test('the vote page runs the same queries for one card as for a full queue', fun
         return collect(DB::getQueryLog())->pluck('query');
     };
 
+    // The first request loads the viewer's identities onto this shared test
+    // user and later requests reuse them, so warm up before comparing counts.
+    $queriesFor(1);
     $one = $queriesFor(1);
     $full = $queriesFor(50);
 

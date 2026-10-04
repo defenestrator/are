@@ -31,7 +31,7 @@ test('the broadcaster and moderators may manage the catalogue; viewers may not',
     $track = Track::factory()->create();
     $viewer = User::factory()->create();
 
-    foreach ([catalogueAdmin(), User::factory()->create(['twitch_id' => '1000'])] as $admin) {
+    foreach ([catalogueAdmin(), User::factory()->twitch('1000')->create()] as $admin) {
         expect($admin->can('viewAny', Track::class))->toBeTrue()
             ->and($admin->can('create', Track::class))->toBeTrue()
             ->and($admin->can('update', $track))->toBeTrue()

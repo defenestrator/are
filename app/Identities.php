@@ -126,9 +126,10 @@ class Identities
         }
 
         DB::transaction(function () use ($user, $identity) {
-            $count = $user->identities()->lockForUpdate()->count();
+            // Lock the rows, then count them: Postgres refuses FOR UPDATE on an aggregate.
+            $ids = $user->identities()->lockForUpdate()->pluck('id');
 
-            if ($count <= 1) {
+            if ($ids->count() <= 1) {
                 throw IdentityLinkException::lastIdentity();
             }
 

@@ -12,7 +12,7 @@ use Livewire\Volt\FragmentAlias;
 function leadsBroadcaster(): User
 {
     // TestCase sets the primary broadcaster id to 1000.
-    return User::factory()->create(['twitch_id' => '1000']);
+    return User::factory()->twitch('1000')->create();
 }
 
 function leadsModerator(): User

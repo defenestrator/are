@@ -121,7 +121,7 @@ test('a ban that lands mid-request revokes moderate on the same user instance', 
     $mod = moderator();
     expect($mod->can('moderate'))->toBeTrue();
 
-    Moderation::ban(User::factory()->create(['twitch_id' => '1000']), $mod, null);
+    Moderation::ban(User::factory()->twitch('1000')->create(), $mod, null);
 
     // The moderator lookup is memoised; the ban check is not.
     expect(moderatorQueries(fn () => expect($mod->can('moderate'))->toBeFalse()))->toBe(0);
@@ -320,7 +320,7 @@ test('one moderator cannot ban another', function () {
 });
 
 test('the broadcaster can ban a moderator', function () {
-    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $broadcaster = User::factory()->twitch('1000')->create();
     $mod = moderator();
 
     expect($broadcaster->can('ban', $mod))->toBeTrue();
@@ -346,7 +346,7 @@ test('the page offers no Ban button for a moderator, and calling ban anyway is a
 });
 
 test('a moderator cannot lift the broadcaster\'s ban on another moderator', function () {
-    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $broadcaster = User::factory()->twitch('1000')->create();
     $rogue = moderator();
     $other = moderator();
     Moderation::ban($broadcaster, $rogue, null, 'rogue');
@@ -358,7 +358,7 @@ test('a moderator cannot lift the broadcaster\'s ban on another moderator', func
 });
 
 test('the page hides Lift on a banned moderator from other moderators, and calling unban anyway is a 403', function () {
-    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $broadcaster = User::factory()->twitch('1000')->create();
     $rogue = User::factory()->create(['name' => 'Rogue Mod']);
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $rogue->twitch_id]);
     $viewer = User::factory()->create(['name' => 'Rogue Fan']);

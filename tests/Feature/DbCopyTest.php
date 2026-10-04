@@ -1,5 +1,7 @@
 <?php
 
+use App\Identities;
+use App\IdentityProvider;
 use App\Models\BroadcasterToken;
 use App\Models\ModerationAction;
 use App\Models\Question;
@@ -70,7 +72,7 @@ function seedSource(): array
 {
     return onSource(function () {
         $users = User::factory()->count(6)->create();
-        $facebookOnly = User::create(['name' => 'Facebook Viewer', 'facebook_id' => 'fb-42', 'email' => 'viewer@example.com']);
+        $facebookOnly = User::factory()->facebook('fb-42')->create(['name' => 'Facebook Viewer', 'email' => 'viewer@example.com']);
         // Leave a gap in users.id, so a sequence that only counted rows would hand out a taken id.
         $users[2]->delete();
 
@@ -114,14 +116,16 @@ test('it copies every table, keeps the values and verifies the counts', function
         ->assertSuccessful();
 
     foreach (['users' => 6, 'questions' => 5, 'question_votes' => 3, 'topics' => 1, 'twitch_bans' => 1,
-        'broadcaster_tokens' => 1, 'user_bans' => 1, 'moderation_actions' => 1, 'user_twitch_subscriptions' => 1] as $table => $count) {
+        'broadcaster_tokens' => 1, 'user_bans' => 1, 'moderation_actions' => 1, 'user_twitch_subscriptions' => 1,
+        // Five Twitch identities (the deleted user's went with it) and one Facebook identity.
+        'identities' => 6] as $table => $count) {
         expect(DB::table($table)->count())->toBe($count, $table);
     }
 
     $source = DB::connection(SEED);
     expect(DB::table('users')->orderBy('id')->pluck('name', 'id')->all())
         ->toBe($source->table('users')->orderBy('id')->pluck('name', 'id')->all())
-        ->and(User::where('facebook_id', 'fb-42')->first())
+        ->and(Identities::findUser(IdentityProvider::Facebook, 'fb-42'))
         ->twitch_id->toBeNull()
         ->email->toBe('viewer@example.com')
         ->and(Question::orderBy('id')->first()->archived_at->toDateTimeString())->toBe('2026-10-01 18:30:00')

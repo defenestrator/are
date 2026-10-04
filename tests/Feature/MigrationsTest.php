@@ -10,5 +10,6 @@ test('every migration rolls back to an empty schema and applies again', function
 
     $this->artisan('migrate')->assertSuccessful();
     expect(Schema::hasTable('questions'))->toBeTrue()
-        ->and(Schema::hasColumns('users', ['email', 'facebook_id']))->toBeTrue();
+        ->and(Schema::hasColumn('users', 'email'))->toBeTrue()
+        ->and(Schema::hasColumns('identities', ['provider', 'provider_user_id', 'user_id']))->toBeTrue();
 });

@@ -16,7 +16,7 @@ beforeEach(fn () => $this->travelTo(CarbonImmutable::parse('2026-09-30 12:00:00'
 
 function attributionBroadcaster(string $twitchId = '1000'): User
 {
-    return User::factory()->create(['twitch_id' => $twitchId]);
+    return User::factory()->twitch($twitchId)->create();
 }
 
 function streamLink(string $channel, string $stream): ShortLink
