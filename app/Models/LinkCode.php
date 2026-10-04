@@ -232,11 +232,15 @@ class LinkCode extends Model
     }
 
     /**
-     * The owner says the pending account is not theirs: discard it.
+     * The owner says the pending account is not theirs: discard it. Returns
+     * false, and changes nothing, if the link was already confirmed.
      */
-    public function reject(): void
+    public function reject(): bool
     {
-        $this->delete();
+        // Conditional, so a reject that arrives after a confirm (a second
+        // tab, or a race) cannot delete the record of a link that was made
+        // and report that nothing was linked (#104).
+        return self::whereKey($this->id)->whereNull('used_at')->delete() === 1;
     }
 
     /**

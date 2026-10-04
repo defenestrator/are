@@ -14,7 +14,6 @@ use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Models\UserBan;
 use App\Moderation;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
@@ -181,9 +180,11 @@ test('an owner cannot confirm or reject someone else\'s pending link', function 
     linkChat('!link '.LinkCode::issueFor($owner), 'UC-viewer');
     $pending = LinkCode::pending()->sole();
 
+    // Looked up through the signed-in user's own codes, so another user's id
+    // is simply not found: refused politely, and nothing changes.
     $this->actingAs(User::factory()->twitch('43')->create());
-    expect(fn () => Volt::test('settings.linked-accounts')->call('confirmLink', $pending->id))
-        ->toThrow(ModelNotFoundException::class);
+    Volt::test('settings.linked-accounts')->call('confirmLink', $pending->id)->assertHasErrors('identity');
+    Volt::test('settings.linked-accounts')->call('rejectLink', $pending->id)->assertSee('already handled');
 
     expect(Identity::where('provider', 'youtube')->exists())->toBeFalse()
         ->and($pending->fresh())->not->toBeNull();

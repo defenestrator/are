@@ -36,7 +36,14 @@ new class extends Component {
      */
     public function confirmLink(int $linkCodeId): void
     {
-        $pending = Auth::user()->linkCodes()->findOrFail($linkCodeId);
+        $pending = Auth::user()->linkCodes()->find($linkCodeId);
+        if ($pending === null) {
+            // Rejected, expired and discarded, or replaced in another tab.
+            $this->addError('identity', 'That link request was already handled.');
+            unset($this->pendingLinks);
+
+            return;
+        }
 
         try {
             $identity = $pending->confirm();
@@ -57,10 +64,24 @@ new class extends Component {
      */
     public function rejectLink(int $linkCodeId): void
     {
-        Auth::user()->linkCodes()->findOrFail($linkCodeId)->reject();
+        $code = Auth::user()->linkCodes()->find($linkCodeId);
+        unset($this->pendingLinks, $this->identities, $this->chatLinkable);
+
+        if ($code === null) {
+            session()->now('identity_status', 'That link request was already handled.');
+
+            return;
+        }
+
+        if (! $code->reject()) {
+            // Confirmed in another tab first: the link stands. Say so, rather
+            // than claim nothing was linked (#104).
+            session()->now('identity_status', 'That link was already confirmed, so the account stays linked. If it is not yours, unlink it below.');
+
+            return;
+        }
 
         $this->linkCode = null;
-        unset($this->pendingLinks);
         session()->now('identity_status', 'Link request discarded. Nothing was linked.');
     }
 
