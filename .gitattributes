@@ -8,3 +8,6 @@
 
 CHANGELOG.md export-ignore
 README.md export-ignore
+
+# Vendored framework docs: keep them out of language stats and PR diffs.
+docs/vendor/** linguist-vendored -diff
