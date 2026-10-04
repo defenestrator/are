@@ -260,6 +260,18 @@ return [
                 'maxProcesses' => 3,
             ],
         ],
+
+        // Any other APP_ENV (staging, a preview site) still gets workers
+        // instead of silently starting none. Keep this entry last: Horizon
+        // uses the first environment whose name matches.
+        '*' => [
+            'supervisor-broadcasts' => [
+                'maxProcesses' => 1,
+            ],
+            'supervisor-default' => [
+                'maxProcesses' => 3,
+            ],
+        ],
     ],
 
     /*

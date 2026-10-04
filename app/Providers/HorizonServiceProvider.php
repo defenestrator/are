@@ -11,12 +11,13 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     /**
      * Register the Horizon gate.
      *
-     * Outside `local`, only admins may open the dashboard: broadcasters and
-     * moderators of a served channel who are not banned. This defers to the
-     * `moderate` gate so there is one definition of who counts as an admin.
+     * Outside `local`, only the broadcasters of served channels may open the
+     * dashboard. It shows every job's payload and can retry or delete failed
+     * jobs, so it is an operator tool. Moderators are community volunteers
+     * and deliberately do not get it, even though they pass `moderate`.
      */
     protected function gate(): void
     {
-        Gate::define('viewHorizon', fn (User $user) => $user->can('moderate'));
+        Gate::define('viewHorizon', fn (User $user) => $user->isBroadcaster() && ! $user->isBanned());
     }
 }
