@@ -4,11 +4,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class QuestionVote extends Model
+class TwitchModerator extends Model
 {
     protected $fillable = [
-        'question_id',
-        'user_id',
-        'count',
+        'broadcaster_id',
+        'twitch_user_id',
     ];
 }

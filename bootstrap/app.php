@@ -12,7 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        $middleware->alias([
+            'not-banned' => \App\Http\Middleware\EnsureNotBanned::class,
+        ]);
+
+        // Twitch signs EventSub webhooks with HMAC; there is no CSRF token to check.
+        $middleware->validateCsrfTokens(except: ['twitch/eventsub']);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         Integration::handles($exceptions);

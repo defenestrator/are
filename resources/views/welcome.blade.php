@@ -47,6 +47,9 @@
                 @if (request()->query("failed_facebook_login") == "1")
                     <div class="bg-red-200 dark:bg-red-900 dark:text-red-200 p-2 rounded-sm mt-2">Failed Facebook Authentication</div>
                 @endif
+                @if (request()->query("banned") == "1")
+                    <div class="bg-red-200 dark:bg-red-900 dark:text-red-200 p-2 rounded-sm mt-2">You are banned or timed out in this channel.</div>
+                @endif
                 
             </div>
         @endguest

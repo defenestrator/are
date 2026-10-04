@@ -33,7 +33,12 @@ return [
         "client_secret" => env("TWITCH_CLIENT_SECRET"),
         "redirect" => env("TWITCH_REDIRECT_URL"),
         "broadcaster_id" => env("TWITCH_CHANNEL_ID"),
+        // Additional channels this app serves (e.g. a second Twitch channel), comma separated.
+        "broadcaster_ids" => array_filter(explode(",", env("TWITCH_BROADCASTER_IDS", ''))),
         "friend_ids" => array_filter(explode(",", env("TWITCH_FRIEND_IDS", ''))),
+        "broadcaster_redirect" => env("TWITCH_BROADCASTER_REDIRECT_URL"),
+        "eventsub_secret" => env("TWITCH_HELIX_EVENTSUB_SECRET"),
+        "eventsub_callback" => env("TWITCH_EVENTSUB_CALLBACK_URL"),
     ],
 
     "facebook" => [

@@ -3,7 +3,7 @@
 use Livewire\Volt\Component;
 use App\Models\Question;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\DB;
+use App\Models\Topic;
 
 new class extends Component {
     public $question = "";
@@ -22,6 +22,12 @@ new class extends Component {
         ]);
 
         // TODO: Make this prettier
+        if (auth()->user()->isBanned()) {
+            throw ValidationException::withMessages([
+                'question' => 'You are banned or timed out in this channel.',
+            ]);
+        }
+
         if (!auth()->user()->canSubmitQuestion()) {
             throw ValidationException::withMessages([
                 'question' => 'You have reached the suggestion limit',
@@ -36,7 +42,7 @@ new class extends Component {
     }
 
     public function clearUserQuestion() {
-        auth()->user()->questions()->delete();
+        auth()->user()->questions()->active()->delete();
     }
 
 } ?>
@@ -55,7 +61,9 @@ new class extends Component {
                 </flux:input.group>
             </form>
             @else
-            @if (DB::table("topics")->count() > 0)
+            @if (Auth::user()->isBanned())
+                <flux:heading>You are banned or timed out in this channel</flux:heading>
+            @elseif (Topic::current())
                 <div class="items-center flex gap-2">
                     <flux:heading>Question Limit Reached</flux:heading>
                     <flux:button wire:click="clearUserQuestion" variant="danger" size="xs" inset="left" class="ml-1 flex items-center gap-2 cursor-pointer" :loading="false">

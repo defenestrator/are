@@ -19,7 +19,7 @@ class GenerateTwitchEventSubKey extends Command
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Generates TWITCH_HELIX_EVENTSUB_SECRET in .env for signing EventSub webhooks';
 
     /**
      * Execute the console command.
