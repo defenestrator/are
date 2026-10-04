@@ -29,6 +29,51 @@ new class extends Component {
         $this->linkCodeExpiresAt = now()->addMinutes(LinkCode::MINUTES)->toIso8601String();
     }
 
+    /**
+     * Confirm a link someone proposed by typing this user's code in chat.
+     * Only this attaches the chat account.
+     */
+    public function confirmLink(int $linkCodeId): void
+    {
+        $pending = Auth::user()->linkCodes()->findOrFail($linkCodeId);
+
+        try {
+            $identity = $pending->confirm();
+        } catch (IdentityLinkException $e) {
+            $this->addError('identity', $e->getMessage());
+            unset($this->pendingLinks);
+
+            return;
+        }
+
+        $this->linkCode = null;
+        unset($this->identities, $this->pendingLinks, $this->chatLinkable);
+        session()->now('identity_status', "{$identity->provider->label()} account {$identity->name} linked.");
+    }
+
+    /**
+     * Not my account: discard the pending link.
+     */
+    public function rejectLink(int $linkCodeId): void
+    {
+        Auth::user()->linkCodes()->findOrFail($linkCodeId)->reject();
+
+        $this->linkCode = null;
+        unset($this->pendingLinks);
+        session()->now('identity_status', 'Link request discarded. Nothing was linked.');
+    }
+
+    /**
+     * Links typed in chat with this user's code, waiting for them to confirm.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, LinkCode>
+     */
+    #[Computed]
+    public function pendingLinks()
+    {
+        return Auth::user()->linkCodes()->pending()->orderBy('id')->get();
+    }
+
     public function unlink(int $identityId): void
     {
         $user = Auth::user();
@@ -122,17 +167,35 @@ new class extends Component {
         @endforeach
     </ul>
 
+    @foreach ($this->pendingLinks as $pending)
+        <div class="space-y-2 rounded-lg border border-amber-300 p-3 dark:border-amber-700" wire:key="pending-link-{{ $pending->id }}">
+            <flux:text>
+                {{ __('Link :provider channel', ['provider' => $pending->pending_provider->label()]) }}
+                <span class="font-semibold" data-pending-name>{{ $pending->pending_name }}</span>
+                <span class="text-zinc-500">({{ $pending->pending_provider_user_id }})</span>?
+            </flux:text>
+            <flux:text class="text-sm text-zinc-500">
+                {{ __('Someone typed your code in chat from this account. Confirm only if it is yours.') }}
+            </flux:text>
+            <div class="flex gap-2">
+                <flux:button size="sm" variant="primary" wire:click="confirmLink({{ $pending->id }})">{{ __('Yes, link it') }}</flux:button>
+                <flux:button size="sm" variant="ghost" wire:click="rejectLink({{ $pending->id }})">{{ __('Not mine') }}</flux:button>
+            </div>
+        </div>
+    @endforeach
+
     @foreach ($this->chatLinkable as $provider)
         <div class="space-y-2" wire:key="chat-link-{{ $provider->value }}">
-            @if ($linkCode)
+            @if ($linkCode && $this->pendingLinks->isEmpty())
+                <div wire:poll.5s></div>
                 <flux:text>
                     {{ __('Type this in :provider chat within :minutes minutes:', ['provider' => $provider->label(), 'minutes' => \App\Models\LinkCode::MINUTES]) }}
                 </flux:text>
                 <p class="font-mono text-2xl tracking-widest select-all" data-link-code>!link {{ $linkCode }}</p>
                 <flux:text class="text-sm text-zinc-500">
-                    {{ __('It works once, from the account you want to link. Refresh this page after typing it.') }}
+                    {{ __('It works once, from the account you want to link. You will be asked to confirm the account here.') }}
                 </flux:text>
-            @else
+            @elseif ($this->pendingLinks->isEmpty())
                 <flux:button size="sm" wire:click="issueLinkCode">
                     {{ __('Link :provider', ['provider' => $provider->label()]) }}
                 </flux:button>

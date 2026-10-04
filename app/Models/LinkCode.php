@@ -2,17 +2,36 @@
 
 namespace App\Models;
 
+use App\Exceptions\IdentityLinkException;
+use App\Identities;
+use App\IdentityProvider;
 use Database\Factories\LinkCodeFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
- * A one-time code that links the chat account it is typed from (`!link CODE`)
- * to the user who asked for it. Short, unambiguous, single use, valid for
- * fifteen minutes, and stored only as an HMAC.
+ * A one-time code for linking a chat account. Short, unambiguous, single use,
+ * valid for fifteen minutes, and stored only as an HMAC.
+ *
+ * Linking takes two steps, so a code typed by someone else (someone talked
+ * into typing it) cannot attach their account without the owner noticing:
+ *
+ * 1. `!link CODE` in chat claims the code for that chat account: a pending link.
+ * 2. The code's owner sees the account's name in Settings and confirms it,
+ *    which links it through Identities, or rejects it. A pending link they
+ *    do not confirm before the code expires is discarded.
+ *
+ * @property IdentityProvider|null $pending_provider
+ * @property string|null $pending_provider_user_id
+ * @property string|null $pending_name
+ * @property Carbon $expires_at
+ * @property Carbon|null $claimed_at
+ * @property Carbon|null $used_at
  */
 class LinkCode extends Model
 {
@@ -30,6 +49,10 @@ class LinkCode extends Model
         'user_id',
         'code_hash',
         'expires_at',
+        'pending_provider',
+        'pending_provider_user_id',
+        'pending_name',
+        'claimed_at',
         'used_at',
     ];
 
@@ -37,13 +60,16 @@ class LinkCode extends Model
     {
         return [
             'expires_at' => 'datetime',
+            'claimed_at' => 'datetime',
             'used_at' => 'datetime',
+            'pending_provider' => IdentityProvider::class,
         ];
     }
 
     /**
      * Issue a fresh code for $user and return it in its display form
-     * (ABCD-EFGH). Any code the user had not used yet stops working.
+     * (ABCD-EFGH). Any code the user had not used yet, and any link it was
+     * waiting on, stops working.
      */
     public static function issueFor(User $user): string
     {
@@ -76,7 +102,7 @@ class LinkCode extends Model
     }
 
     /**
-     * The unused, unexpired code matching what was typed, if any.
+     * The unused, unexpired, unclaimed code matching what was typed, if any.
      */
     public static function findUsable(string $typed): ?self
     {
@@ -85,15 +111,79 @@ class LinkCode extends Model
             return null;
         }
 
-        return self::usable()->where('code_hash', self::hash($normalized))->first();
+        return self::usable()->whereNull('claimed_at')->where('code_hash', self::hash($normalized))->first();
     }
 
     /**
-     * Mark the code used. Returns false if another message used it first.
+     * Step 1: record that $providerUserId typed this code. Returns false if
+     * another message claimed it first. Links nothing.
+     */
+    public function claim(IdentityProvider $provider, string $providerUserId, string $name): bool
+    {
+        return self::whereKey($this->id)->usable()->whereNull('claimed_at')->update([
+            'pending_provider' => $provider->value,
+            'pending_provider_user_id' => $providerUserId,
+            'pending_name' => mb_substr($name, 0, 255),
+            'claimed_at' => now(),
+        ]) === 1;
+    }
+
+    /**
+     * Mark the code used. Returns false if it was already used.
      */
     public function consume(): bool
     {
         return self::whereKey($this->id)->whereNull('used_at')->update(['used_at' => now()]) === 1;
+    }
+
+    /**
+     * Step 2: the owner confirms the pending link, which links the chat
+     * account through Identities with the usual rules. The code is used up
+     * either way; a refused link leaves nothing pending.
+     *
+     * @throws IdentityLinkException
+     */
+    public function confirm(): Identity
+    {
+        if ($this->claimed_at === null || $this->used_at !== null || $this->pending_provider === null) {
+            throw new IdentityLinkException('There is no link waiting for you to confirm.');
+        }
+
+        if ($this->expires_at->isPast()) {
+            $this->delete();
+
+            throw new IdentityLinkException('That link request expired. Get a new code and type it again.');
+        }
+
+        $provider = $this->pending_provider;
+        $providerUserId = (string) $this->pending_provider_user_id;
+
+        try {
+            return DB::transaction(function () use ($provider, $providerUserId) {
+                if (! $this->consume()) {
+                    throw new IdentityLinkException('That link request was already handled.');
+                }
+
+                // The chat account may have been banned since it typed the code.
+                if (UserBan::inEffect()->forAccount($provider, $providerUserId)->exists()) {
+                    throw IdentityLinkException::accountBanned($provider);
+                }
+
+                return Identities::linkAccount($this->user, $provider, $providerUserId, ['name' => $this->pending_name]);
+            });
+        } catch (IdentityLinkException $e) {
+            $this->delete();
+
+            throw $e;
+        }
+    }
+
+    /**
+     * The owner says the pending account is not theirs: discard it.
+     */
+    public function reject(): void
+    {
+        $this->delete();
     }
 
     /**
@@ -102,6 +192,16 @@ class LinkCode extends Model
     public function scopeUsable(Builder $query): void
     {
         $query->whereNull('used_at')->where('expires_at', '>', now());
+    }
+
+    /**
+     * Links typed in chat and waiting for the owner, not yet expired.
+     *
+     * @param  Builder<LinkCode>  $query
+     */
+    public function scopePending(Builder $query): void
+    {
+        $query->usable()->whereNotNull('claimed_at');
     }
 
     /**
