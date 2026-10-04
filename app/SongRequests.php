@@ -78,6 +78,14 @@ class SongRequests
         }
 
         return DB::transaction(function () use ($track, $requester, $requesterName, $source, $redemption) {
+            // Lock the requester's row first (#130, as #94 does for questions):
+            // their second request, even for another track, waits here until
+            // the first has committed and then counts it against the cap.
+            // Always user before track, so the lock order cannot deadlock.
+            if ($requester !== null) {
+                User::whereKey($requester->id)->lockForUpdate()->first();
+            }
+
             // Locking the track serialises requests for it, so two at once
             // cannot both pass the duplicate check on Postgres.
             $locked = Track::requestable()->lockForUpdate()->find($track->id);

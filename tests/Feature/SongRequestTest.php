@@ -19,6 +19,7 @@ use App\Models\TwitchModerator;
 use App\Models\User;
 use App\SongRequests;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
@@ -348,4 +349,51 @@ test('deleting a track removes its requests', function () {
     $track->delete();
 
     expect(SongRequest::count())->toBe(0);
+});
+
+// #130: two !song requests at once, for different tracks, could both pass the
+// per-person cap, because only the track row was locked. A true race cannot
+// run in one process, so pin the order instead: inside the transaction, the
+// requester's row is locked before the track and before the count.
+test('a request locks the requester row before the track and before counting their queue', function () {
+    $fan = songFan();
+    $track = Track::factory()->streamSafe()->create(['title' => 'Midnight Tea']);
+    SongRequest::factory()->for($fan, 'requester')->create();
+
+    DB::enableQueryLog();
+    SongRequests::request($track, $fan, 'songfan', SongRequestSource::Chat);
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+
+    $userLock = $queries->search(fn (string $sql) => preg_match('/from ["`]?users["`]? where ["`]?users["`]?\.["`]?id["`]? = \?/i', $sql) === 1);
+    $trackLock = $queries->search(fn (string $sql) => preg_match('/from ["`]?tracks["`]?/i', $sql) === 1);
+    $count = $queries->search(fn (string $sql) => str_contains(strtolower($sql), 'count(*)') && str_contains($sql, 'song_requests'));
+    $insert = $queries->search(fn (string $sql) => str_starts_with(strtolower($sql), 'insert into') && str_contains($sql, 'song_requests'));
+
+    expect($userLock)->toBeInt()
+        ->and($trackLock)->toBeInt()
+        ->and($count)->toBeInt()
+        ->and($insert)->toBeInt()
+        ->and($userLock)->toBeLessThan($trackLock)
+        ->and($trackLock)->toBeLessThan($count)
+        ->and($count)->toBeLessThan($insert);
+
+    // SQLite has no row locks (it locks the whole database for writes), so its
+    // grammar drops FOR UPDATE. Production runs PostgreSQL, where it must be there.
+    if (DB::connection()->getDriverName() === 'pgsql') {
+        expect(strtolower($queries[$userLock]))->toContain('for update')
+            ->and(strtolower($queries[$trackLock]))->toContain('for update');
+    }
+});
+
+test('a request with no linked requester takes no user lock', function () {
+    $track = Track::factory()->streamSafe()->create();
+
+    DB::enableQueryLog();
+    SongRequests::request($track, null, 'Lurker', SongRequestSource::ChannelPoints);
+    $queries = collect(DB::getQueryLog())->pluck('query');
+    DB::disableQueryLog();
+
+    expect($queries->filter(fn (string $sql) => preg_match('/from ["`]?users["`]?/i', $sql) === 1))->toBeEmpty()
+        ->and(SongRequest::count())->toBe(1);
 });
