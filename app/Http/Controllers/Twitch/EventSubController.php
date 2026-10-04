@@ -8,6 +8,7 @@ use App\Jobs\EventSub\HandleChannelFollow;
 use App\Jobs\EventSub\HandleChannelPointRedemption;
 use App\Jobs\EventSub\HandleChannelRaid;
 use App\Jobs\EventSub\HandleChannelSubscribe;
+use App\Jobs\EventSub\HandleChannelSubscriptionEnd;
 use App\Jobs\EventSub\HandleChatMessage;
 use App\Jobs\EventSub\HandleStreamOffline;
 use App\Jobs\EventSub\HandleStreamOnline;
@@ -38,6 +39,7 @@ class EventSubController extends Controller
         'channel.chat.message' => HandleChatMessage::class,
         'channel.channel_points_custom_reward_redemption.add' => HandleChannelPointRedemption::class,
         'channel.subscribe' => HandleChannelSubscribe::class,
+        'channel.subscription.end' => HandleChannelSubscriptionEnd::class,
         'channel.raid' => HandleChannelRaid::class,
         'channel.follow' => HandleChannelFollow::class,
         'stream.online' => HandleStreamOnline::class,

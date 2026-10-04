@@ -1,13 +1,17 @@
 <?php
 
 use App\Events\Twitch\ChannelSubscribed;
+use App\Events\Twitch\ChannelSubscriptionEnded;
 use App\Jobs\EventSub\HandleChannelSubscribe;
+use App\Jobs\EventSub\HandleChannelSubscriptionEnd;
 use App\Listeners\RecordTwitchSubscription;
+use App\Listeners\RevokeTwitchSubscription;
 use App\Models\Question;
 use App\Models\Topic;
 use App\Models\User;
 use App\Models\UserTwitchSubscription;
 use App\TwitchSubscription;
+use Carbon\CarbonImmutable;
 use Illuminate\Events\CallQueuedListener;
 use Illuminate\Support\Facades\Queue;
 
@@ -86,4 +90,72 @@ test('the tier is recorded by a queued listener', function () {
     event(subscribeEvent());
 
     Queue::assertPushed(CallQueuedListener::class, fn ($job) => $job->class === RecordTwitchSubscription::class);
+});
+
+// --- channel.subscription.end (#80) ---------------------------------------------
+
+function subscriptionEndEvent(string $userId = '1234', string $broadcasterId = '1000', ?CarbonImmutable $endedAt = null): ChannelSubscriptionEnded
+{
+    return new ChannelSubscriptionEnded($broadcasterId, $userId, 'cool_user', 'Cool_User', '1000', false, $endedAt ?? CarbonImmutable::now());
+}
+
+test('channel.subscription.end removes the linked user\'s tier for that channel only', function () {
+    $viewer = User::factory()->twitch('1234')->create();
+    UserTwitchSubscription::create(['user_id' => $viewer->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier2]);
+    UserTwitchSubscription::create(['user_id' => $viewer->id, 'broadcaster_id' => '2000', 'twitch_subscription' => TwitchSubscription::Tier1]);
+    $this->travel(1)->seconds();
+
+    (new HandleChannelSubscriptionEnd('msg-end', now()->toIso8601ZuluString(), [
+        'user_id' => '1234', 'user_login' => 'cool_user', 'user_name' => 'Cool_User',
+        'broadcaster_user_id' => '1000', 'broadcaster_user_login' => 'edos', 'broadcaster_user_name' => 'EDOS',
+        'tier' => '2000', 'is_gift' => false,
+    ]))->handle();
+
+    expect(UserTwitchSubscription::where('user_id', $viewer->id)->pluck('broadcaster_id')->all())->toBe(['2000'])
+        ->and($viewer->getHighestSubscription())->toBe(TwitchSubscription::Tier1);
+});
+
+test('a lapsed sub goes back to the non-subscriber rules at once', function () {
+    $viewer = User::factory()->twitch('1234')->create();
+    event(subscribeEvent());
+    Topic::set('Kale');
+    Question::factory()->count(6)->for($viewer)->create();
+    expect($viewer->canSubmitQuestion())->toBeFalse();
+
+    $this->travel(1)->seconds();
+    event(subscriptionEndEvent());
+
+    expect($viewer->canSubmitQuestion())->toBeTrue();
+});
+
+test('channel.subscription.end for an unlinked Twitch account changes nothing', function () {
+    $viewer = User::factory()->twitch('5555')->create();
+    UserTwitchSubscription::create(['user_id' => $viewer->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier1]);
+    $users = User::count();
+
+    event(subscriptionEndEvent(userId: '9999'));
+
+    expect(UserTwitchSubscription::count())->toBe(1)
+        ->and(User::count())->toBe($users);
+});
+
+test('an end that arrives after a newer resubscribe or sign-in leaves the tier alone', function () {
+    $viewer = User::factory()->twitch('1234')->create();
+    $endSentAt = CarbonImmutable::now();
+
+    // The resubscribe's job ran first, a little after Twitch sent the end.
+    $this->travel(5)->seconds();
+    event(subscribeEvent(tier: '3000'));
+
+    event(subscriptionEndEvent(endedAt: $endSentAt));
+
+    expect($viewer->getHighestSubscription())->toBe(TwitchSubscription::Tier3);
+});
+
+test('the tier is revoked by a queued listener', function () {
+    Queue::fake();
+
+    event(subscriptionEndEvent());
+
+    Queue::assertPushed(CallQueuedListener::class, fn ($job) => $job->class === RevokeTwitchSubscription::class);
 });

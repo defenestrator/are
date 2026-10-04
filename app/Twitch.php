@@ -39,7 +39,7 @@ class Twitch
      * - channel:manage:broadcast  set the stream title
      * - user:read:chat, user:bot, channel:bot  channel.chat.message, read as the broadcaster
      * - channel:read:redemptions  channel.channel_points_custom_reward_redemption.add
-     * - channel:read:subscriptions  channel.subscribe
+     * - channel:read:subscriptions  channel.subscribe, channel.subscription.end
      * - moderator:read:followers  channel.follow v2, with the broadcaster as moderator
      * channel.raid, stream.online and stream.offline need no scope.
      *
@@ -70,6 +70,7 @@ class Twitch
         'channel.chat.message',
         'channel.channel_points_custom_reward_redemption.add',
         'channel.subscribe',
+        'channel.subscription.end',
         'channel.raid',
         'channel.follow',
         'stream.online',

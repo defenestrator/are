@@ -10,12 +10,15 @@ use App\Jobs\EventSub\HandleChannelFollow;
 use App\Jobs\EventSub\HandleChannelPointRedemption;
 use App\Jobs\EventSub\HandleChannelRaid;
 use App\Jobs\EventSub\HandleChannelSubscribe;
+use App\Jobs\EventSub\HandleChannelSubscriptionEnd;
 use App\Jobs\EventSub\HandleChatMessage;
 use App\Jobs\EventSub\HandleStreamOffline;
 use App\Jobs\EventSub\HandleStreamOnline;
 use App\Models\ChannelPointRedemption;
 use App\Models\StreamSession;
 use App\Twitch;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -87,6 +90,13 @@ function eventSubFixture(string $type, string $broadcasterId = '1000'): array
             'tier' => '1000',
             'is_gift' => false,
         ],
+        'channel.subscription.end' => $broadcaster + [
+            'user_id' => '1234',
+            'user_login' => 'cool_user',
+            'user_name' => 'Cool_User',
+            'tier' => '1000',
+            'is_gift' => false,
+        ],
         'channel.raid' => [
             'from_broadcaster_user_id' => '1234',
             'from_broadcaster_user_login' => 'cool_user',
@@ -115,6 +125,7 @@ dataset('queued types', [
     'chat message' => ['channel.chat.message', HandleChatMessage::class],
     'redemption' => ['channel.channel_points_custom_reward_redemption.add', HandleChannelPointRedemption::class],
     'subscribe' => ['channel.subscribe', HandleChannelSubscribe::class],
+    'subscription end' => ['channel.subscription.end', HandleChannelSubscriptionEnd::class],
     'raid' => ['channel.raid', HandleChannelRaid::class],
     'follow' => ['channel.follow', HandleChannelFollow::class],
     'stream online' => ['stream.online', HandleStreamOnline::class],
@@ -296,8 +307,8 @@ test('a job that fails is not marked handled, so its retry runs', function () {
 test('jobs are unique per message id while queued', function () {
     $job = new HandleChatMessage('abc', now()->toIso8601ZuluString(), []);
 
-    expect($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldBeUnique::class)
-        ->and($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class)
+    expect($job)->toBeInstanceOf(ShouldBeUnique::class)
+        ->and($job)->toBeInstanceOf(ShouldQueue::class)
         ->and($job->uniqueId())->toBe('abc');
 });
 
@@ -410,6 +421,7 @@ test('twitch:eventsub-subscribe creates every type with the version and conditio
         ->and($sent['channel.chat.message'])->toBe(['version' => '1', 'condition' => ['broadcaster_user_id' => '1000', 'user_id' => '1000']])
         ->and($sent['channel.channel_points_custom_reward_redemption.add'])->toBe(['version' => '1', 'condition' => ['broadcaster_user_id' => '1000']])
         ->and($sent['channel.subscribe'])->toBe(['version' => '1', 'condition' => ['broadcaster_user_id' => '1000']])
+        ->and($sent['channel.subscription.end'])->toBe(['version' => '1', 'condition' => ['broadcaster_user_id' => '1000']])
         ->and($sent['channel.raid'])->toBe(['version' => '1', 'condition' => ['to_broadcaster_user_id' => '1000']])
         ->and($sent['channel.follow'])->toBe(['version' => '2', 'condition' => ['broadcaster_user_id' => '1000', 'moderator_user_id' => '1000']])
         ->and($sent['stream.online'])->toBe(['version' => '1', 'condition' => ['broadcaster_user_id' => '1000']])
