@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property int $poll_interval_ms
  * @property Carbon|null $next_poll_at
  * @property int $consecutive_errors
+ * @property int $replies_sent
  * @property Carbon $started_at
  * @property Carbon|null $ended_at
  * @property string|null $end_reason
@@ -51,6 +52,7 @@ class YouTubeLiveChat extends Model
         'poll_interval_ms',
         'next_poll_at',
         'consecutive_errors',
+        'replies_sent',
         'started_at',
         'ended_at',
         'end_reason',
@@ -62,6 +64,7 @@ class YouTubeLiveChat extends Model
             'poll_interval_ms' => 'integer',
             'next_poll_at' => 'datetime',
             'consecutive_errors' => 'integer',
+            'replies_sent' => 'integer',
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
         ];

@@ -221,7 +221,7 @@ test('YouTube replies are off by default: nothing is queued', function () {
     Queue::assertNothingPushed();
 });
 
-test('with the YouTube flag on, replies are queued, but nothing is sent until YouTube chat lands (#24)', function () {
+test('with the YouTube flag on, a reply for a channel ARE is not reading posts nothing (#110)', function () {
     config(['chat.replies.youtube' => true]);
     Http::fake();
     Log::spy();
@@ -229,7 +229,7 @@ test('with the YouTube flag on, replies are queued, but nothing is sent until Yo
     chatRegistryRun('!edos', 'yt-1', IdentityProvider::YouTube, 'UCedos');
 
     Http::assertNothingSent();
-    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message) => str_contains($message, 'not implemented'));
+    Log::shouldHaveReceived('info')->withArgs(fn (string $message) => str_contains($message, 'not reading a live chat'));
 });
 
 test('CHAT_REPLIES_ENABLED=false turns replies off everywhere', function () {

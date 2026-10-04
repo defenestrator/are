@@ -4,7 +4,11 @@ namespace App\Jobs;
 
 use App\IdentityProvider;
 use App\Models\BroadcasterToken;
+use App\Models\YouTubeChannelToken;
+use App\Models\YouTubeLiveChat;
 use App\Twitch;
+use App\YouTube\Quota;
+use App\YouTube\YouTubeApi;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -32,8 +36,11 @@ use RuntimeException;
  *    the token.
  *
  * Twitch uses Helix Send Chat Message as the broadcaster, replying to the
- * source message. YouTube is behind chat.replies.youtube, which is off by
- * default because each message costs 50 quota units.
+ * source message. YouTube uses liveChatMessages.insert with the channel
+ * owner's OAuth token (#110). It is behind chat.replies.youtube, off by
+ * default, because each message costs 50 quota units; a hard per-stream
+ * budget (chat.replies.youtube_per_stream) and the quota alert threshold
+ * bound what replies can spend.
  */
 class PostChatReply implements ShouldQueue
 {
@@ -140,6 +147,7 @@ class PostChatReply implements ShouldQueue
 
         match ($this->provider) {
             IdentityProvider::Twitch => $this->postToTwitch($context),
+            IdentityProvider::YouTube => $this->postToYouTube($context),
             default => $this->unsupported($context),
         };
     }
@@ -193,11 +201,83 @@ class PostChatReply implements ShouldQueue
     /**
      * @param  array<string, string>  $context
      */
+    private function postToYouTube(array $context): void
+    {
+        // The channel's live chat that ARE is reading now (#24). A stream that
+        // has ended takes no replies.
+        $chat = YouTubeLiveChat::polling()->where('channel_id', $this->channelId)->latest('started_at')->first();
+        if ($chat === null) {
+            Log::info('Dropped a YouTube chat reply: ARE is not reading a live chat on this channel.', $context);
+
+            return;
+        }
+
+        $token = YouTubeChannelToken::where('channel_id', $this->channelId)->first();
+        if ($token === null || ! $token->canPost()) {
+            Log::warning('Cannot post YouTube chat replies: the channel owner has not granted youtube.force-ssl. Connect at /youtube/broadcaster/connect.', $context);
+
+            return;
+        }
+
+        // Each insert costs 50 units. Never let replies take the day's units
+        // past the alert threshold: polling needs what is left.
+        [, $cost] = Quota::COSTS['liveChatMessages.insert'];
+        if (Quota::used(Quota::UNITS) + $cost > Quota::alertThreshold(Quota::UNITS)) {
+            Log::warning('Dropped a YouTube chat reply: posting it would take the day\'s quota past the alert threshold.', $context);
+
+            return;
+        }
+
+        // The hard per-stream budget, taken atomically so parallel workers cannot overshoot it.
+        $took = YouTubeLiveChat::whereKey($chat->id)
+            ->where('replies_sent', '<', (int) config('chat.replies.youtube_per_stream'))
+            ->increment('replies_sent');
+        if ($took === 0) {
+            Log::info('Dropped a YouTube chat reply: this stream has used its reply budget.', $context);
+
+            return;
+        }
+
+        try {
+            $response = YouTubeApi::insertChatMessage($this->channelId, $chat->live_chat_id, $this->reply);
+        } catch (ConnectionException) {
+            $this->returnStreamBudget($chat);
+            $this->retryLater($context, 'connection failed');
+        } catch (RuntimeException $e) {
+            // Not connected, or the refresh was refused (revoked, or a lapsed
+            // 7-day Testing-mode token). Retrying will not help.
+            $this->returnStreamBudget($chat);
+            Log::warning('Cannot post YouTube chat replies for this channel: '.$e->getMessage(), $context);
+
+            return;
+        }
+
+        if ($response->status() === 429 || $response->serverError()) {
+            $this->returnStreamBudget($chat);
+            $this->retryLater($context, 'HTTP '.$response->status());
+        }
+
+        if ($response->failed()) {
+            // Never log the request: it carried the channel owner's token.
+            Log::warning('YouTube refused a chat reply.', $context + [
+                'status' => $response->status(),
+                'reason' => (string) YouTubeApi::errorReason($response),
+            ]);
+        }
+    }
+
+    /** Give back a budget slot for a reply that was never posted. */
+    private function returnStreamBudget(YouTubeLiveChat $chat): void
+    {
+        YouTubeLiveChat::whereKey($chat->id)->where('replies_sent', '>', 0)->decrement('replies_sent');
+    }
+
+    /**
+     * @param  array<string, string>  $context
+     */
     private function unsupported(array $context): void
     {
-        // YouTube needs a live chat id and a YouTube OAuth token, which arrive
-        // with YouTube chat ingestion (#24). Until then nothing is sent.
-        Log::warning('Chat replies are enabled for this platform, but posting to it is not implemented yet.', $context);
+        Log::warning('Chat replies are enabled for this platform, but posting to it is not implemented.', $context);
     }
 
     /**

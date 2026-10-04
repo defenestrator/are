@@ -55,6 +55,14 @@ return [
         'channel_ids' => array_values(array_filter(array_map('trim', explode(',', (string) env('YOUTUBE_CHANNEL_IDS', ''))))),
         // Never poll faster than this, whatever pollingIntervalMillis says.
         'poll_floor_ms' => (int) env('YOUTUBE_POLL_FLOOR_MS', 3000),
+        // A Google OAuth client (Web application) for channel owners to grant
+        // youtube.force-ssl, so ARE can post chat replies (#110). Register the
+        // redirect URI on the client.
+        'oauth' => [
+            'client_id' => env('YOUTUBE_OAUTH_CLIENT_ID'),
+            'client_secret' => env('YOUTUBE_OAUTH_CLIENT_SECRET'),
+            'redirect' => env('YOUTUBE_OAUTH_REDIRECT_URL'),
+        ],
         'quota' => [
             // Per Google Cloud project, per Pacific Time day.
             'daily_units' => (int) env('YOUTUBE_QUOTA_DAILY_UNITS', 10000),

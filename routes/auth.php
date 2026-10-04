@@ -3,7 +3,9 @@
 use App\Http\Controllers\Auth\SocialiteController;
 use App\Http\Controllers\Twitch\BroadcasterConnectionController;
 use App\Http\Controllers\Twitch\EventSubController;
+use App\Http\Controllers\YouTube\ChannelConnectionController as YouTubeChannelConnectionController;
 use App\IdentityProvider;
+use App\Livewire\Actions\Logout;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -30,7 +32,7 @@ Route::get('settings/linked-accounts/{provider}/link', [SocialiteController::cla
     ->middleware(['auth', 'not-banned'])
     ->name('identities.link');
 
-Route::post('logout', App\Livewire\Actions\Logout::class)
+Route::post('logout', Logout::class)
     ->name('logout');
 
 // A broadcaster grants this app moderation and channel scopes, so it can sync
@@ -41,6 +43,13 @@ Route::middleware('auth')->group(function () {
         ->name('twitch.broadcaster.connect');
     Route::get('twitch/broadcaster/callback', [BroadcasterConnectionController::class, 'callback'])
         ->name('twitch.broadcaster.callback');
+
+    // A YouTube channel owner grants youtube.force-ssl so ARE can post chat
+    // replies (#110). Register the callback URL on the Google OAuth client.
+    Route::get('youtube/broadcaster/connect', [YouTubeChannelConnectionController::class, 'redirect'])
+        ->name('youtube.broadcaster.connect');
+    Route::get('youtube/broadcaster/callback', [YouTubeChannelConnectionController::class, 'callback'])
+        ->name('youtube.broadcaster.callback');
 });
 
 Route::post('twitch/eventsub', EventSubController::class)->name('twitch.eventsub');
