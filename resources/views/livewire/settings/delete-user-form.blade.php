@@ -10,6 +10,11 @@ new class extends Component {
      */
     public function deleteUser(Logout $logout): void
     {
+        // A banned user's bans would survive deletion anyway (they are keyed
+        // to the platform accounts too), but nobody banned should be able to
+        // act here, whether or not the not-banned middleware ran.
+        abort_if(Auth::user()->isBanned(), 403, 'You cannot delete your account while you are banned or timed out.');
+
         tap(Auth::user(), $logout(...))->delete();
         $this->redirect('/', navigate: true);
     }

@@ -2,9 +2,11 @@
 
 namespace App;
 
+use App\Exceptions\BannedAccountException;
 use App\Exceptions\IdentityLinkException;
 use App\Models\Identity;
 use App\Models\User;
+use App\Models\UserBan;
 use App\Models\UserTwitchSubscription;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -29,12 +31,20 @@ class Identities
     /**
      * Sign in with a platform account: return its owner, or create a new user
      * that owns it. Refreshes the identity's profile and tokens either way.
+     *
+     * @throws BannedAccountException when a local ban covers an account that no user holds
      */
     public static function signIn(IdentityProvider $provider, ProviderAccount $account): User
     {
         $identity = Identity::for($provider, (string) $account->getId())->first();
 
         if ($identity === null) {
+            // A banned user who deleted their account has no identity left,
+            // but the ban kept a copy of it. Refuse before creating anyone.
+            if (UserBan::inEffect()->forAccount($provider, (string) $account->getId())->exists()) {
+                throw new BannedAccountException;
+            }
+
             try {
                 $identity = DB::transaction(function () use ($provider, $account) {
                     $user = User::create([
@@ -75,6 +85,12 @@ class Identities
      */
     public static function link(User $user, IdentityProvider $provider, ProviderAccount $account): Identity
     {
+        // An account linked while banned would not be in the ban's copy, and
+        // would walk free if the user then deleted their account.
+        if ($user->isBanned()) {
+            throw IdentityLinkException::bannedLink();
+        }
+
         $providerUserId = (string) $account->getId();
         $existing = Identity::for($provider, $providerUserId)->first();
 

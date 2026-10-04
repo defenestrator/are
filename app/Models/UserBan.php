@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\IdentityProvider;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 class UserBan extends Model
 {
@@ -36,6 +39,50 @@ class UserBan extends Model
     }
 
     /**
+     * Bans that cover $user: placed on them, or on any platform account they
+     * hold now. The second half is what keeps a ban on a re-created account.
+     *
+     * @param  Builder<UserBan>  $query
+     */
+    public function scopeAppliesTo(Builder $query, User $user): void
+    {
+        $query->where(fn (Builder $q) => $q
+            ->where('user_bans.user_id', $user->id)
+            ->orWhereHas('identities', fn (Builder $banned) => $banned->whereExists(fn (QueryBuilder $held) => $held
+                ->selectRaw('1')
+                ->from('identities')
+                ->where('identities.user_id', $user->id)
+                ->whereColumn('identities.provider', 'user_ban_identities.provider')
+                ->whereColumn('identities.provider_user_id', 'user_ban_identities.provider_user_id'))));
+    }
+
+    /**
+     * Bans that cover one platform account, whoever holds it (or nobody, if
+     * the banned user deleted their account).
+     *
+     * @param  Builder<UserBan>  $query
+     */
+    public function scopeForAccount(Builder $query, IdentityProvider $provider, string $providerUserId): void
+    {
+        $query->whereHas('identities', fn (Builder $banned) => $banned
+            ->where('provider', $provider)
+            ->where('provider_user_id', $providerUserId));
+    }
+
+    /**
+     * The platform accounts this ban covers, copied when it was placed.
+     *
+     * @return HasMany<UserBanIdentity, $this>
+     */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(UserBanIdentity::class);
+    }
+
+    /**
+     * Null once the banned user deletes their account; the ban still holds
+     * through its identities.
+     *
      * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo

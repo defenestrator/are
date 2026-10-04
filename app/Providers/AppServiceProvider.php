@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\EnsureNotBanned;
 use App\Models\Lead;
 use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -9,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -26,6 +28,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::define('moderate', fn (User $user) => $user->isAdminUser() && ! $user->isBanned());
+
+        // Livewire actions arrive at /livewire/update, which runs only its
+        // persistent middleware. Re-apply the ban check to every action on a
+        // page whose route had `not-banned`, so a page opened before a ban
+        // cannot keep acting after it.
+        Livewire::addPersistentMiddleware([EnsureNotBanned::class]);
 
         // Lead attribution (#12) is derived from leads, so it is gated by the
         // one broadcaster-only rule for leads, LeadPolicy::viewAny, rather than

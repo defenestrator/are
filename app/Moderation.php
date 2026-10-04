@@ -37,6 +37,11 @@ class Moderation
                 'ends_at' => $minutes === null ? null : now()->addMinutes($minutes),
             ]);
 
+            // Copy the accounts, so deleting the user cannot delete the ban.
+            $ban->identities()->createMany($target->identities()->get(['provider', 'provider_user_id'])
+                ->map(fn ($identity) => ['provider' => $identity->provider, 'provider_user_id' => $identity->provider_user_id])
+                ->all());
+
             ModerationAction::record($moderator, 'user.banned', $target, [
                 'minutes' => $minutes,
                 'reason' => $reason,
@@ -47,17 +52,36 @@ class Moderation
     }
 
     /**
-     * Lift every local ban in effect for the user. Twitch bans are lifted on Twitch.
+     * Lift every local ban in effect for the user, including bans placed on an
+     * earlier account that held one of their identities. Twitch bans are
+     * lifted on Twitch.
      */
     public static function unban(User $moderator, User $target): int
     {
         Gate::forUser($moderator)->authorize('unban', $target);
 
         return DB::transaction(function () use ($moderator, $target) {
-            $lifted = $target->localBans()->inEffect()->update(['lifted_at' => now()]);
+            $lifted = UserBan::inEffect()->appliesTo($target)->update(['lifted_at' => now()]);
             ModerationAction::record($moderator, 'user.unbanned', $target, ['lifted' => $lifted]);
 
             return $lifted;
+        });
+    }
+
+    /**
+     * Lift one ban, including a ban whose user deleted their account (and so
+     * has no user to unban).
+     */
+    public static function liftBan(User $moderator, UserBan $ban): void
+    {
+        Gate::forUser($moderator)->authorize('lift', $ban);
+
+        DB::transaction(function () use ($moderator, $ban) {
+            $ban->update(['lifted_at' => now()]);
+            ModerationAction::record($moderator, 'user.unbanned', $ban->user ?? $ban, [
+                'lifted' => 1,
+                'ban_id' => $ban->id,
+            ]);
         });
     }
 

@@ -362,10 +362,17 @@ test('the page hides Lift on a banned moderator from other moderators, and calli
     $rogue = User::factory()->create(['name' => 'Rogue Mod']);
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $rogue->twitch_id]);
     $viewer = User::factory()->create(['name' => 'Rogue Fan']);
-    Moderation::ban($broadcaster, $rogue, null);
-    Moderation::ban($broadcaster, $viewer, null);
+    $rogueBan = Moderation::ban($broadcaster, $rogue, null);
+    $viewerBan = Moderation::ban($broadcaster, $viewer, null);
 
     $this->actingAs(moderator())->get('/moderation')->assertOk();
+
+    // The list of bans in effect lifts one ban at a time, by ban id.
+    fragment('moderation', 'moderation')
+        ->assertDontSeeHtml('wire:click="liftBan('.$rogueBan->id.')"')
+        ->assertSeeHtml('wire:click="liftBan('.$viewerBan->id.')"')
+        ->call('liftBan', $rogueBan->id)
+        ->assertForbidden();
 
     fragment('moderation', 'moderation')
         ->set('search', 'Rogue')
@@ -378,7 +385,7 @@ test('the page hides Lift on a banned moderator from other moderators, and calli
     expect($rogue->isBanned())->toBeTrue();
 
     $this->actingAs($broadcaster);
-    fragment('moderation', 'moderation')->assertSeeHtml('wire:click="unban('.$rogue->id.')"');
+    fragment('moderation', 'moderation')->assertSeeHtml('wire:click="liftBan('.$rogueBan->id.')"');
 });
 
 test('moderators can find a user whose name contains an underscore', function () {

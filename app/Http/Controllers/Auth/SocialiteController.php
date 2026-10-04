@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Exceptions\BannedAccountException;
 use App\Exceptions\IdentityLinkException;
 use App\Http\Controllers\Controller;
 use App\Identities;
@@ -57,6 +58,8 @@ class SocialiteController extends Controller
         try {
             $account = $this->driver($provider)->user();
             $user = Identities::signIn($provider, $account);
+        } catch (BannedAccountException) {
+            return redirect('/?banned=1');
         } catch (Throwable $e) {
             report($e);
 

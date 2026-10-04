@@ -70,6 +70,14 @@ new class extends Component {
         Moderation::unban(auth()->user(), $target);
     }
 
+    public function liftBan(int $banId): void
+    {
+        $ban = UserBan::inEffect()->findOrFail($banId);
+        $this->authorize('lift', $ban);
+
+        Moderation::liftBan(auth()->user(), $ban);
+    }
+
     public function with(): array
     {
         $term = trim($this->search);
@@ -79,7 +87,7 @@ new class extends Component {
             'users' => $term === ''
                 ? collect()
                 : User::whereNameContains($term)->orderBy('name')->limit(20)->get(),
-            'bans' => UserBan::inEffect()->with('user', 'moderator')->latest('id')->get(),
+            'bans' => UserBan::inEffect()->with('user', 'moderator', 'identities')->latest('id')->get(),
             'actions' => ModerationAction::with('moderator')->latest('id')->limit(50)->get(),
         ];
     }
@@ -154,12 +162,17 @@ new class extends Component {
             <ul class="divide-y divide-zinc-200 dark:divide-zinc-700 text-sm">
                 @forelse ($bans as $ban)
                     <li class="py-2 flex items-center gap-3" wire:key="mb-{{ $ban->id }}">
-                        <span class="w-40">{{ $ban->user->name }}</span>
+                        <span class="w-40">
+                            {{ $ban->user?->name ?? 'Deleted account' }}
+                            <span class="block text-xs text-zinc-500">
+                                {{ $ban->identities->map(fn ($identity) => $identity->provider->label().' '.$identity->provider_user_id)->join(', ') }}
+                            </span>
+                        </span>
                         <span class="w-48 text-zinc-500">{{ $ban->ends_at ? 'until '.$ban->ends_at->toDateTimeString() : 'permanent' }}</span>
                         <span class="w-32 text-zinc-500">by {{ $ban->moderator?->name ?? 'deleted user' }}</span>
                         <span class="flex-1 text-zinc-500">{{ $ban->reason }}</span>
-                        @can('unban', $ban->user)
-                            <flux:button size="sm" wire:click="unban({{ $ban->user_id }})">Lift</flux:button>
+                        @can('lift', $ban)
+                            <flux:button size="sm" wire:click="liftBan({{ $ban->id }})">Lift</flux:button>
                         @endcan
                     </li>
                 @empty

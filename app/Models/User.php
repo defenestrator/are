@@ -208,12 +208,13 @@ class User extends Authenticatable
     }
 
     /**
-     * Banned or timed out by a moderator in ARE. Keyed on the user, so it
-     * applies however they signed in.
+     * Banned or timed out by a moderator in ARE. Matches the user and every
+     * platform account they hold, so it applies however they signed in and
+     * survives the account being deleted and re-created.
      */
     public function isLocallyBanned(): bool
     {
-        return $this->localBans()->inEffect()->exists();
+        return UserBan::inEffect()->appliesTo($this)->exists();
     }
 
     /**
