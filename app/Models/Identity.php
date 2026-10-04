@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * One account on one platform (a Twitch login, a Facebook login, a YouTube
@@ -14,6 +15,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * @property IdentityProvider $provider
  * @property string $provider_user_id
+ * @property string|null $access_token
+ * @property string|null $refresh_token
+ * @property Carbon|null $token_expires_at
  */
 class Identity extends Model
 {
@@ -45,6 +49,15 @@ class Identity extends Model
             'refresh_token' => 'encrypted',
             'token_expires_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the stored access token has lapsed, or is within a minute of
+     * it. A token with no known expiry is assumed to be still valid.
+     */
+    public function tokenExpired(): bool
+    {
+        return $this->token_expires_at !== null && $this->token_expires_at->copy()->subMinute()->isPast();
     }
 
     /**

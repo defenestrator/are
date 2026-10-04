@@ -50,6 +50,14 @@ class RefreshTwitchSubscriptions implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // Viewer tokens last about four hours, less than this job's backoff.
+        // A rejected refresh is logged and clears the tokens: give up quietly,
+        // and the next sign-in refreshes the tiers. A transient failure throws,
+        // which retries the job.
+        if ($identity->tokenExpired() && ! Twitch::refreshUserToken($identity)) {
+            return;
+        }
+
         $unknown = Twitch::syncUserSubscriptions($identity->user, $identity->access_token, $identity->provider_user_id);
 
         if ($unknown !== []) {

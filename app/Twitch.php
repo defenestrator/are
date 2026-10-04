@@ -3,6 +3,7 @@
 namespace App;
 
 use App\Models\BroadcasterToken;
+use App\Models\Identity;
 use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
@@ -14,7 +15,6 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -80,28 +80,64 @@ class Twitch
         'stream.offline',
     ];
 
-    public static function checkUserSubscription(string $accessToken, string $channelId, string $userId): TwitchSubscription
+    /**
+     * Swap a viewer's stored refresh token for a new access token. The
+     * encrypted casts on Identity store both new tokens encrypted. Twitch
+     * rotates the refresh token, so the new one replaces the old.
+     *
+     * Returns false when Twitch rejects the refresh, or no refresh token was
+     * stored. The dead tokens are then cleared, so nothing retries them, and
+     * the viewer's next sign-in stores fresh ones. A connection failure or a
+     * 5xx throws instead, so the caller can try again later.
+     *
+     * @see https://dev.twitch.tv/docs/authentication/refresh-tokens/
+     */
+    public static function refreshUserToken(Identity $identity): bool
     {
-        $response = Http::withHeaders([
-            'Client-ID' => Config::get('services.twitch.client_id'),
-            'Authorization' => 'Bearer '.$accessToken,
-        ])->get(self::HELIX.'/subscriptions/user', [
-            'broadcaster_id' => $channelId,
-            'user_id' => $userId,
-        ]);
-
-        if ($response->successful()) {
-            $data = $response->json();
-            if (empty($data['data'])) {
-                return TwitchSubscription::None;
-            }
-
-            $subscription = $data['data'][0];
-
-            return TwitchSubscription::tryFrom($subscription['tier']);
+        if ($identity->refresh_token === null) {
+            return self::giveUpOnUserToken($identity, 'no refresh token stored');
         }
 
-        return TwitchSubscription::None;
+        $response = Http::asForm()
+            ->connectTimeout(self::SUBSCRIPTION_CONNECT_TIMEOUT)
+            ->timeout(self::SUBSCRIPTION_TIMEOUT)
+            ->retry(2, 200, fn (Throwable $e) => ! $e instanceof RequestException || $e->response->serverError(), throw: false)
+            ->post(self::TOKEN_URL, [
+                'client_id' => config('services.twitch.client_id'),
+                'client_secret' => config('services.twitch.client_secret'),
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $identity->refresh_token,
+            ]);
+
+        if ($response->serverError()) {
+            throw new RuntimeException('Twitch token refresh failed with HTTP '.$response->status().'; will retry.');
+        }
+
+        if ($response->failed() || ! is_string($response->json('access_token'))) {
+            return self::giveUpOnUserToken($identity, 'HTTP '.$response->status());
+        }
+
+        $identity->update([
+            'access_token' => $response->json('access_token'),
+            'refresh_token' => $response->json('refresh_token') ?? $identity->refresh_token,
+            'token_expires_at' => is_numeric($response->json('expires_in')) ? now()->addSeconds((int) $response->json('expires_in')) : null,
+        ]);
+
+        return true;
+    }
+
+    private static function giveUpOnUserToken(Identity $identity, string $reason): bool
+    {
+        $identity->update(['access_token' => null, 'refresh_token' => null, 'token_expires_at' => null]);
+
+        // Never log the tokens or Twitch's response body.
+        Log::warning('Twitch rejected the viewer token refresh; their tokens are cleared until they sign in again.', [
+            'user_id' => $identity->user_id,
+            'twitch_user_id' => $identity->provider_user_id,
+            'reason' => $reason,
+        ]);
+
+        return false;
     }
 
     /**

@@ -7,7 +7,9 @@ use App\Models\UserTwitchSubscription;
 use App\Twitch;
 use App\TwitchSubscription;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -190,6 +192,114 @@ test('the retry job does nothing without a Twitch identity or a stored token', f
     (new RefreshTwitchSubscriptions(999999))->handle();
 
     Http::assertNothingSent();
+});
+
+// Refreshing an expired viewer token before the retry (#83)
+
+function expiredTwitchViewer(): User
+{
+    $user = User::factory()->twitch('42')->create();
+    $user->identityFor(IdentityProvider::Twitch)->update([
+        'access_token' => 'expired-token',
+        'refresh_token' => 'old-refresh-token',
+        'token_expires_at' => now()->subHour(),
+    ]);
+
+    return $user;
+}
+
+test('the retry job refreshes an expired token, stores it encrypted, and syncs with it', function () {
+    $user = expiredTwitchViewer();
+    Http::fake([
+        'id.twitch.tv/oauth2/token' => Http::response([
+            'access_token' => 'fresh-token',
+            'refresh_token' => 'new-refresh-token',
+            'expires_in' => 14400,
+            'scope' => ['user:read:subscriptions'],
+            'token_type' => 'bearer',
+        ]),
+        'api.twitch.tv/*' => Http::response(['data' => [['tier' => '2000']]]),
+    ]);
+
+    (new RefreshTwitchSubscriptions($user->id))->handle();
+
+    $identity = $user->identityFor(IdentityProvider::Twitch)->fresh();
+    $raw = DB::table('identities')->where('id', $identity->id)->first();
+
+    expect($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::Tier2)
+        ->and($identity->access_token)->toBe('fresh-token')
+        ->and($identity->refresh_token)->toBe('new-refresh-token')
+        ->and($identity->token_expires_at->isFuture())->toBeTrue()
+        ->and($raw->access_token)->not->toContain('fresh-token')
+        ->and($raw->refresh_token)->not->toContain('new-refresh-token');
+
+    Http::assertSent(fn (Request $request) => $request->url() === Twitch::TOKEN_URL
+        && $request['grant_type'] === 'refresh_token'
+        && $request['refresh_token'] === 'old-refresh-token'
+        && $request['client_id'] === config('services.twitch.client_id'));
+    Http::assertSent(fn (Request $request) => str_contains($request->url(), 'subscriptions/user')
+        && $request->hasHeader('Authorization', 'Bearer fresh-token'));
+    Http::assertNotSent(fn (Request $request) => $request->hasHeader('Authorization', 'Bearer expired-token'));
+});
+
+test('a rejected refresh gives up cleanly: no retry, tokens cleared, nothing secret logged', function () {
+    Log::spy();
+    $user = expiredTwitchViewer();
+    Http::fake([
+        'id.twitch.tv/oauth2/token' => Http::response(['status' => 400, 'message' => 'Invalid refresh token'], 400),
+        'api.twitch.tv/*' => Http::response(['data' => [['tier' => '2000']]]),
+    ]);
+
+    (new RefreshTwitchSubscriptions($user->id))->handle();   // returns, does not throw
+
+    $identity = $user->identityFor(IdentityProvider::Twitch)->fresh();
+    expect($identity->access_token)->toBeNull()
+        ->and($identity->refresh_token)->toBeNull()
+        ->and($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::None);
+
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'api.twitch.tv'));
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context) => str_contains($message, 'rejected')
+        && $context['user_id'] === $user->id
+        && $context['reason'] === 'HTTP 400'
+        && ! str_contains(json_encode($context), 'refresh-token')
+        && ! str_contains(json_encode($context), 'expired-token'));
+
+    // With the tokens cleared, a later attempt makes no request at all.
+    Http::fake();
+    (new RefreshTwitchSubscriptions($user->id))->handle();
+    Http::assertNothingSent();
+});
+
+test('a refresh that fails transiently throws so the job retries, keeping the tokens', function (Closure $response, string $exception) {
+    $user = expiredTwitchViewer();
+    Http::fake(['id.twitch.tv/oauth2/token' => $response()]);
+
+    expect(fn () => (new RefreshTwitchSubscriptions($user->id))->handle())->toThrow($exception);
+
+    expect($user->identityFor(IdentityProvider::Twitch)->fresh()->refresh_token)->toBe('old-refresh-token');
+    Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'api.twitch.tv'));
+})->with([
+    'a 5xx' => [fn () => Http::response('', 503), RuntimeException::class],
+    'no connection' => [fn () => Http::failedConnection(), ConnectionException::class],
+]);
+
+test('a token that has not expired is used as is, without a refresh', function () {
+    $user = User::factory()->twitch('42')->create();
+    $user->identityFor(IdentityProvider::Twitch)->update([
+        'access_token' => 'live-token',
+        'refresh_token' => 'refresh',
+        'token_expires_at' => now()->addHours(3),
+    ]);
+    Http::fake(['api.twitch.tv/*' => Http::response(['data' => [['tier' => '1000']]])]);
+
+    (new RefreshTwitchSubscriptions($user->id))->handle();
+
+    Http::assertNotSent(fn (Request $request) => $request->url() === Twitch::TOKEN_URL);
+    expect($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::Tier1);
+});
+
+test('the unguarded single-channel checkUserSubscription is gone', function () {
+    expect(method_exists(Twitch::class, 'checkUserSubscription'))->toBeFalse();
 });
 
 test('the retry job is unique per user and backs off', function () {
