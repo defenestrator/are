@@ -5,11 +5,11 @@ namespace App\Http\Controllers\YouTube;
 use App\Http\Controllers\Controller;
 use App\Models\YouTubeChannelToken;
 use App\YouTube\YouTubeApi;
+use App\YouTube\YouTubeOAuthProvider;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\AbstractProvider;
-use Laravel\Socialite\Two\GoogleProvider;
 use Laravel\Socialite\Two\User as OAuthUser;
 
 /**
@@ -20,14 +20,20 @@ use Laravel\Socialite\Two\User as OAuthUser;
  * returns a refresh token.
  *
  * The channel is whatever channel the granting Google account owns
- * (channels.list?mine=true). It must be one of YOUTUBE_CHANNEL_IDS when that
- * is set, so a token for some other channel is never stored.
+ * (channels.list?mine=true). It must be one of YOUTUBE_CHANNEL_IDS, and with
+ * that unset nothing can be connected, so a token for some other channel is
+ * never stored. OAuth state lives under its own session key
+ * (YouTubeOAuthProvider), so a Twitch connect in another tab cannot clash.
  */
 class ChannelConnectionController extends Controller
 {
     public function redirect(Request $request): RedirectResponse
     {
         abort_unless($request->user()->isBroadcaster(), 403);
+
+        if ($this->allowedChannels() === []) {
+            return $this->failed(self::NO_CHANNELS);
+        }
 
         return $this->provider()
             ->setScopes(['openid', YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES])
@@ -38,6 +44,10 @@ class ChannelConnectionController extends Controller
     public function callback(Request $request): RedirectResponse
     {
         abort_unless($request->user()->isBroadcaster(), 403);
+
+        if ($this->allowedChannels() === []) {
+            return $this->failed(self::NO_CHANNELS);
+        }
 
         /** @var OAuthUser $account */
         $account = $this->provider()->user();
@@ -57,8 +67,7 @@ class ChannelConnectionController extends Controller
             return $this->failed('That Google account has no YouTube channel, or YouTube would not say which. Connect with the account that owns the channel.');
         }
 
-        $allowed = (array) config('services.youtube.channel_ids', []);
-        if ($allowed !== [] && ! in_array($channelId, $allowed, true)) {
+        if (! in_array($channelId, $this->allowedChannels(), true)) {
             return $this->failed("YouTube channel {$channelId} is not one of this app's channels (YOUTUBE_CHANNEL_IDS).");
         }
 
@@ -79,6 +88,20 @@ class ChannelConnectionController extends Controller
         return redirect('/vote')->with('status', "YouTube channel {$channelId} connected for chat replies.{$note}");
     }
 
+    /**
+     * The operator must say which channels are ours before any token is
+     * stored: analytics (#12) reads channel==MINE with every stored token.
+     */
+    private const NO_CHANNELS = 'Set YOUTUBE_CHANNEL_IDS to this app\'s YouTube channels before connecting one.';
+
+    /**
+     * @return list<string>
+     */
+    private function allowedChannels(): array
+    {
+        return array_values(array_filter((array) config('services.youtube.channel_ids', []), 'is_string'));
+    }
+
     private function failed(string $message): RedirectResponse
     {
         return redirect('/vote')->with('status', $message);
@@ -87,7 +110,7 @@ class ChannelConnectionController extends Controller
     private function provider(): AbstractProvider
     {
         /** @var AbstractProvider $provider */
-        $provider = Socialite::buildProvider(GoogleProvider::class, [
+        $provider = Socialite::buildProvider(YouTubeOAuthProvider::class, [
             'client_id' => config('services.youtube.oauth.client_id'),
             'client_secret' => config('services.youtube.oauth.client_secret'),
             'redirect' => config('services.youtube.oauth.redirect') ?: route('youtube.broadcaster.callback'),

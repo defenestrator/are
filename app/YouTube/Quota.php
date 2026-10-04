@@ -97,6 +97,63 @@ class Quota
         return $used;
     }
 
+    /**
+     * Charge one call to $method only if that keeps the bucket at or under
+     * $ceiling, in one conditional UPDATE. Returns whether it was charged.
+     * Use it before an expensive call (liveChatMessages.insert, 50 units):
+     * parallel workers cannot all pass, because each re-checks the WHERE on
+     * the locked row (Postgres READ COMMITTED) before adding to it.
+     */
+    public static function reserve(string $method, int $ceiling): bool
+    {
+        if (! isset(self::COSTS[$method])) {
+            throw new InvalidArgumentException("No YouTube quota cost is known for {$method}; add it to Quota::COSTS.");
+        }
+
+        [$bucket, $cost] = self::COSTS[$method];
+        $day = self::day();
+        $now = now();
+
+        DB::table('youtube_quota_usage')->insertOrIgnore([
+            'day' => $day, 'bucket' => $bucket, 'used' => 0, 'calls' => 0, 'failed_calls' => 0,
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $reserved = DB::table('youtube_quota_usage')
+            ->where('day', $day)
+            ->where('bucket', $bucket)
+            ->whereRaw('used + ? <= ?', [$cost, $ceiling])
+            ->update([
+                'used' => DB::raw('used + '.(int) $cost),
+                'calls' => DB::raw('calls + 1'),
+                'updated_at' => $now,
+            ]) === 1;
+
+        if ($reserved) {
+            $used = self::used($bucket, $day);
+            $threshold = self::alertThreshold($bucket);
+            if ($used >= $threshold && $used - $cost < $threshold) {
+                YouTubeQuotaThresholdReached::dispatch($bucket, $used, self::limit($bucket), $day);
+            }
+        }
+
+        return $reserved;
+    }
+
+    /**
+     * Count a reserved call as failed. Its units stay spent: Google bills
+     * failed requests too.
+     */
+    public static function recordFailure(string $method): void
+    {
+        [$bucket] = self::COSTS[$method];
+
+        DB::table('youtube_quota_usage')
+            ->where('day', self::day())
+            ->where('bucket', $bucket)
+            ->update(['failed_calls' => DB::raw('failed_calls + 1'), 'updated_at' => now()]);
+    }
+
     public static function used(string $bucket, ?string $day = null): int
     {
         return (int) DB::table('youtube_quota_usage')->where('day', $day ?? self::day())->where('bucket', $bucket)->value('used');

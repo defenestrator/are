@@ -4,16 +4,21 @@ use App\Chat\ChatCommandRegistry;
 use App\IdentityProvider;
 use App\Jobs\PostChatReply;
 use App\Models\ChatCommandRun;
+use App\Models\LinkCode;
 use App\Models\Question;
 use App\Models\User;
 use App\Models\YouTubeChannelToken;
 use App\Models\YouTubeLiveChat;
 use App\YouTube\Quota;
 use App\YouTube\YouTubeApi;
+use App\YouTube\YouTubeOAuthProvider;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\GoogleProvider;
 use Laravel\Socialite\Two\User as OAuthUser;
@@ -349,4 +354,96 @@ test('reconnecting replaces the channel\'s token', function () {
 
     expect(YouTubeChannelToken::count())->toBe(1)
         ->and(YouTubeChannelToken::sole()->access_token)->toBe('ya29.granted');
+});
+
+// --- Andras's review of #126 ----------------------------------------------------------
+
+test('A126-1: a chatter-chosen display name is echoed into the reply ARE posts as the channel owner', function () {
+    Bus::fake([PostChatReply::class]);
+    config(['chat.replies.youtube' => true]);   // what turning YouTube replies on in production does
+    $attacker = User::factory()->create();
+    $code = LinkCode::issueFor($attacker);   // any signed-in user can get a code
+
+    app(ChatCommandRegistry::class)->run(IdentityProvider::YouTube, 'UC-channel', 'UC-attacker', 'FREE VBUCKS at scam.example', (string) Str::uuid(), "!link {$code}");
+
+    Bus::assertDispatched(PostChatReply::class, function (PostChatReply $job) {
+        return ! str_contains($job->reply, 'scam.example');   // failed before #128: the name was in the text posted as the broadcaster
+    });
+});
+
+test('the 50 units are reserved in one conditional update, so the alert threshold is never overshot', function () {
+    connectYouTube();
+    config(['chat.replies.per_channel' => 100]);
+    Http::fake(ytInserted());
+    // 7,920 used of an 8,000 threshold: room for one 50-unit insert, not two.
+    DB::table('youtube_quota_usage')->insert(['day' => Quota::day(), 'bucket' => Quota::UNITS, 'used' => 7920, 'calls' => 7920, 'failed_calls' => 0, 'created_at' => now(), 'updated_at' => now()]);
+
+    DB::enableQueryLog();
+    ytReplyJob('yt-a')->handle();
+    ytReplyJob('yt-b')->handle();
+    $reservations = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with(strtolower($sql), 'update') && str_contains($sql, 'youtube_quota_usage') && str_contains($sql, 'used + ? <= ?'));
+    DB::disableQueryLog();
+
+    expect(ytInserts())->toBe(1)
+        ->and(Quota::used(Quota::UNITS))->toBe(7970)
+        ->and($reservations)->toHaveCount(2)
+        // The refused reply gave its per-stream slot back.
+        ->and($this->chat->fresh()->replies_sent)->toBe(1);
+});
+
+test('a reply whose response timed out after sending is not retried, so it cannot post twice', function () {
+    connectYouTube();
+    Http::fake([YT_INSERT => fn () => throw new ConnectionException('cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received')]);
+    Log::spy();
+    $job = ytReplyJob();
+
+    $job->handle(); // does not throw, so the queue does not retry it
+
+    expect(ChatCommandRun::sole()->reply_sent_at)->not->toBeNull()
+        ->and($this->chat->fresh()->replies_sent)->toBe(1)
+        ->and(Quota::failedCalls(Quota::UNITS))->toBe(1);
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message) => str_contains($message, 'not retried'));
+});
+
+test('a reply that could not connect at all is retried, and posts once', function (string $error) {
+    connectYouTube();
+    Http::fake([YT_INSERT => Http::sequence()
+        ->pushResponse(fn () => throw new ConnectionException($error))
+        ->push(['id' => 'LCC.out-1'])]);
+    $job = ytReplyJob();
+
+    expect(fn () => $job->handle())->toThrow(RuntimeException::class);
+    expect(ChatCommandRun::sole()->reply_sent_at)->toBeNull()
+        ->and($this->chat->fresh()->replies_sent)->toBe(0);
+
+    $job->handle();
+    expect($this->chat->fresh()->replies_sent)->toBe(1);
+})->with([
+    'connect timeout' => ['cURL error 28: Connection timed out after 5001 milliseconds'],
+    'refused' => ['cURL error 7: Failed to connect to www.googleapis.com port 443: Connection refused'],
+    'DNS' => ['cURL error 6: Could not resolve host: www.googleapis.com'],
+]);
+
+test('no channel can be connected while YOUTUBE_CHANNEL_IDS is empty', function () {
+    config(['services.youtube.channel_ids' => []]);
+    fakeGoogleGrant();
+    Http::fake(myChannelResponse());
+    $broadcaster = User::factory()->twitch('1000')->create();
+
+    $this->actingAs($broadcaster)->get('/youtube/broadcaster/connect')
+        ->assertRedirect('/vote')
+        ->assertSessionHas('status', fn (string $status) => str_contains($status, 'YOUTUBE_CHANNEL_IDS'));
+    $this->actingAs($broadcaster)->get('/youtube/broadcaster/callback')->assertRedirect('/vote');
+
+    expect(YouTubeChannelToken::count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+test('the YouTube connect keeps its OAuth state apart from the Twitch connect', function () {
+    $this->actingAs(User::factory()->twitch('1000')->create())
+        ->withSession(['state' => 'twitch-tab-state'])
+        ->get('/youtube/broadcaster/connect');
+
+    expect(session('state'))->toBe('twitch-tab-state')
+        ->and(session(YouTubeOAuthProvider::STATE_KEY))->toBeString()->not->toBe('twitch-tab-state');
 });

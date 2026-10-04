@@ -3,10 +3,12 @@
 namespace App\YouTube;
 
 use App\Models\YouTubeChannelToken;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 /**
  * The few YouTube Data API calls ARE makes, each one charged to Quota whether
@@ -94,22 +96,57 @@ class YouTubeApi
     /**
      * liveChatMessages.insert (50 units): post a message as the channel owner.
      *
+     * The 50 units are reserved first, in one conditional update that keeps
+     * the day's units at or under $quotaCeiling. Returns null, without
+     * sending anything, when that reservation is refused.
+     *
      * @see https://developers.google.com/youtube/v3/live/docs/liveChatMessages/insert
      */
-    public static function insertChatMessage(string $channelId, string $liveChatId, string $text): Response
+    public static function insertChatMessage(string $channelId, string $liveChatId, string $text, int $quotaCeiling): ?Response
     {
         $token = self::accessTokenFor($channelId);
 
-        return self::send('liveChatMessages.insert', fn () => self::base()
-            ->withToken($token)
-            ->withQueryParameters(['part' => 'snippet'])
-            ->post('/liveChat/messages', [
-                'snippet' => [
-                    'liveChatId' => $liveChatId,
-                    'type' => 'textMessageEvent',
-                    'textMessageDetails' => ['messageText' => mb_substr($text, 0, self::MAX_MESSAGE_LENGTH)],
-                ],
-            ]));
+        if (! Quota::reserve('liveChatMessages.insert', $quotaCeiling)) {
+            return null;
+        }
+
+        try {
+            $response = self::base()
+                ->withToken($token)
+                ->withQueryParameters(['part' => 'snippet'])
+                ->post('/liveChat/messages', [
+                    'snippet' => [
+                        'liveChatId' => $liveChatId,
+                        'type' => 'textMessageEvent',
+                        'textMessageDetails' => ['messageText' => mb_substr($text, 0, self::MAX_MESSAGE_LENGTH)],
+                    ],
+                ]);
+        } catch (Throwable $e) {
+            Quota::recordFailure('liveChatMessages.insert');
+
+            throw $e;
+        }
+
+        if ($response->failed()) {
+            Quota::recordFailure('liveChatMessages.insert');
+        }
+
+        return $response;
+    }
+
+    /**
+     * Whether a connection failure happened before the request reached the
+     * server (DNS, refused or timed-out connect), so retrying cannot repeat
+     * it. A read timeout is not: Google may already have acted (#126 review).
+     */
+    public static function neverReachedServer(ConnectionException $e): bool
+    {
+        $message = $e->getMessage();
+
+        return (bool) preg_match('/cURL error (6|7):/', $message)
+            || str_contains($message, 'Connection timed out')
+            || str_contains($message, 'Failed to connect')
+            || str_contains($message, 'Could not resolve host');
     }
 
     /**

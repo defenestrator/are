@@ -219,15 +219,6 @@ class PostChatReply implements ShouldQueue
             return;
         }
 
-        // Each insert costs 50 units. Never let replies take the day's units
-        // past the alert threshold: polling needs what is left.
-        [, $cost] = Quota::COSTS['liveChatMessages.insert'];
-        if (Quota::used(Quota::UNITS) + $cost > Quota::alertThreshold(Quota::UNITS)) {
-            Log::warning('Dropped a YouTube chat reply: posting it would take the day\'s quota past the alert threshold.', $context);
-
-            return;
-        }
-
         // The hard per-stream budget, taken atomically so parallel workers cannot overshoot it.
         $took = YouTubeLiveChat::whereKey($chat->id)
             ->where('replies_sent', '<', (int) config('chat.replies.youtube_per_stream'))
@@ -239,8 +230,19 @@ class PostChatReply implements ShouldQueue
         }
 
         try {
-            $response = YouTubeApi::insertChatMessage($this->channelId, $chat->live_chat_id, $this->reply);
-        } catch (ConnectionException) {
+            // Each insert costs 50 units, reserved atomically. Replies never
+            // take the day's units past the alert threshold: polling needs
+            // what is left.
+            $response = YouTubeApi::insertChatMessage($this->channelId, $chat->live_chat_id, $this->reply, Quota::alertThreshold(Quota::UNITS));
+        } catch (ConnectionException $e) {
+            if (! YouTubeApi::neverReachedServer($e)) {
+                // A read timeout: Google may have posted it. Retrying could
+                // post it twice, so keep the claim and the budget slot.
+                Log::warning('A YouTube chat reply timed out after it was sent; not retried, so it cannot post twice.', $context);
+
+                return;
+            }
+
             $this->returnStreamBudget($chat);
             $this->retryLater($context, 'connection failed');
         } catch (RuntimeException $e) {
@@ -248,6 +250,13 @@ class PostChatReply implements ShouldQueue
             // 7-day Testing-mode token). Retrying will not help.
             $this->returnStreamBudget($chat);
             Log::warning('Cannot post YouTube chat replies for this channel: '.$e->getMessage(), $context);
+
+            return;
+        }
+
+        if ($response === null) {
+            $this->returnStreamBudget($chat);
+            Log::warning('Dropped a YouTube chat reply: posting it would take the day\'s quota past the alert threshold.', $context);
 
             return;
         }
