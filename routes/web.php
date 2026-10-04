@@ -39,6 +39,10 @@ Route::get('/visualizer', function () {
 // Conversion (#15): the /about page with its lead form, and UTM short links.
 Route::view('about', 'about')->name('about');
 Route::get('go/{shortLink:code}', App\Http\Controllers\ShortLinkRedirectController::class)->name('short-links.go');
+// Leads list (#31): broadcasters only, through LeadPolicy.
+Route::view('leads', 'leads')
+    ->middleware(['auth', 'not-banned', 'can:viewAny,App\Models\Lead'])
+    ->name('leads.index');
 
 require __DIR__ . '/auth.php';
 require __DIR__ . '/overlays.php';

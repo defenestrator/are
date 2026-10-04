@@ -18,6 +18,11 @@
                         {{ __('Moderation') }}
                     </flux:navbar.item>
                 @endcan
+                @can('viewAny', App\Models\Lead::class)
+                    <flux:navbar.item icon="inbox" href="{{ route('leads.index') }}" :current="request()->routeIs('leads.index')" wire:navigate>
+                        {{ __('Leads') }}
+                    </flux:navbar.item>
+                @endcan
             </flux:navbar>
 
             <flux:spacer />
@@ -83,6 +88,11 @@
                     @can('moderate')
                         <flux:navlist.item icon="shield-check" href="{{ route('moderation') }}" wire:navigate>
                             {{ __('Moderation') }}
+                        </flux:navlist.item>
+                    @endcan
+                    @can('viewAny', App\Models\Lead::class)
+                        <flux:navlist.item icon="inbox" href="{{ route('leads.index') }}" wire:navigate>
+                            {{ __('Leads') }}
                         </flux:navlist.item>
                     @endcan
                 </flux:navlist.group>

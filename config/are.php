@@ -42,4 +42,22 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Lead notifications (#31)
+    |--------------------------------------------------------------------------
+    |
+    | Who hears about a Professional Services enquiry from /about. `notify`
+    | is one or more email addresses, comma-separated in ARE_LEADS_NOTIFY;
+    | the mail carries the enquiry. `webhook_url` is an optional Slack or
+    | Discord incoming webhook; its message names the source and links to
+    | /leads, but carries no name, email or message. Both send from the queue.
+    |
+    */
+
+    'leads' => [
+        'notify' => array_values(array_filter(array_map('trim', explode(',', (string) env('ARE_LEADS_NOTIFY', ''))))),
+        'webhook_url' => env('ARE_LEADS_WEBHOOK_URL'),
+    ],
+
 ];

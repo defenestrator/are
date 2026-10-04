@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\LeadCaptured;
 use App\Models\Lead;
 use App\Models\ShortLink;
 use Illuminate\Support\Facades\RateLimiter;
@@ -55,7 +56,7 @@ new class extends Component {
 
         $attribution = ShortLink::attribution();
 
-        Lead::create([
+        $lead = Lead::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'company' => $validated['company'] !== '' ? $validated['company'] : null,
@@ -67,6 +68,8 @@ new class extends Component {
             'utm_campaign' => $attribution['utm_campaign'] ?? null,
             'utm_content' => $attribution['utm_content'] ?? null,
         ]);
+
+        LeadCaptured::dispatch($lead);
 
         $this->finish();
     }
