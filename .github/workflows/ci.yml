@@ -56,12 +56,78 @@ jobs:
       - name: PHPStan
         run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
+  # Production runs on PostgreSQL 14, so the suite runs there as well. The DB_*
+  # variables come from the job environment. phpunit.xml sets DB_CONNECTION
+  # and DB_DATABASE without force="true", and PHPUnit only applies such an
+  # <env> when the variable is not already set, so the job's values win. That
+  # keeps a single phpunit.xml. The last step checks that the run really
+  # reached Postgres, so a later force="true" cannot quietly send this job
+  # back to SQLite.
+  tests-pgsql:
+    name: Pest on PostgreSQL 14
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: are_test
+          POSTGRES_USER: are
+          POSTGRES_PASSWORD: are
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U are -d are_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: are_test
+      DB_USERNAME: are
+      DB_PASSWORD: are
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_pgsql, pgsql, pdo_sqlite, sqlite3, mbstring, intl
+          coverage: none
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Pest
+        run: ./vendor/bin/pest
+
+      - name: Confirm the suite ran on Postgres
+        env:
+          PGPASSWORD: are
+        run: |
+          applied=$(psql -h 127.0.0.1 -U are -d are_test -Atc 'select count(*) from migrations')
+          echo "Migrations applied on Postgres: $applied"
+          test "$applied" -gt 0
+
   # The single required status check (ruleset protecc-main). Add every job
   # that must pass to `needs`; the ruleset never has to change.
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [tests]
+    needs: [tests, tests-pgsql]
     runs-on: ubuntu-latest
     steps:
       - name: Require every needed job to have succeeded
