@@ -16,8 +16,14 @@ new class extends Component {
     #[Locked]
     public bool $canEdit;
 
-    public function mount() {
-        $this->canEdit = Auth::user()?->can('delete', $this->question) ?? false;
+    // The vote page passes $canModerate, resolved once per render, so a full
+    // queue does not run the moderator check once per card. It mirrors
+    // QuestionPolicy::delete, which stays the authority.
+    public function mount(?bool $canModerate = null) {
+        $user = Auth::user();
+
+        $this->canEdit = $user !== null
+            && ($user->id === $this->question->user_id || ($canModerate ?? $user->can('moderate')));
     }
 
     public function upvote(Question $question)

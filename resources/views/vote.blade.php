@@ -4,6 +4,8 @@ use Livewire\Volt\Component;
 use App\Models\Question;
 use Illuminate\Validation\ValidationException;
 use App\Models\Topic;
+use Illuminate\Support\Facades\Gate;
+use Livewire\Attributes\Computed;
 
 new class extends Component {
     public $question = "";
@@ -39,6 +41,13 @@ new class extends Component {
         ]);
 
         $this->question = "";
+    }
+
+    // Resolved once per render and handed to every card.
+    #[Computed]
+    public function canModerate(): bool
+    {
+        return Gate::allows('moderate');
     }
 
     public function clearUserQuestion() {
@@ -82,7 +91,7 @@ new class extends Component {
                 <ul>
                     @foreach (Question::getSortedQuestions() as $question)
                         <li wire:key="hot-li-{{ $question->id }}">
-                            <livewire:question-card @question-deleted="$refresh" :user-votes="$userVotes" :question="$question" :vote-count="$question->votes" :key="'hot-'.$question->id" />
+                            <livewire:question-card @question-deleted="$refresh" :user-votes="$userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'hot-'.$question->id" />
                         </li>
                     @endforeach
                 </ul>
@@ -93,7 +102,7 @@ new class extends Component {
                 <ul>
                     @foreach (Question::getRecentQuestions() as $question)
                         <li wire:key="recent-li-{{ $question->id }}">
-                            <livewire:question-card @question-deleted="$refresh" :question="$question" :vote-count="$question->votes" :key="'recent-'.$question->id" />
+                            <livewire:question-card @question-deleted="$refresh" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'recent-'.$question->id" />
                         </li>
                     @endforeach
                 </ul>

@@ -7,6 +7,7 @@ use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Models\UserTwitchSubscription;
 use App\TwitchSubscription;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 
 function subscribe(User $user, TwitchSubscription $tier, string $broadcasterId = '1000'): void
@@ -167,3 +168,34 @@ test('a Facebook-only user can be created without Twitch fields', function () {
         ->and($user->isAdminUser())->toBeFalse()
         ->and($user->canSubmitQuestion())->toBeTrue();
 });
+
+test('the vote page runs the same queries for one card as for a full queue', function (bool $isModerator) {
+    $viewer = User::factory()->create();
+    if ($isModerator) {
+        TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $viewer->twitch_id]);
+    }
+    $this->actingAs($viewer);
+
+    $queriesFor = function (int $questions) use ($isModerator) {
+        Question::query()->delete();
+        Question::factory()->count($questions)->for(User::factory())->create();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $response = $this->get('/vote')->assertOk();
+        DB::disableQueryLog();
+
+        // Someone else's questions: only a moderator gets the delete button.
+        $isModerator
+            ? $response->assertSee('aria-label="Delete question"', false)
+            : $response->assertDontSee('aria-label="Delete question"', false);
+
+        return collect(DB::getQueryLog())->pluck('query');
+    };
+
+    $one = $queriesFor(1);
+    $full = $queriesFor(50);
+
+    expect($full->filter(fn (string $sql) => str_contains($sql, 'twitch_moderators'))->count())->toBeLessThan(5)
+        ->and($full->count())->toBe($one->count());
+})->with(['viewer' => false, 'moderator' => true]);
