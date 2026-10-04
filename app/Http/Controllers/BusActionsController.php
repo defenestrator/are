@@ -19,6 +19,14 @@ use Illuminate\Http\Request;
  * voided); the ids of actions vetoed in the last hour, so an adapter can undo
  * one it already ran; and the bus state. While the kill switch is on it
  * returns no actions at all. Returned actions are marked delivered.
+ *
+ * Replay is bounded, so an adapter that restarts or was offline cannot run
+ * old actions:
+ * - with no ?after the cursor starts at the newest action: from now;
+ * - a cursor older than bus.max_replay_seconds is clamped to that age
+ *   (the response says "clamped": true);
+ * - nothing at or below the game's replay floor, set by the last kill, is
+ *   ever served again.
  */
 class BusActionsController extends Controller
 {
@@ -33,17 +41,26 @@ class BusActionsController extends Controller
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        $after = max(0, (int) $request->query('after', '0'));
         $state = BusState::read($game);
+        $newest = (int) BusPublication::where('game', $game->key)->max('id');
+
+        $requested = $request->query('after');
+        $after = $requested === null ? $newest : max(0, (int) $requested);
+
+        $tooOld = (int) BusPublication::where('game', $game->key)
+            ->where('created_at', '<', now()->subSeconds(max(0, (int) config('bus.max_replay_seconds'))))
+            ->max('id');
+        $clamped = $after < $tooOld;
+        $from = max($after, $tooOld, $state->replayFloor);
 
         $page = $state->killed ? collect() : BusPublication::where('game', $game->key)
-            ->where('id', '>', $after)
+            ->where('id', '>', $from)
             ->orderBy('id')
             ->limit(self::PAGE)
             ->get();
 
         // The cursor moves past vetoed actions too, so they are never retried.
-        $cursor = $page->last()->id ?? $after;
+        $cursor = $page->last()->id ?? $from;
         $actions = $page->whereNull('vetoed_at')->values();
 
         if ($actions->isNotEmpty()) {
@@ -62,6 +79,7 @@ class BusActionsController extends Controller
             'paused' => $state->paused,
             'mode' => $state->mode->value,
             'cursor' => $cursor,
+            'clamped' => $clamped,
             'actions' => $actions->map(fn (BusPublication $p) => $p->payload())->values(),
             'vetoed' => $vetoed,
         ])->header('Cache-Control', 'no-store, private');

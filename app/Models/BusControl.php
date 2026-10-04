@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property Mode|null $mode
  * @property Carbon|null $paused_at
  * @property Carbon|null $killed_at
+ * @property int|null $replay_floor
  */
 class BusControl extends Model
 {
@@ -36,6 +37,7 @@ class BusControl extends Model
         'paused_by_id',
         'killed_at',
         'killed_by_id',
+        'replay_floor',
     ];
 
     protected function casts(): array
@@ -44,6 +46,7 @@ class BusControl extends Model
             'mode' => Mode::class,
             'paused_at' => 'datetime',
             'killed_at' => 'datetime',
+            'replay_floor' => 'integer',
         ];
     }
 

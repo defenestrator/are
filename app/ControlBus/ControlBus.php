@@ -653,6 +653,14 @@ class ControlBus
      */
     private function voidPending(?User $by): array
     {
+        // The watermark: whatever was published before this kill is never
+        // served again, even to an adapter that was offline or restarts
+        // from an old cursor. Runs under the global row FOR UPDATE, so no
+        // publish can slip in below it.
+        foreach (array_keys(Game::all()) as $key) {
+            BusControl::for($key)->update(['replay_floor' => (int) BusPublication::where('game', $key)->max('id')]);
+        }
+
         $windows = BusWindow::open()->update(['status' => WindowStatus::Cancelled, 'resolved_at' => now()]);
 
         $approvals = 0;
@@ -710,6 +718,11 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($window->game);
+
+        // Accept the key in any spelling ("task:Delete the repo"): match it
+        // the way ballots are keyed.
+        [$verb, $argument] = array_pad(explode(':', $actionKey, 2), 2, null);
+        $actionKey = (new Action(mb_strtolower((string) $verb), $argument))->key();
 
         return DB::transaction(function () use ($moderator, $window, $actionKey, $game) {
             $this->lock($game);

@@ -24,6 +24,10 @@ return new class extends Migration
             $table->foreignId('paused_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('killed_at')->nullable();
             $table->foreignId('killed_by_id')->nullable()->constrained('users')->nullOnDelete();
+            // Game rows: the highest publication id when the kill switch was
+            // last thrown. Nothing at or below it is ever served again, to any
+            // adapter, whatever its cursor.
+            $table->unsignedBigInteger('replay_floor')->nullable();
             $table->timestamps();
         });
 

@@ -135,7 +135,7 @@ test('actions are normalised: case and spacing do not split an option', function
     busSay(User::factory()->create(), '!do SAY   write  the readme');
 
     expect(BusBallot::where('status', BallotStatus::Counted)->orderBy('id')->pluck('option_number')->all())->toBe([1, 1])
-        ->and(BusBallot::orderBy('id')->pluck('action_key')->unique()->all())->toBe(['say:write the readme']);
+        ->and(BusBallot::orderBy('id')->pluck('action_key')->unique()->all())->toBe(['say:writethereadme']);
 });
 
 test('an action the game does not know is refused with its usage', function (string $text) {
@@ -242,7 +242,7 @@ test('weighted random draws with odds equal to each option\'s headcount', functi
 
     $publication = busCloseWindow();
 
-    expect($picker->weights)->toBe(['say:write the readme' => 2, 'say:fix the tests' => 1])
+    expect($picker->weights)->toBe(['say:writethereadme' => 2, 'say:fixthetests' => 1])
         ->and($publication->argument)->toBe('Fix the tests')
         ->and($publication->mode)->toBe(Mode::WeightedRandom);
 });
@@ -338,7 +338,7 @@ test('in weighted random a subscriber adds one to the odds, like everyone', func
     busSay(User::factory()->create(), '!do say Viewer idea');
     busCloseWindow();
 
-    expect($picker->weights)->toBe(['say:subscriber idea' => 1, 'say:viewer idea' => 1]);
+    expect($picker->weights)->toBe(['say:subscriberidea' => 1, 'say:vieweridea' => 1]);
 });
 
 test('a subscriber\'s proposal carries cosmetic flair when it wins, and nothing else changes', function () {
@@ -505,7 +505,7 @@ test('vetoing an option drops its votes and stops anyone backing it again', func
     busSay(User::factory()->create(), '!do #1');
     busSay(User::factory()->create(), '!do say Good idea');
 
-    $vetoed = busBus()->vetoOption($mod, BusWindow::sole(), 'say:bad idea');
+    $vetoed = busBus()->vetoOption($mod, BusWindow::sole(), 'say:badidea');
     $again = busSay(User::factory()->create(), '!do say BAD IDEA');
 
     expect($vetoed)->toBe(2)
@@ -604,7 +604,7 @@ test('with broadcasting off (production until Reverb), nothing is queued for Rev
     busSay(User::factory()->create(), '!do say An action');
 
     Queue::assertNotPushed(BroadcastEvent::class);
-    $this->withToken($token)->getJson('/bus/orkestera/actions')->assertJsonPath('actions.0.argument', 'An action');
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->assertJsonPath('actions.0.argument', 'An action');
 });
 
 test('with Reverb configured, a published action queues its broadcast on the broadcasts queue', function () {
@@ -717,9 +717,9 @@ test('the page shows the open vote with its options, and vetoes one', function (
     $this->actingAs($mod);
 
     busPage()->assertSee('#1')->assertSee('say Write the README')->assertSee('sub')
-        ->call('vetoOption', BusWindow::sole()->id, 'say:fix the tests');
+        ->call('vetoOption', BusWindow::sole()->id, 'say:fixthetests');
 
-    expect(BusBallot::where('action_key', 'say:fix the tests')->sole()->status)->toBe(BallotStatus::Vetoed);
+    expect(BusBallot::where('action_key', 'say:fixthetests')->sole()->status)->toBe(BallotStatus::Vetoed);
 });
 
 // --- Review round 1 (#123): the kill switch cancels ---------------------------
@@ -990,7 +990,7 @@ test('Andras A123-2: a vetoed option cannot come back with a trailing full stop'
     $mod = busStart();
     busSay(User::factory()->create(), '!do task Delete the repo');
     $window = BusWindow::open()->firstOrFail();
-    busBus()->vetoOption($mod, $window, 'task:delete the repo');
+    busBus()->vetoOption($mod, $window, 'task:deletetherepo');
 
     busSay(User::factory()->create(), '!do task Delete the repo.');
 
@@ -1000,7 +1000,7 @@ test('Andras A123-2: a vetoed option cannot come back with a trailing full stop'
 test('retyping a vetoed option any of these ways still matches it', function (string $retyped) {
     $mod = busStart();
     busSay(User::factory()->create(), '!do task Delete the repo');
-    busBus()->vetoOption($mod, BusWindow::sole(), 'task:delete the repo');
+    busBus()->vetoOption($mod, BusWindow::sole(), 'task:deletetherepo');
 
     $result = busSay(User::factory()->create(), '!do task '.$retyped);
 
@@ -1016,7 +1016,7 @@ test('retyping a vetoed option any of these ways still matches it', function (st
 ]);
 
 test('normalising keeps genuinely different actions apart', function () {
-    expect(Action::normalise('Write the README'))->toBe('write the readme')
+    expect(Action::normalise('Write the README'))->toBe('writethereadme')
         ->and(Action::normalise('Write the README twice'))->not->toBe(Action::normalise('Write the README'))
         ->and(Action::normalise('Fix bug 12'))->not->toBe(Action::normalise('Fix bug 13'));
 });
@@ -1026,7 +1026,7 @@ test('backers of a vetoed option sit out the rest of the window', function () {
     $backer = User::factory()->create();
     busSay($backer, '!do task Delete the repo');
     busSay(User::factory()->create(), '!do task Write the README');
-    busBus()->vetoOption($mod, BusWindow::sole(), 'task:delete the repo');
+    busBus()->vetoOption($mod, BusWindow::sole(), 'task:deletetherepo');
 
     $again = busSay($backer, '!do task Remove every file');
     $other = busSay(User::factory()->create(), '!do #2');
@@ -1035,3 +1035,92 @@ test('backers of a vetoed option sit out the rest of the window', function () {
         ->and($other->status)->toBe(ChatCommandStatus::Done)
         ->and(BusBallot::where('user_id', $backer->id)->where('status', BallotStatus::Counted)->count())->toBe(0);
 });
+
+// --- Review round 2 (#123): no replay to an adapter that is behind ------------
+
+test('Andras A123b-1: a second adapter that was offline does not run pre-kill actions after the restore', function () {
+    config(['bus.kill_undo_seconds' => 300, 'bus.max_replay_seconds' => 3600]);
+    $mod = busStart(Mode::Anarchy);
+    $token = BusAdapterToken::issue('orkestera');
+
+    busSay(User::factory()->create(), '!do say Drop all the tables');
+    // Adapter A runs it; adapter B is offline with its cursor at 0.
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->assertJsonCount(1, 'actions');
+    $this->travel(6)->minutes();
+
+    busBus()->kill($mod, 'stop everything');
+    busBus()->restore(busBroadcaster());
+
+    expect($this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->json('actions'))->toBeEmpty()
+        ->and(BusControl::find('orkestera')->replay_floor)->toBe(BusPublication::sole()->id);
+});
+
+test('actions published after the restore are served as normal', function () {
+    $mod = busStart(Mode::Anarchy);
+    $token = BusAdapterToken::issue('orkestera');
+    busSay(User::factory()->create(), '!do say Before the kill');
+    busBus()->kill($mod);
+    busBus()->restore(busBroadcaster());
+
+    busSay(User::factory()->create(), '!do say After the restore');
+
+    expect($this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->json('actions.*.argument'))->toBe(['After the restore']);
+});
+
+test('the Reverb send never carries an action from before the last kill', function () {
+    config(['broadcasting.default' => 'reverb', 'bus.kill_undo_seconds' => 0]);
+    Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class]);
+    $mod = busStart(Mode::Anarchy);
+    busSay(User::factory()->create(), '!do say Before the kill');
+    $publication = BusPublication::sole();
+    $publication->update(['delivered_at' => now()->subHour()]);   // long delivered, so the kill does not veto it
+
+    busBus()->kill($mod);
+    busBus()->restore(busBroadcaster());
+
+    expect($publication->fresh()->vetoed_at)->toBeNull()
+        ->and((new BusActionPublished('orkestera', $publication->id))->broadcastOn())->toBe([]);
+});
+
+test('a poll with no cursor starts from now', function () {
+    $token = BusAdapterToken::issue('orkestera');
+    busStart(Mode::Anarchy);
+    busSay(User::factory()->create(), '!do say Old action');
+    $newest = BusPublication::sole()->id;
+
+    $this->withToken($token)->getJson('/bus/orkestera/actions')
+        ->assertJsonCount(0, 'actions')
+        ->assertJsonPath('cursor', $newest);
+
+    busSay(User::factory()->create(), '!do say New action');
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after='.$newest)->assertJsonPath('actions.0.argument', 'New action');
+});
+
+test('a cursor older than the replay limit is clamped', function () {
+    config(['bus.max_replay_seconds' => 300]);
+    $token = BusAdapterToken::issue('orkestera');
+    busStart(Mode::Anarchy);
+    busSay(User::factory()->create(), '!do say Ancient action');
+    $this->travel(10)->minutes();
+    busSay(User::factory()->create(), '!do say Recent action');
+
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')
+        ->assertJsonPath('clamped', true)
+        ->assertJsonCount(1, 'actions')
+        ->assertJsonPath('actions.0.argument', 'Recent action');
+
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after='.BusPublication::min('id'))->assertJsonPath('clamped', false);
+});
+
+test('retyping inside words still matches a vetoed option', function (string $retyped) {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Delete the repo');
+    busBus()->vetoOption($mod, BusWindow::sole(), 'task:deletetherepo');
+
+    expect(busSay(User::factory()->create(), '!do task '.$retyped)->reply)->toContain('vetoed');
+})->with([
+    'hyphen inside a word' => 'De-lete the repo',
+    'spaced-out letters' => 'd e l e t e the repo',
+    'run together' => 'Deletetherepo',
+    'Armenian look-alike o' => "Delete the rep\u{0585}",
+]);

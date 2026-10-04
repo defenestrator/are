@@ -61,10 +61,13 @@ class BusActionPublished implements ShouldBroadcast, ShouldDispatchAfterCommit
         $publication = BusPublication::find($this->publicationId);
         $game = Game::find($this->game);
 
-        return $publication !== null
-            && $game !== null
-            && $publication->vetoed_at === null
-            && BusState::read($game)->allowsPublishing();
+        if ($publication === null || $game === null || $publication->vetoed_at !== null) {
+            return false;
+        }
+
+        $state = BusState::read($game);
+
+        return $state->allowsPublishing() && $publication->id > $state->replayFloor;
     }
 
     /**

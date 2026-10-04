@@ -16,6 +16,7 @@ final readonly class BusState
         public bool $paused,
         public Mode $mode,
         public ?string $activeGame,
+        public int $replayFloor = 0,
     ) {}
 
     public static function read(Game $game): self
@@ -33,6 +34,7 @@ final readonly class BusState
             paused: $own?->paused_at !== null,
             mode: $own->mode ?? $game->defaultMode,
             activeGame: $global?->active_game,
+            replayFloor: (int) ($own->replay_floor ?? 0),
         );
     }
 

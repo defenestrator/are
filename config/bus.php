@@ -40,6 +40,10 @@ return [
     // undo them.
     'kill_undo_seconds' => (int) env('BUS_KILL_UNDO_SECONDS', 300),
 
+    // How far back a polling adapter may replay. Older cursors are clamped,
+    // and a poll with no cursor starts from now.
+    'max_replay_seconds' => (int) env('BUS_MAX_REPLAY_SECONDS', 300),
+
     /*
     | Each game: a label, its default mode (democracy, anarchy or
     | weighted_random, which moderators can change live), the base window in
