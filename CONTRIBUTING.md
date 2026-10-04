@@ -6,10 +6,20 @@ is copied verbatim from Orkestera's
 (`fd50cb03`). This section is the only ARE-specific text: where the Orkestera
 process names machinery ARE does not have yet, do this instead.
 
-- **Where work happens.** Branch from and open PRs against
-  [`EDOS-Engineering/are`](https://github.com/EDOS-Engineering/are). Issues
-  are tracked on [`defenestrator/are`](https://github.com/defenestrator/are/issues);
-  close them from a PR with `Closes defenestrator/are#N`.
+- **Where work happens.** All development happens on the fork,
+  [`EDOS-Engineering/are`](https://github.com/EDOS-Engineering/are): branch
+  from its `main` and open PRs against it. Issues are tracked on
+  [`defenestrator/are`](https://github.com/defenestrator/are/issues); close
+  them from a PR with `Closes defenestrator/are#N`.
+- **How it deploys.** `defenestrator/are` is the deployment repository:
+  Forge deploys its `main`. It receives changes only by syncing the fork's
+  `main` into it, and that sync is the release step. Nobody develops on it
+  or merges feature PRs there, and agents never push to it.
+- **CI.** CI is developed on, run on and written for the fork. That is
+  where suites gate PRs. CI on `defenestrator/are` exists mainly for
+  deployment. A workflow that should only run in one of the two repositories
+  must say so with `if: github.repository == '<owner>/are'`, because a sync
+  copies every workflow across.
 - **Milestone and labels.** Issues go on the `Streaming launch` milestone.
   Claim them with `ready-for-agent` → `assigned-to-agent`, exactly as in §3.
 - **Tests.** ARE's suite is Pest on in-memory SQLite, with no MongoDB. Run
@@ -18,8 +28,9 @@ process names machinery ARE does not have yet, do this instead.
   local run is the gate.
 - **Not here yet:** a merge queue, changelog assembly, an ADR directory and
   ECR deploys. A human still reviews and merges every PR. Skip
-  `changelog.d/` fragments until the assembly script exists. Deployment is
-  Laravel Forge from `main`.
+  `changelog.d/` fragments until the assembly script exists. Where the text
+  below says merging to `main` triggers a deploy, read it as the sync into
+  `defenestrator/are` described above.
 
 ---
 
