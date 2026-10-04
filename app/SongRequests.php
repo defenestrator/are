@@ -5,6 +5,7 @@ namespace App;
 use App\Enums\SongRequestSource;
 use App\Enums\SongRequestStatus;
 use App\Exceptions\SongRequestRejected;
+use App\Jobs\RefundChannelPointRedemption;
 use App\Models\ChannelPointRedemption;
 use App\Models\ModerationAction;
 use App\Models\SongRequest;
@@ -168,39 +169,71 @@ class SongRequests
     }
 
     /**
-     * Drop a queued or playing request without counting it as played.
+     * Drop a queued or playing request without counting it as played. A
+     * channel-point request skipped before it played is refunded.
      */
     public static function skip(User $moderator, SongRequest $request): void
     {
         Gate::forUser($moderator)->authorize('moderate');
 
-        if (! in_array($request->status->value, SongRequestStatus::openValues(), true)) {
-            throw new InvalidArgumentException('That request has already finished.');
-        }
-
         DB::transaction(function () use ($moderator, $request) {
-            $request->update(['status' => SongRequestStatus::Skipped, 'finished_at' => now()]);
-            ModerationAction::record($moderator, 'song_request.skipped', $request, [
-                'track_id' => $request->track_id,
-                'requester' => $request->requester_name,
+            // Re-read under a lock, so two moderators skipping at once cannot
+            // both see it open and both refund it.
+            $current = SongRequest::whereKey($request->id)->lockForUpdate()->firstOrFail();
+
+            if (! in_array($current->status->value, SongRequestStatus::openValues(), true)) {
+                throw new InvalidArgumentException('That request has already finished.');
+            }
+            $wasQueued = $current->status === SongRequestStatus::Queued;
+
+            $current->update(['status' => SongRequestStatus::Skipped, 'finished_at' => now()]);
+            ModerationAction::record($moderator, 'song_request.skipped', $current, [
+                'track_id' => $current->track_id,
+                'requester' => $current->requester_name,
             ]);
+
+            // Skipped before it ever played, so refund the points it cost (#133).
+            // Once it is on air, the viewer has had their song.
+            if ($wasQueued) {
+                self::refundIfPaid($current, 'A moderator skipped the song request before it played.');
+            }
+
+            $request->setRawAttributes($current->getAttributes(), true);
         });
     }
 
     /**
-     * Skip every queued request. What is playing keeps playing.
+     * Skip every queued request, refunding the channel-point ones. What is
+     * playing keeps playing.
      */
     public static function clear(User $moderator): int
     {
         Gate::forUser($moderator)->authorize('moderate');
 
         return DB::transaction(function () use ($moderator) {
-            $cleared = SongRequest::where('status', SongRequestStatus::Queued->value)
+            $queued = SongRequest::where('status', SongRequestStatus::Queued->value)->lockForUpdate()->get();
+
+            $cleared = SongRequest::whereKey($queued->modelKeys())
                 ->update(['status' => SongRequestStatus::Skipped->value, 'finished_at' => now()]);
             ModerationAction::record($moderator, 'song_request.cleared', null, ['cleared' => $cleared]);
 
+            // None of them had played, so refund the channel-point ones (#133).
+            $queued->each(fn (SongRequest $request) => self::refundIfPaid($request, 'A moderator cleared the song request queue before it played.'));
+
             return $cleared;
         });
+    }
+
+    /**
+     * Queue a refund for a channel-point request, once the surrounding
+     * transaction commits. Chat requests cost nothing. The refund job is
+     * idempotent, so a request can never be refunded twice.
+     */
+    private static function refundIfPaid(SongRequest $request, string $reason): void
+    {
+        if ($request->source === SongRequestSource::ChannelPoints && $request->channel_point_redemption_id !== null) {
+            RefundChannelPointRedemption::dispatch($request->channel_point_redemption_id, $reason)->afterCommit();
+        }
     }
 
     private static function finishPlaying(): void

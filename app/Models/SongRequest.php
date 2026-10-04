@@ -59,6 +59,16 @@ class SongRequest extends Model
     }
 
     /**
+     * The channel-point redemption that paid for it, if any.
+     *
+     * @return BelongsTo<ChannelPointRedemption, $this>
+     */
+    public function redemption(): BelongsTo
+    {
+        return $this->belongsTo(ChannelPointRedemption::class, 'channel_point_redemption_id');
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function requester(): BelongsTo

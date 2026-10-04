@@ -1,13 +1,19 @@
 <?php
 
+use App\Enums\SongRequestSource;
+use App\Enums\SongRequestStatus;
 use App\Jobs\EventSub\HandleChannelPointRedemption;
 use App\Jobs\RefundChannelPointRedemption;
 use App\Models\BroadcasterToken;
 use App\Models\ChannelPointRedemption;
 use App\Models\SongRequest;
 use App\Models\Track;
+use App\Models\TwitchModerator;
+use App\Models\User;
+use App\SongRequests;
 use App\Twitch;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -248,4 +254,96 @@ test('music:create-song-reward explains Twitch refusals and validates its option
     $this->artisan('music:create-song-reward', ['--broadcaster' => '424242'])
         ->expectsOutputToContain('424242 is not a broadcaster this app serves.')
         ->assertFailed();
+});
+
+// --- Skipped or cleared before playing (#133) --------------------------------
+
+function refundModerator(): User
+{
+    $mod = User::factory()->twitch()->create();
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $mod->twitch_id]);
+
+    return $mod;
+}
+
+/** A queued channel-point request for a fresh stream-safe track. */
+function paidRequest(): SongRequest
+{
+    $track = Track::factory()->streamSafe()->create();
+
+    return SongRequest::where('channel_point_redemption_id', redeemForRefund((string) $track->id)->id)->sole();
+}
+
+test('skipping a channel-point request before it plays refunds it once', function () {
+    Http::fake([REDEMPTIONS_URL => Http::response(['data' => []])]);
+    $mod = refundModerator();
+    $request = paidRequest();
+    Http::assertNothingSent();
+
+    SongRequests::skip($mod, $request);
+
+    expect(fn () => SongRequests::skip($mod, $request))->toThrow(InvalidArgumentException::class);
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $r) => $r->method() === 'PATCH'
+        && str_contains($r->url(), 'id='.$request->redemption()->value('twitch_redemption_id'))
+        && $r->data() === ['status' => 'CANCELED']);
+    expect(ChannelPointRedemption::find($request->channel_point_redemption_id)->status)->toBe('canceled')
+        ->and($request->refresh()->status)->toBe(SongRequestStatus::Skipped);
+});
+
+test('clearing the queue refunds each waiting channel-point request, and no chat request', function () {
+    Queue::fake();
+    $mod = refundModerator();
+    $paid = [paidRequest(), paidRequest()];
+    SongRequest::factory()->create(); // a chat request
+
+    expect(SongRequests::clear($mod))->toBe(3);
+
+    Queue::assertPushedTimes(RefundChannelPointRedemption::class, 2);
+    foreach ($paid as $request) {
+        Queue::assertPushed(RefundChannelPointRedemption::class, fn ($job) => $job->redemptionId === $request->channel_point_redemption_id
+            && str_contains($job->reason, 'cleared'));
+    }
+});
+
+test('a request that has played or is on air is not refunded', function () {
+    Queue::fake();
+    $mod = refundModerator();
+    $played = paidRequest();
+    $onAir = paidRequest();
+
+    SongRequests::play($mod, $played);
+    SongRequests::play($mod, $onAir); // $played is now played
+    SongRequests::skip($mod, $onAir);
+    SongRequests::clear($mod);
+
+    Queue::assertNotPushed(RefundChannelPointRedemption::class);
+    expect($played->refresh()->status)->toBe(SongRequestStatus::Played)
+        ->and($onAir->refresh()->status)->toBe(SongRequestStatus::Skipped);
+});
+
+test('skipping a chat request refunds nothing', function () {
+    Queue::fake();
+    $request = SongRequest::factory()->create(['source' => SongRequestSource::Chat]);
+
+    SongRequests::skip(refundModerator(), $request);
+
+    Queue::assertNotPushed(RefundChannelPointRedemption::class);
+});
+
+test('no refund is sent if the skip is rolled back', function () {
+    Http::fake([REDEMPTIONS_URL => Http::response(['data' => []])]);
+    $mod = refundModerator();
+    $request = paidRequest();
+
+    try {
+        DB::transaction(function () use ($mod, $request) {
+            SongRequests::skip($mod, $request);
+            throw new RuntimeException('roll back');
+        });
+    } catch (RuntimeException) {
+    }
+
+    Http::assertNothingSent();
+    expect($request->refresh()->status)->toBe(SongRequestStatus::Queued);
 });
