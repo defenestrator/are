@@ -95,6 +95,33 @@ test('an admin uploads a track and its stems to the music disk', function () {
     Storage::disk('music')->assertExists([$track->file_path, $track->stems_path]);
 });
 
+test('the Livewire temporary upload limit matches the catalogue limit and is well above 12 MB', function () {
+    expect(config('livewire.temporary_file_upload.rules'))->toContain('max:'.config('music.max_upload_kb'))
+        ->and(config('music.max_upload_kb'))->toBe(204800);
+});
+
+test('a WAV and stems zip larger than 12 MB upload, and files over the limit are rejected', function () {
+    Volt::actingAs(catalogueAdmin())->test('music.catalogue')
+        ->set('title', 'Long Mix')
+        ->set('artist', 'EDOS')
+        ->set('file', UploadedFile::fake()->create('long-mix.wav', 60 * 1024, 'audio/wav'))
+        ->set('stems', UploadedFile::fake()->create('stems.zip', 150 * 1024, 'application/zip'))
+        ->assertHasNoErrors()
+        ->call('save')
+        ->assertHasNoErrors();
+
+    Storage::disk('music')->assertExists([Track::sole()->file_path, Track::sole()->stems_path]);
+
+    Volt::actingAs(catalogueAdmin())->test('music.catalogue')
+        ->set('title', 'Too Long')
+        ->set('artist', 'EDOS')
+        ->set('file', UploadedFile::fake()->create('too-long.wav', 204801, 'audio/wav'))
+        ->call('save')
+        ->assertHasErrors('file');
+
+    expect(Track::count())->toBe(1);
+});
+
 test('a new track needs an audio file, and stems must be a zip', function () {
     Volt::actingAs(catalogueAdmin())->test('music.catalogue')
         ->set('title', 'No File')

@@ -43,8 +43,8 @@ new class extends Component {
             // would get every stream that plays it claimed.
             'streamSafe' => ['boolean', 'declined_if:contentIdStatus,'.ContentIdStatus::Registered->value],
             'durationSeconds' => ['nullable', 'integer', 'min:1', 'max:86400'],
-            'file' => [$this->editingId === null ? 'required' : 'nullable', 'file', 'mimetypes:audio/*'],
-            'stems' => ['nullable', 'file', 'mimes:zip'],
+            'file' => [$this->editingId === null ? 'required' : 'nullable', 'file', 'mimetypes:audio/*', 'max:'.config('music.max_upload_kb')],
+            'stems' => ['nullable', 'file', 'mimes:zip', 'max:'.config('music.max_upload_kb')],
         ];
     }
 
