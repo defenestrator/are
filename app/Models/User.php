@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -48,13 +49,20 @@ class User extends Authenticatable
     }
 
     /**
-     * Users whose name contains $term literally: % and _ match themselves.
-     * The explicit ESCAPE is required: SQLite has no default LIKE escape
-     * character (MySQL and PostgreSQL default to backslash), so backslash
-     * escaping alone matches nothing there. The escape character is ! rather
-     * than a backslash because writing a backslash inside the ESCAPE literal
-     * needs different quoting on MySQL ('\\') than on SQLite and PostgreSQL
-     * ('\'). ESCAPE '!' overrides the default the same way on all three.
+     * Users whose name contains $term literally (% and _ match themselves),
+     * ignoring case.
+     *
+     * Case: PostgreSQL's LIKE is case-sensitive, so pgsql uses ILIKE. SQLite's
+     * LIKE ignores case for ASCII letters, and MySQL's follows the column
+     * collation, which is case-insensitive by default (utf8mb4_unicode_ci).
+     *
+     * Escaping: the explicit ESCAPE is required because SQLite has no default
+     * LIKE escape character (MySQL and PostgreSQL default to backslash). The
+     * escape character is ! rather than a backslash because a backslash inside
+     * the ESCAPE literal needs different quoting on MySQL ('\\') than on SQLite
+     * and PostgreSQL ('\'). ESCAPE '!' overrides the default the same way on
+     * all three. Laravel's whereLike() picks ILIKE on pgsql but cannot add an
+     * ESCAPE clause, hence the raw clause.
      *
      * @param  Builder<User>  $query
      */
@@ -62,9 +70,11 @@ class User extends Authenticatable
     {
         $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $term);
 
-        $column = $query->getQuery()->getGrammar()->wrap($query->qualifyColumn('name'));
+        $grammar = $query->getQuery()->getGrammar();
+        $column = $grammar->wrap($query->qualifyColumn('name'));
+        $operator = $grammar instanceof PostgresGrammar ? 'ilike' : 'like';
 
-        $query->whereRaw("{$column} like ? escape '!'", ['%'.$escaped.'%']);
+        $query->whereRaw("{$column} {$operator} ? escape '!'", ['%'.$escaped.'%']);
     }
 
     public function questions()

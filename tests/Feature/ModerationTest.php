@@ -365,3 +365,21 @@ test('name search treats LIKE wildcards and the escape character literally', fun
         ->and($find('a\\b'))->toBe(['a\\b'])
         ->and($find('ross'))->toEqualCanonicalizing(['Bob_Ross', 'BobXRoss']);
 });
+
+test('name search ignores case', function () {
+    User::factory()->create(['name' => 'Jeremy']);
+    User::factory()->create(['name' => 'xX_TROLL_Xx']);
+
+    expect(User::whereNameContains('jeremy')->pluck('name')->all())->toBe(['Jeremy'])
+        ->and(User::whereNameContains('JEREMY')->pluck('name')->all())->toBe(['Jeremy'])
+        ->and(User::whereNameContains('xx_troll_xx')->pluck('name')->all())->toBe(['xX_TROLL_Xx']);
+});
+
+test('name search compiles to a case-insensitive, !-escaped match on every driver', function (string $connection, string $sql) {
+    // toSql() only needs the grammar, so no server is contacted.
+    expect(User::on($connection)->whereNameContains('a_b')->toSql())->toContain($sql);
+})->with([
+    'pgsql uses ILIKE' => ['pgsql', '"users"."name" ilike ? escape \'!\''],
+    'mysql uses LIKE (case-insensitive collation)' => ['mysql', '`users`.`name` like ? escape \'!\''],
+    'sqlite uses LIKE' => ['sqlite', '"users"."name" like ? escape \'!\''],
+]);
