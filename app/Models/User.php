@@ -49,9 +49,12 @@ class User extends Authenticatable
 
     /**
      * Users whose name contains $term literally: % and _ match themselves.
-     * The escape character is ! rather than a backslash, because a backslash
-     * inside the ESCAPE literal needs quoting differently on MySQL than on
-     * SQLite and PostgreSQL, which also have no default escape character.
+     * The explicit ESCAPE is required: SQLite has no default LIKE escape
+     * character (MySQL and PostgreSQL default to backslash), so backslash
+     * escaping alone matches nothing there. The escape character is ! rather
+     * than a backslash because writing a backslash inside the ESCAPE literal
+     * needs different quoting on MySQL ('\\') than on SQLite and PostgreSQL
+     * ('\'). ESCAPE '!' overrides the default the same way on all three.
      *
      * @param  Builder<User>  $query
      */
