@@ -13,7 +13,9 @@ new class extends Component {
     public int $voteCount;
     // Shown next to the count so the browser can drop out-of-order VoteCasts.
     public int $voteVersion = 0;
-    public array $userVotes;
+    // The viewer's own vote on this question: 1, -1 or 0 for none. The page
+    // passes just this card's vote, not the viewer's whole history (#101).
+    public int $userVote = 0;
 
     // Only decides whether the button shows; deleteQuestion() authorises itself.
     #[Locked]
@@ -62,7 +64,7 @@ new class extends Component {
             return;
         }
 
-        $this->userVotes[$this->question->id] = $direction;
+        $this->userVote = $direction;
         $this->voteCount = $result['votes'];
         $this->voteVersion = $result['version'];
     }
@@ -93,7 +95,7 @@ new class extends Component {
                     <div class="flex items-center gap-2">
                         <div>
                             <flux:button wire:click="upvote" aria-label="Upvote #{{ $question->id }}"
-                                variant="{{ ($userVotes[$question->id] ?? 0) > 0 ? 'primary' : 'ghost' }}" size="sm"
+                                variant="{{ $userVote > 0 ? 'primary' : 'ghost' }}" size="sm"
                                 class="flex items-center">
                                 <flux:icon.hand-thumb-up name="hand-thumb-up" variant="outline"
                                     class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />
@@ -102,7 +104,7 @@ new class extends Component {
 
                         <div>
                             <flux:button wire:click="downvote" aria-label="Downvote #{{ $question->id }}"
-                                variant="{{ ($userVotes[$question->id] ?? 0) < 0 ? 'primary' : 'ghost' }}"
+                                variant="{{ $userVote < 0 ? 'primary' : 'ghost' }}"
                                 size="sm" class="flex items-center">
                                 <flux:icon.hand-thumb-down name="hand-thumb-down" variant="outline"
                                     class="size-4 text-zinc-400 [&_path]:stroke-[2.25]" />

@@ -42,7 +42,7 @@ function votePage(): Testable
 
 function card(Question $question, int $voteCount = 0): Testable
 {
-    return Volt::test('question-card', ['question' => $question, 'voteCount' => $voteCount, 'userVotes' => []]);
+    return Volt::test('question-card', ['question' => $question, 'voteCount' => $voteCount]);
 }
 
 /**

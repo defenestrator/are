@@ -149,7 +149,7 @@ test('voting from chat and from the vote page is one vote per person', function 
     $question = Question::factory()->create();
 
     $this->actingAs($viewer);
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])->call('upvote');
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])->call('upvote');
     twitchChat("!vote {$question->id} up");
 
     expect($question->voteCount())->toBe(1);
@@ -329,7 +329,7 @@ test('the vote page shows each question number for !vote', function () {
     $this->actingAs(chatViewer());
     $question = Question::factory()->create();
 
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
         ->assertSee('#'.$question->id);
 });
 

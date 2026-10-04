@@ -32,7 +32,7 @@ test('a Facebook-only author gets an avatar on the question card', function () {
     $question = Question::getSortedQuestions()->sole();
 
     $this->actingAs(User::factory()->create());
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
         ->assertSee('https://graph.facebook.com/fb-1/picture', false)
         ->assertDontSee('src=""', false);
 });
@@ -54,7 +54,7 @@ test('an author with no picture gets initials on the question card, not a blank 
     $question = Question::getSortedQuestions()->sole();
 
     $this->actingAs(User::factory()->create());
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
         ->assertSee('KF')
         ->assertDontSee('src=""', false);
 });

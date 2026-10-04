@@ -137,19 +137,19 @@ test('votes on archived questions are ignored', function () {
     $question = Question::factory()->for($user)->create(['archived_at' => now()]);
 
     $this->actingAs($user);
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
         ->call('upvote');
 
     expect($question->voteCount())->toBe(0);
 });
 
-test('active votes work and retries do not duplicate a viewers vote', function (bool $includeUserVotes) {
+test('active votes work and retries do not duplicate a viewers vote', function (bool $includeUserVote) {
     $user = User::factory()->create();
     $question = Question::factory()->create();
     $this->actingAs($user);
     $props = ['question' => $question, 'voteCount' => 0];
-    if ($includeUserVotes) {
-        $props['userVotes'] = [];
+    if ($includeUserVote) {
+        $props['userVote'] = 0;
     }
 
     $card = Volt::test('question-card', $props);
@@ -209,8 +209,8 @@ test('authors can delete their own question but not someone else\'s', function (
     $theirs = Question::factory()->for($other)->create();
 
     $this->actingAs($author);
-    Volt::test('question-card', ['question' => $theirs, 'voteCount' => 0, 'userVotes' => []])->call('deleteQuestion')->assertForbidden();
-    Volt::test('question-card', ['question' => $mine, 'voteCount' => 0, 'userVotes' => []])->call('deleteQuestion');
+    Volt::test('question-card', ['question' => $theirs, 'voteCount' => 0])->call('deleteQuestion')->assertForbidden();
+    Volt::test('question-card', ['question' => $mine, 'voteCount' => 0])->call('deleteQuestion');
 
     expect(Question::pluck('id')->all())->toBe([$theirs->id]);
 });
@@ -325,4 +325,82 @@ test('QuestionSubmitted is broadcast once, after the locked transaction commits,
     expect(fn () => QuestionQueue::submit($user, 'the seventh one'))->toThrow(QuestionRejected::class);
 
     expect($dispatchedAt)->toBe([$question->id => $callerLevel]);
+});
+
+// --- The viewer's own votes (#101) -------------------------------------------
+
+/** Give $viewer a history of $count votes on questions that are no longer in the queue. */
+function oldVotes(User $viewer, int $count): void
+{
+    $ids = Question::factory()->count($count)->create(['archived_at' => now()])->modelKeys();
+    DB::table('question_votes')->insert(array_map(
+        fn (int $id) => ['question_id' => $id, 'user_id' => $viewer->id, 'count' => 1],
+        $ids,
+    ));
+}
+
+/** Load /vote as $viewer and return the response body and the queries it ran. */
+function loadVotePage($test, User $viewer): array
+{
+    Question::forgetCachedQueue();
+    Once::flush();
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $html = $test->actingAs($viewer)->get('/vote')->assertOk()->getContent();
+    DB::disableQueryLog();
+
+    return [$html, collect(DB::getQueryLog())->pluck('query')];
+}
+
+test('the vote page does not grow with the viewer\'s old votes', function () {
+    Question::factory()->count(5)->create();
+    $fresh = User::factory()->create();
+    $regular = User::factory()->create();
+    oldVotes($regular, 300);
+
+    // Livewire inlines its styles into the first page of the process only.
+    loadVotePage($this, $fresh);
+    [$freshHtml] = loadVotePage($this, $fresh);
+    [$regularHtml] = loadVotePage($this, $regular);
+
+    // Before #101 the regular viewer's page was ~51 KB bigger (every old vote
+    // copied into every card). Allow a little for per-user text such as names.
+    expect(strlen($regularHtml) - strlen($freshHtml))->toBeLessThan(512);
+});
+
+test('the vote page reads only the viewer\'s votes on the questions it shows, in one query', function () {
+    $onPage = Question::factory()->count(5)->create();
+    $viewer = User::factory()->create();
+    oldVotes($viewer, 50);
+
+    [, $none] = loadVotePage($this, User::factory()->create());
+    [$html, $queries] = loadVotePage($this, $viewer);
+
+    $viewerVoteQueries = $queries->filter(fn (string $sql) => str_contains($sql, 'question_votes') && str_contains($sql, '"user_id"'));
+    expect($viewerVoteQueries)->toHaveCount(1)
+        ->and($viewerVoteQueries->first())->toContain('"question_id" in (')
+        // Fifty old votes cost no extra query.
+        ->and($queries->count())->toBe($none->count());
+
+    // The card snapshot carries one vote, not the viewer's whole history.
+    expect($html)->not->toContain('userVotes');
+});
+
+test('each card shows the viewer\'s own vote on that question', function () {
+    [$up, $down, $none] = Question::factory()->count(3)->create();
+    $viewer = User::factory()->create();
+    $up->recordVote($viewer, 1);
+    $down->recordVote($viewer, -1);
+    oldVotes($viewer, 3);
+
+    [$html] = loadVotePage($this, $viewer);
+
+    $pressed = fn (string $button, Question $q) => preg_match_all('/<button(?=[^>]*bg-\[var\(--color-accent\)\])(?=[^>]*aria-label="'.$button.' #'.$q->id.'")/', $html);
+
+    // Each question is on the page twice (Top Suggestions and New Ideas).
+    expect($pressed('Upvote', $up))->toBe(2)
+        ->and($pressed('Downvote', $up))->toBe(0)
+        ->and($pressed('Downvote', $down))->toBe(2)
+        ->and($pressed('Upvote', $down))->toBe(0)
+        ->and($pressed('Upvote', $none) + $pressed('Downvote', $none))->toBe(0);
 });

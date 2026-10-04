@@ -27,26 +27,38 @@ new class extends Component {
     }
 
     /**
-     * @return array{top: \Illuminate\Database\Eloquent\Collection<int, Question>, recent: \Illuminate\Database\Eloquent\Collection<int, Question>}
+     * @return array{top: \Illuminate\Database\Eloquent\Collection<int, Question>, recent: \Illuminate\Database\Eloquent\Collection<int, Question>, userVotes: array<int, int>}
      */
     public function with(): array
     {
-        return Question::cachedQueue();
+        $queue = Question::cachedQueue();
+
+        return $queue + ['userVotes' => $this->viewerVotesOn($queue['top']->modelKeys(), $queue['recent']->modelKeys())];
     }
 
     /**
-     * The viewer's own votes, read on every render: a card whose total changed
-     * is remounted (its key carries vote_version), and must show their vote as
-     * it is now, not as it was when the page loaded.
+     * The viewer's own votes on the questions this render shows, keyed by
+     * question id. Read on every render: a card whose total changed is
+     * remounted (its key carries vote_version), and must show their vote as it
+     * is now, not as it was when the page loaded. Only on-page questions are
+     * read, and each card is handed only its own vote, so the page does not
+     * grow with every vote the viewer has ever cast (#101).
      *
+     * @param  list<int>  ...$questionIds
      * @return array<int, int>
      */
-    #[Computed]
-    public function userVotes(): array
+    private function viewerVotesOn(array ...$questionIds): array
     {
-        return auth()->user()->votes()->get()
-            ->mapWithKeys(fn($vote) => [$vote->question_id => $vote->count])
-            ->toArray();
+        $ids = array_values(array_unique(array_merge(...$questionIds)));
+        if ($ids === []) {
+            return [];
+        }
+
+        return auth()->user()->votes()
+            ->whereIn('question_id', $ids)
+            ->pluck('count', 'question_id')
+            ->map(fn ($count) => (int) $count)
+            ->all();
     }
 
     public function saveQuestion()
@@ -121,7 +133,7 @@ new class extends Component {
                 <ul x-ref="top">
                     @foreach ($top as $question)
                         <li wire:key="hot-li-{{ $question->id }}" data-question-id="{{ $question->id }}">
-                            <livewire:question-card @question-deleted="$refresh" :user-votes="$this->userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'hot-'.$question->id.'-v'.$question->vote_version" />
+                            <livewire:question-card @question-deleted="$refresh" :user-vote="$userVotes[$question->id] ?? 0" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'hot-'.$question->id.'-v'.$question->vote_version" />
                         </li>
                     @endforeach
                 </ul>
@@ -132,7 +144,7 @@ new class extends Component {
                 <ul>
                     @foreach ($recent as $question)
                         <li wire:key="recent-li-{{ $question->id }}" data-question-id="{{ $question->id }}">
-                            <livewire:question-card @question-deleted="$refresh" :user-votes="$this->userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'recent-'.$question->id.'-v'.$question->vote_version" />
+                            <livewire:question-card @question-deleted="$refresh" :user-vote="$userVotes[$question->id] ?? 0" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'recent-'.$question->id.'-v'.$question->vote_version" />
                         </li>
                     @endforeach
                 </ul>

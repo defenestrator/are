@@ -190,7 +190,7 @@ test('the moderation page is for moderators only', function () {
 test('the card shows a delete button to the author but not to other viewers', function () {
     $author = User::factory()->create();
     $question = Question::factory()->for($author)->create();
-    $props = ['question' => $question, 'voteCount' => 0, 'userVotes' => []];
+    $props = ['question' => $question, 'voteCount' => 0];
 
     $this->actingAs($author);
     Volt::test('question-card', $props)->assertSeeHtml('aria-label="Delete question"');
@@ -236,7 +236,7 @@ test('a viewer calling deleteQuestion on someone else\'s card gets a 403', funct
     $question = Question::factory()->create();
     $this->actingAs(User::factory()->create());
 
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
         ->call('deleteQuestion')
         ->assertForbidden();
 
@@ -245,7 +245,7 @@ test('a viewer calling deleteQuestion on someone else\'s card gets a 403', funct
 
 test('a moderator deletes from the card, and a banned moderator cannot', function () {
     $mod = moderator();
-    $props = fn () => ['question' => Question::factory()->create(), 'voteCount' => 0, 'userVotes' => []];
+    $props = fn () => ['question' => Question::factory()->create(), 'voteCount' => 0];
     $this->actingAs($mod);
 
     Volt::test('question-card', $props())->assertSeeHtml('aria-label="Delete question"')
