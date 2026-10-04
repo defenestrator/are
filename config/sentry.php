@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\SentryScrubber;
+
 /**
  * Sentry Laravel SDK configuration file.
  *
@@ -34,6 +36,13 @@ return [
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#send-default-pii
     'send_default_pii' => env('SENTRY_SEND_DEFAULT_PII', false),
+
+    // OBS overlay URLs carry `?token=`, and Sentry attaches the full request URL
+    // and query string to every event whatever send_default_pii says. Strip it.
+    // [class, method] callables, not closures, so config:cache keeps working.
+    'before_send' => [SentryScrubber::class, 'beforeSend'],
+    'before_send_transaction' => [SentryScrubber::class, 'beforeSend'],
+    'before_breadcrumb' => [SentryScrubber::class, 'beforeBreadcrumb'],
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#ignore-exceptions
     // 'ignore_exceptions' => [],

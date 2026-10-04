@@ -58,3 +58,12 @@ Each overlay is a transparent page for an OBS browser source, at `/overlay/{name
 Every overlay has its own token. `php artisan overlay:token queue` prints the horizontal and vertical URLs once. Only a hash is stored, so the URL can't be shown again. To replace a leaked URL, run `php artisan overlay:token queue --rotate`; the old URL stops working, and any open copy goes blank on its next refresh. The queue, vote and top-vote overlays refresh every 5 seconds.
 
 The `cta` lower-third rotates between the Orkestera and EDOS Professional Services calls to action. Set `ARE_CTA_ORKESTERA_URL` and `ARE_CTA_EDOS_URL`: an item with no URL is not shown. The copy lives in `config/are.php`.
+
+**Upgrading from `/top-vote`.** `/top-vote` used to be public. It now redirects permanently to `/overlay/top-vote`, which needs a token, so an existing `/top-vote` source shows nothing (its request gets a 403). OBS caches the redirect. Replace the source URL with the one printed by `php artisan overlay:token top-vote`.
+
+**Where overlay tokens end up.** The token travels in the URL's query string, because OBS browser sources can't send headers. So:
+
+- **The web server's access logs contain overlay URLs, tokens included.** On Forge that means nginx's access log, which records every OBS source load. Anyone who can read those logs can open the overlays. If a log leaks, rotate the affected tokens. To keep tokens out of the log, give the `/overlay/` location a log format that records `$uri` (the path without its query) instead of `$request`, for example `log_format no_query '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent';` and `access_log /var/log/nginx/<site>-access.log no_query;` inside `location /overlay/ { ... }`. This snippet hasn't been tried on our Forge server yet.
+- **Sentry never receives them.** `App\Support\SentryScrubber`, set as `before_send`, `before_send_transaction` and `before_breadcrumb` in `config/sentry.php`, replaces every `token=` value with `[Filtered]`. Sentry would otherwise attach the full URL and query string to every event, whatever `SENTRY_SEND_DEFAULT_PII` says.
+- **OBS stores them** in its scene collection JSON on the streaming machine.
+- **Pages never pass them on.** Responses send `Referrer-Policy: no-referrer`, so a token never leaves in a `Referer` header, and `Cache-Control: no-store` keeps it out of caches.
