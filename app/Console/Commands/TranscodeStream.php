@@ -19,7 +19,7 @@ class TranscodeStream extends Command
      *
      * @var string
      */
-    protected $description = 'Transcodes rtmp stream to HLS format';
+    protected $description = 'Captures the default macOS audio input to HLS at public/output.m3u8 (macOS only)';
 
     /**
      * Execute the console command.

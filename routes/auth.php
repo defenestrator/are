@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Laravel\Socialite\Facades\Socialite;
 use App\Twitch;
+use App\Http\Controllers\Twitch\BroadcasterConnectionController;
+use App\Http\Controllers\Twitch\EventSubController;
 
 Route::middleware('guest')->group(function () {
     Route::get("login", function () {
@@ -66,6 +68,10 @@ Route::middleware('guest')->group(function () {
                 ])
             );
 
+            if ($user->isBanned()) {
+                return redirect('/?banned=1');
+            }
+
             Auth::login($user);
         } catch (\Exception $e) {
             return redirect('/?failed_twitch_login=1');
@@ -80,3 +86,15 @@ Route::post('logout', App\Livewire\Actions\Logout::class)
 
 Route::get('logout', App\Livewire\Actions\Logout::class)
     ->name('getLogout');
+
+// A broadcaster grants this app moderation and channel scopes, so it can sync
+// bans and moderators and set the stream title. Register the callback URL in
+// the Twitch developer console alongside the login callback.
+Route::middleware('auth')->group(function () {
+    Route::get('twitch/broadcaster/connect', [BroadcasterConnectionController::class, 'redirect'])
+        ->name('twitch.broadcaster.connect');
+    Route::get('twitch/broadcaster/callback', [BroadcasterConnectionController::class, 'callback'])
+        ->name('twitch.broadcaster.callback');
+});
+
+Route::post('twitch/eventsub', EventSubController::class)->name('twitch.eventsub');

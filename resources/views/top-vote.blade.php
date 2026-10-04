@@ -4,7 +4,7 @@ use App\Models\Question;
 use Livewire\Volt\Component;
 
 new class extends Component {
-    public Question $question;
+    public ?Question $question = null;
 
     public function mount() {
         $this->question = Question::getSortedQuestions(1)->first();
@@ -18,7 +18,9 @@ new class extends Component {
     </head>
     <body>
     @volt
-        <flux:card style="background-color: #fafafa" class="text-xl m-2 rounded-lg bg-zinc-400/5 dark:bg-zinc-900">
+        <div>
+        @if ($question)
+        <div style="background-color: #fafafa" class="text-xl m-2 p-6 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-400/5 dark:bg-zinc-900">
             <div class="pl-2">
                 <flux:text class="mb-2 text-xl" variant="strong">{{ $question->question }}</flux:text>
 
@@ -42,7 +44,9 @@ new class extends Component {
 
                 </div>
             </div>
-        </flux:card>
+        </div>
+        @endif
+        </div>
     @endvolt
     </body>
 </html>

@@ -21,6 +21,10 @@ new class extends Component {
 
     public function upvote(Question $question)
     {
+        if (! $this->canVote($question)) {
+            return;
+        }
+
         DB::table('question_votes')->updateOrInsert(
             [
                 'question_id' => $question->id,
@@ -37,6 +41,10 @@ new class extends Component {
 
     public function downvote(Question $question)
     {
+        if (! $this->canVote($question)) {
+            return;
+        }
+
         DB::table('question_votes')->updateOrInsert(
             [
                 'question_id' => $question->id,
@@ -51,9 +59,15 @@ new class extends Component {
         $this->userVotes[$question->id] = -1;
     }
 
+    private function canVote(Question $question): bool
+    {
+        return Auth::check() && ! Auth::user()->isBanned() && $question->archived_at === null;
+    }
+
     public function deleteQuestion()
     {
-        if (!Auth::user()->isAdminUser()) {
+        // Moderators can remove any question; authors can remove their own.
+        if (! Auth::user()->isAdminUser() && Auth::user()->id !== $this->question->user_id) {
             return;
         }
 

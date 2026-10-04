@@ -16,7 +16,7 @@ Route::get('/', function () {
 Route::get('vote', function () {
     return view('vote', []);
 })
-    ->middleware(['auth'])
+    ->middleware(['auth', 'not-banned'])
     ->name('dashboard');
 
 Route::get('top-vote', function () {
@@ -24,7 +24,7 @@ Route::get('top-vote', function () {
 })
     ->name('top-vote');
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'not-banned'])->group(function () {
     // volt route for settings.profile
     Route::get('settings', function () {
         return view('livewire.settings.profile');

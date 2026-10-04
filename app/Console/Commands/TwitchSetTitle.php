@@ -2,39 +2,41 @@
 
 namespace App\Console\Commands;
 
+use App\Models\User;
+use App\Twitch;
 use Illuminate\Console\Command;
 
 class TwitchSetTitle extends Command
 {
     /**
-     * The name and signature of the console command.
-     *
-     * Usage example: php artisan twitch:title "New Title"
+     * Usage: php artisan twitch:title "New Title" [--broadcaster=<twitch id>]
      */
-    protected $signature = 'twitch:title {title : The new stream title}';
+    protected $signature = 'twitch:title
+        {title : The new stream title}
+        {--broadcaster= : Twitch user id of the channel; defaults to TWITCH_CHANNEL_ID}';
 
-    /**
-     * The console command description.
-     */
-    protected $description = 'Updates the Twitch stream title using the Twitch CLI tool.';
+    protected $description = 'Updates the Twitch stream title through the Helix API.';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    public function handle(): int
     {
-        // Get the title argument
-        $newTitle = $this->argument('title');
+        $title = trim($this->argument('title'));
+        $broadcasterId = $this->option('broadcaster') ?: User::getBroadcasterID();
 
-        // Example shell command for changing the title using the Twitch CLI
-        // Adjust the path/command per your environment
-        // e.g., "twitch set title 'My new stream title'"
-        $command = sprintf('twitch set title "%s"', escapeshellcmd($newTitle));
+        if ($title === '' || mb_strlen($title) > 140) {
+            $this->error('The title must be between 1 and 140 characters.');
 
-        // Execute the command
-        $output = shell_exec($command);
+            return self::FAILURE;
+        }
 
-        // Display the result
-        $this->info($output ?: "Stream title updated to: \"{$newTitle}\"");
+        if (! in_array($broadcasterId, User::getBroadcasterIDs(), true)) {
+            $this->error("{$broadcasterId} is not a broadcaster this app serves.");
+
+            return self::FAILURE;
+        }
+
+        Twitch::setTitle($broadcasterId, $title);
+        $this->info("Stream title updated to: \"{$title}\"");
+
+        return self::SUCCESS;
     }
 }

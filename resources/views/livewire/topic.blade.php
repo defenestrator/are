@@ -1,6 +1,5 @@
 <?php
 use App\Models\Topic;
-use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Component;
 
 new class extends Component {
@@ -8,24 +7,22 @@ new class extends Component {
 
     public function mount()
     {
-        $this->topic = Topic::first()?->topic;
+        $this->topic = Topic::current()?->topic;
     }
 
     public function clear() {
         if (Auth::user()->isAdminUser()) {
-            DB::table("questions")->delete();
-            DB::table("question_votes")->delete();
-            DB::table("topics")->delete();
+            Topic::archiveAll();
+            $this->topic = "";
 
             $this->dispatch("topic-changed");
         }
     }
+
     public function save() {
         if (Auth::user()->isAdminUser()) {
-            DB::table("topics")->delete();
-            DB::table("topics")->insert([
-                "topic" => $this->topic,
-            ]);
+            $this->validate(['topic' => 'required|string|max:255']);
+            Topic::set($this->topic);
 
             $this->dispatch("topic-changed");
         }
@@ -47,7 +44,7 @@ new class extends Component {
 
 @endif
 <div class="bg-violet-100 dark:bg-violet-800 font-bold p-4 rounded-md text-zinc-900 dark:text-white">
-    Prime Directive: @if(Topic::count() > 0) {{ Topic::first()?->topic }} @else Be funny. @endif
+    Prime Directive: {{ Topic::current()?->topic ?? 'Be funny.' }}
 </div>
 
 </div>
