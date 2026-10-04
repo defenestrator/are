@@ -346,6 +346,33 @@ test('stream.offline matches the stream id when Twitch sends one', function () {
         ->and($latest->fresh()->ended_at)->toBeNull();
 });
 
+// Reported by Andras on #37: offline(A) and online(B) ran out of order after a reconnect.
+test('a late stream.offline for the previous stream does not end the stream that replaced it', function () {
+    $offlineSentAt = now()->subSeconds(30);
+    $bStarted = now()->subSeconds(10);
+
+    (new HandleStreamOnline('msg-online-a', now()->subHour()->toIso8601ZuluString(), [
+        'id' => 'A', 'broadcaster_user_id' => '1000', 'type' => 'live', 'started_at' => now()->subHour()->toIso8601ZuluString(),
+    ]))->handle();
+    (new HandleStreamOnline('msg-online-b', $bStarted->toIso8601ZuluString(), [
+        'id' => 'B', 'broadcaster_user_id' => '1000', 'type' => 'live', 'started_at' => $bStarted->toIso8601ZuluString(),
+    ]))->handle();
+
+    (new HandleStreamOffline('msg-offline-a', $offlineSentAt->toIso8601ZuluString(), ['broadcaster_user_id' => '1000']))->handle();
+
+    expect(StreamSession::where('twitch_stream_id', 'B')->first()->ended_at)->toBeNull()
+        // A was closed provisionally at B's start; the late offline corrects it to the real end.
+        ->and(StreamSession::where('twitch_stream_id', 'A')->first()->ended_at->toIso8601ZuluString())->toBe($offlineSentAt->toIso8601ZuluString());
+});
+
+test('stream.offline sent before the only open session started changes nothing', function () {
+    $session = StreamSession::factory()->create(['started_at' => now()->subSeconds(10)]);
+
+    (new HandleStreamOffline('m1', now()->subSeconds(30)->toIso8601ZuluString(), eventSubFixture('stream.offline')))->handle();
+
+    expect($session->fresh()->ended_at)->toBeNull();
+});
+
 test('stream.offline with no open session changes nothing', function () {
     $ended = StreamSession::factory()->ended()->create();
 
