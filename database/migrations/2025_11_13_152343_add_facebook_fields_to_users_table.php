@@ -24,6 +24,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
+            // SQLite cannot drop a column that an index still covers.
+            $table->dropUnique(['facebook_id']);
             $table->dropColumn(['facebook_id', 'facebook_avatar_url', 'email']);
         });
     }

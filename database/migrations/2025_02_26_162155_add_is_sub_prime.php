@@ -16,4 +16,16 @@ return new class extends Migration
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        // A later migration already drops this column.
+        if (Schema::hasColumn('users', 'twitch_subscription')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('twitch_subscription');
+            });
+        }
+    }
 };

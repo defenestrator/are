@@ -23,8 +23,12 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
-        });
+        // up() only dropped the column if it existed; the Facebook migration
+        // re-adds it, so it may be present again by the time we get here.
+        if (! Schema::hasColumn('users', 'email')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->string('email')->nullable()->after('name');
+            });
+        }
     }
 };
