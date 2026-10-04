@@ -43,3 +43,17 @@ test('the top-vote overlay renders with an empty queue', function () {
 test('the visualizer renders', function () {
     $this->get('/visualizer')->assertOk();
 });
+
+// The router ignores a trailing slash, so /vote/ serves the page; a relative
+// src would then resolve to /vote/img/are.png and 404.
+test('the app-layout logo uses an absolute asset URL on a nested path', function (string $path) {
+    $this->actingAs(User::factory()->create())
+        ->get($path)
+        ->assertOk()
+        ->assertSee('src="'.asset('img/are.png').'"', false)
+        ->assertDontSee('src="img/are.png"', false);
+})->with(['/vote/', '/settings/']);
+
+test('the welcome page logo uses the asset URL', function () {
+    $this->get('/')->assertOk()->assertSee('src="'.asset('img/are.png').'"', false);
+});
