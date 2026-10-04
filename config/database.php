@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
-
 return [
 
     /*
@@ -147,7 +145,9 @@ return [
 
         'options' => [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
-            'prefix' => env('REDIS_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_database_'),
+            // Fixed rather than derived from APP_NAME: the production Redis is
+            // shared with other Laravel apps, which may keep the default name.
+            'prefix' => env('REDIS_PREFIX', 'are_database_'),
             'persistent' => env('REDIS_PERSISTENT', false),
         ],
 
@@ -157,7 +157,9 @@ return [
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
-            'database' => env('REDIS_DB', '0'),
+            // ARE's own indexes: the production Redis is shared with other apps
+            // on the low ones. Queue, Horizon and locks live here.
+            'database' => env('REDIS_DB', '4'),
         ],
 
         'cache' => [
@@ -166,7 +168,9 @@ return [
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
-            'database' => env('REDIS_CACHE_DB', '1'),
+            // cache:clear runs FLUSHDB on this index, so it must belong to ARE's
+            // cache alone: never REDIS_DB, and never another app's index.
+            'database' => env('REDIS_CACHE_DB', '5'),
         ],
 
     ],

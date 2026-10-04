@@ -165,15 +165,24 @@ Production runs its queues on Redis under [Horizon](https://laravel.com/docs/12.
 
 Every supervisor `timeout` stays below the redis connection's `retry_after` (`REDIS_QUEUE_RETRY_AFTER`, 90 seconds by default). A test enforces this.
 
+**The production Redis is shared** with other apps on this server (gemreptiles, 12thfret), which use the low database indexes. ARE keeps to its own indexes and key prefixes, whatever `APP_NAME` is:
+
+| What | Redis connection | Index | Key prefix |
+|---|---|---|---|
+| Queue, Horizon, cache locks | `default` | `REDIS_DB`, 4 by default | `are_database_`, and Horizon's own `are_horizon:` |
+| Cache | `cache` | `REDIS_CACHE_DB`, 5 by default | `are_database_` + `are_cache_` |
+
+`scripts/forge-deploy.sh` runs `cache:clear`. With `CACHE_STORE=redis` that is a `FLUSHDB` on `REDIS_CACHE_DB` only. It never touches `REDIS_DB` or another app's index, and a test pins this. So `REDIS_CACHE_DB` must be an index nothing else uses: never `REDIS_DB`, and never 0 or 1.
+
 `/horizon` is open to everyone in `local`. Elsewhere only the broadcasters of served channels (`TWITCH_CHANNEL_ID` and `TWITCH_BROADCASTER_IDS`) who are not banned can open it. Everyone else gets a 403, including moderators. The dashboard shows every job's payload and can retry or delete failed jobs, so it is an operator tool, not a moderation one.
 
 Operator checklist:
 
 1. **Check the server.** Under Server > Overview, confirm it is an **App** server, because only App and Cache servers come with Redis. SSH in and check `redis-cli ping` (expect `PONG`), `php -m | grep -i redis` and `ulimit -n`.
 2. **Note the deploy strategy.** If the deploy script contains `$CREATE_RELEASE()`, the site uses zero-downtime deployments.
-3. **Optional: set a Redis password** (Server > Settings > Recipes > Redis "Set password"), then set `REDIS_PASSWORD` in the site environment.
-4. **Set the site environment:** `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` and `REDIS_CLIENT`. Use `phpredis` if step 1 listed the `redis` extension, otherwise `predis`. Set `APP_ENV=production` to get the production worker counts. Any other non-`local` value (a staging site, say) falls back to the smaller `*` supervisors in `config/horizon.php`.
+3. **Redis password and indexes.** Set `REDIS_PASSWORD` in the site environment to the server's real Redis password. Run `redis-cli -a "$REDIS_PASSWORD" INFO keyspace` and confirm `db4` and `db5` are absent (empty). If another app already uses them, pick two free indexes and set `REDIS_DB` and `REDIS_CACHE_DB` to them.
+4. **Set the site environment:** `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, `REDIS_DB=4`, `REDIS_CACHE_DB=5` (or the indexes from step 3) and `REDIS_CLIENT`. Use `phpredis` if step 1 listed the `redis` extension, otherwise `predis`. Set `APP_ENV=production` to get the production worker counts. Any other non-`local` value (a staging site, say) falls back to the smaller `*` supervisors in `config/horizon.php`.
 5. **Turn on the "Laravel Horizon" toggle** on the site's Overview tab. Then delete any plain queue workers for the site, because Forge says not to run them alongside Horizon. Make sure the **Laravel Scheduler** toggle is on: it runs `horizon:snapshot` every five minutes for the metrics, as well as `twitch:sync-moderation`.
-6. **Check the deploy script restarts Horizon after the new code is live.** On zero-downtime sites, `$RESTART_QUEUES()` after `$ACTIVATE_RELEASE()` covers Horizon. On standard sites, end with `$FORGE_PHP artisan horizon:terminate`. Forge appends that line if it is missing. Alternatively, `$FORGE_PHP artisan reload` (Laravel 12.45+) runs `horizon:terminate` along with the other reloadable services, such as Reverb once it lands.
+6. **Check the deploy script restarts Horizon after the new code is live.** The Forge script above ends with `bash scripts/forge-deploy.sh`, whose `queue:restart` does not restart the Horizon master. When the Horizon toggle is on, Forge appends `$FORGE_PHP artisan horizon:terminate` to the Forge script if it is missing. Keep that line **after** `bash scripts/forge-deploy.sh`, so Horizon restarts on the new code. On a zero-downtime site, `$RESTART_QUEUES()` after `$ACTIVATE_RELEASE()` covers it instead. Alternatively, `$FORGE_PHP artisan reload` (Laravel 12.45+) runs `horizon:terminate` along with the other reloadable services, such as Reverb once it lands.
 7. **Set the Horizon daemon's Stop Seconds** to at least the longest job's runtime (the longest supervisor `timeout`, 60 seconds today), so a deploy doesn't kill a job mid-run.
 8. **Smoke test.** `/horizon` should load for the broadcaster and return 403 for a moderator and a viewer. The dashboard should show both supervisors running. After ten minutes, the Metrics tab should have data.

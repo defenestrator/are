@@ -13,7 +13,7 @@ test('the dashboard runs outside local, so the viewHorizon gate decides', functi
 });
 
 test('a broadcaster of any served channel can open the Horizon dashboard', function (string $twitchId) {
-    $broadcaster = User::factory()->create(['twitch_id' => $twitchId]);
+    $broadcaster = User::factory()->twitch($twitchId)->create();
 
     $this->actingAs($broadcaster)->get('/horizon')->assertOk();
 })->with(['primary channel' => '1000', 'extra channel' => '2000']);
@@ -27,7 +27,7 @@ test('a moderator gets 403 from the Horizon dashboard, because it exposes job pa
 });
 
 test('a banned broadcaster gets 403 from the Horizon dashboard', function () {
-    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $broadcaster = User::factory()->twitch('1000')->create();
     $broadcaster->localBans()->create(['moderator_id' => $broadcaster->id]);
 
     $this->actingAs($broadcaster)->get('/horizon')->assertForbidden();
