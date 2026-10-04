@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // EventSub keeps bans and moderators current in real time; this catches anything it missed.
 Schedule::command('twitch:sync-moderation')->hourly()->withoutOverlapping();
+
+// Feeds the Horizon metrics dashboard (job and queue wait times, throughput).
+Schedule::command('horizon:snapshot')->everyFiveMinutes();

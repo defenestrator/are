@@ -155,3 +155,25 @@ Do not run `migrate:fresh` or `migrate:reset` in production. Creating the schema
 does not transfer users, questions or votes from a previous database. The tests
 cover the full migration chain, runtime-table repairs and voting on SQLite and
 PostgreSQL 14, including a clean-database deployment preparation and retry.
+
+## Production queues (Forge)
+
+Production runs its queues on Redis under [Horizon](https://laravel.com/docs/12.x/horizon). Local development and tests keep `QUEUE_CONNECTION=database` and `sync`, so you don't need Redis on your machine. Horizon runs two supervisors (`config/horizon.php`):
+
+- `supervisor-broadcasts` works the `broadcasts` queue and always keeps at least one worker, so vote updates never wait behind EventSub jobs.
+- `supervisor-default` works the `default` queue.
+
+Every supervisor `timeout` stays below the redis connection's `retry_after` (`REDIS_QUEUE_RETRY_AFTER`, 90 seconds by default). A test enforces this.
+
+`/horizon` is open to everyone in `local`. Elsewhere only admins can open it: broadcasters and moderators of a served channel who are not banned (the same `moderate` gate the rest of the app uses). Everyone else gets a 403.
+
+Operator checklist:
+
+1. **Check the server.** Under Server > Overview, confirm it is an **App** server, because only App and Cache servers come with Redis. SSH in and check `redis-cli ping` (expect `PONG`), `php -m | grep -i redis` and `ulimit -n`.
+2. **Note the deploy strategy.** If the deploy script contains `$CREATE_RELEASE()`, the site uses zero-downtime deployments.
+3. **Optional: set a Redis password** (Server > Settings > Recipes > Redis "Set password"), then set `REDIS_PASSWORD` in the site environment.
+4. **Set the site environment:** `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` and `REDIS_CLIENT`. Use `phpredis` if step 1 listed the `redis` extension, otherwise `predis`. `APP_ENV` must be `production`, because Horizon only starts the supervisors configured for the current environment.
+5. **Turn on the "Laravel Horizon" toggle** on the site's Overview tab. Then delete any plain queue workers for the site, because Forge says not to run them alongside Horizon. Make sure the **Laravel Scheduler** toggle is on: it runs `horizon:snapshot` every five minutes for the metrics, as well as `twitch:sync-moderation`.
+6. **Check the deploy script restarts Horizon after the new code is live.** On zero-downtime sites, `$RESTART_QUEUES()` after `$ACTIVATE_RELEASE()` covers Horizon. On standard sites, end with `$FORGE_PHP artisan horizon:terminate`. Forge appends that line if it is missing. Alternatively, `$FORGE_PHP artisan reload` (Laravel 12.45+) runs `horizon:terminate` along with the other reloadable services, such as Reverb once it lands.
+7. **Set the Horizon daemon's Stop Seconds** to at least the longest job's runtime (the longest supervisor `timeout`, 60 seconds today), so a deploy doesn't kill a job mid-run.
+8. **Smoke test.** `/horizon` should load for an admin and return 403 for a viewer. The dashboard should show both supervisors running. After ten minutes, the Metrics tab should have data.
