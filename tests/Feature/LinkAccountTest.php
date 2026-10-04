@@ -199,13 +199,20 @@ test('codes are case- and dash-insensitive', function () {
         ->and(LinkCode::pending()->count())->toBe(1);
 });
 
-test('a code can be claimed once', function () {
+test('a second account typing a claimed code voids it (#102)', function () {
     $user = User::factory()->twitch('42')->create();
     $code = LinkCode::issueFor($user);
 
-    expect(linkChat("!link {$code}", 'UC-first')->status)->toBe(ChatCommandStatus::Done)
-        ->and(linkChat("!link {$code}", 'UC-second')->status)->toBe(ChatCommandStatus::Rejected)
-        ->and(LinkCode::pending()->sole()->pending_provider_user_id)->toBe('UC-first');
+    expect(linkChat("!link {$code}", 'UC-first')->status)->toBe(ChatCommandStatus::Done);
+
+    $second = linkChat("!link {$code}", 'UC-second');
+
+    expect($second->status)->toBe(ChatCommandStatus::Rejected)
+        ->and($second->reply)->toContain('typed by more than one account')
+        ->and(LinkCode::pending()->exists())->toBeFalse()
+        ->and(LinkCode::contested()->sole()->user_id)->toBe($user->id)
+        ->and(linkChat("!link {$code}", 'UC-first')->status)->toBe(ChatCommandStatus::Rejected)
+        ->and(Identity::where('provider', 'youtube')->exists())->toBeFalse();
 });
 
 test('a code expires after 15 minutes', function () {

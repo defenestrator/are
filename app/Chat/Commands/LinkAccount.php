@@ -22,6 +22,10 @@ use App\Models\UserBan;
  * have their account attached to that person, and their !q and !vote would
  * act as them.
  *
+ * Codes are typed in public chat, so a second account typing a code that is
+ * already claimed voids it (see LinkCode::contest) instead of leaving the
+ * first claim for the owner to confirm (#102).
+ *
  * It serves unlinked chatters, so the registry's ban check (which needs a
  * user) does not cover the chat account. A banned chat account is refused here.
  * The linking rules are checked now, for a clear answer in chat, and again
@@ -47,9 +51,16 @@ class LinkAccount implements ChatCommand
             return ChatCommandResult::rejected('Usage: !link CODE. Get a code from Settings → Linked accounts at '.config('app.url').'.');
         }
 
-        $code = LinkCode::findUsable($invocation->arguments);
+        $code = LinkCode::findTyped($invocation->arguments);
         if ($code === null) {
             return ChatCommandResult::rejected('That link code is wrong, expired or already used. Get a new one from Settings → Linked accounts.');
+        }
+
+        // A claimed code typed again: the same account just waits; any other
+        // account means the code leaked (a bot replaying it from chat can win
+        // the race), so void it rather than let the first claim stand (#102).
+        if ($code->claimed_at !== null) {
+            return $this->claimedAlready($code, $invocation);
         }
 
         if ($invocation->user !== null && $invocation->user->id === $code->user_id) {
@@ -74,9 +85,21 @@ class LinkAccount implements ChatCommand
         }
 
         if (! $code->claim($provider, $invocation->chatterId, $invocation->chatterName)) {
-            return ChatCommandResult::rejected('That link code has just been used.');
+            // Another account claimed it between our read and our write.
+            return $this->claimedAlready($code->refresh(), $invocation);
         }
 
         return ChatCommandResult::done("Almost done, {$invocation->chatterName}: confirm this {$provider->label()} account in Settings → Linked accounts within ".LinkCode::MINUTES.' minutes.');
+    }
+
+    private function claimedAlready(LinkCode $code, ChatCommandInvocation $invocation): ChatCommandResult
+    {
+        if ($code->isClaimedBy($invocation->provider, $invocation->chatterId)) {
+            return ChatCommandResult::done('That code is already waiting for confirmation in Settings → Linked accounts.');
+        }
+
+        $code->contest();
+
+        return ChatCommandResult::rejected('That code was typed by more than one account, so it has been cancelled. The account owner can get a new one in Settings.');
     }
 }

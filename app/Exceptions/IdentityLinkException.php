@@ -35,6 +35,11 @@ class IdentityLinkException extends RuntimeException
         return new self("That {$provider->label()} account is banned here, so it cannot be linked.");
     }
 
+    public static function contested(): self
+    {
+        return new self('That code was typed in chat by more than one account, so it was cancelled to keep your account safe. Get a new code and type it again.');
+    }
+
     public static function bannedLink(): self
     {
         return new self('You cannot link accounts while you are banned or timed out.');

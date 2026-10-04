@@ -22,15 +22,21 @@ use Illuminate\Support\Facades\DB;
  * into typing it) cannot attach their account without the owner noticing:
  *
  * 1. `!link CODE` in chat claims the code for that chat account: a pending link.
- * 2. The code's owner sees the account's name in Settings and confirms it,
- *    which links it through Identities, or rejects it. A pending link they
- *    do not confirm before the code expires is discarded.
+ * 2. The code's owner sees the account's name and id in Settings and
+ *    confirms it, which links it through Identities, or rejects it. A pending
+ *    link they do not confirm before the code expires is discarded.
+ *
+ * Codes are typed in public chat, so a bot can replay one and win the race to
+ * claim it (#102). Any second account typing a claimed code therefore voids
+ * it (contested_at), and the owner is told to get a new one. A race then
+ * costs the owner a retry, never their account.
  *
  * @property IdentityProvider|null $pending_provider
  * @property string|null $pending_provider_user_id
  * @property string|null $pending_name
  * @property Carbon $expires_at
  * @property Carbon|null $claimed_at
+ * @property Carbon|null $contested_at
  * @property Carbon|null $used_at
  */
 class LinkCode extends Model
@@ -53,6 +59,7 @@ class LinkCode extends Model
         'pending_provider_user_id',
         'pending_name',
         'claimed_at',
+        'contested_at',
         'used_at',
     ];
 
@@ -61,6 +68,7 @@ class LinkCode extends Model
         return [
             'expires_at' => 'datetime',
             'claimed_at' => 'datetime',
+            'contested_at' => 'datetime',
             'used_at' => 'datetime',
             'pending_provider' => IdentityProvider::class,
         ];
@@ -106,12 +114,46 @@ class LinkCode extends Model
      */
     public static function findUsable(string $typed): ?self
     {
+        $code = self::findTyped($typed);
+
+        return $code?->claimed_at === null ? $code : null;
+    }
+
+    /**
+     * The live code matching what was typed, claimed or not: unused,
+     * unexpired and not contested.
+     */
+    public static function findTyped(string $typed): ?self
+    {
         $normalized = self::normalize($typed);
         if (strlen($normalized) !== self::LENGTH) {
             return null;
         }
 
-        return self::usable()->whereNull('claimed_at')->where('code_hash', self::hash($normalized))->first();
+        return self::usable()->where('code_hash', self::hash($normalized))->first();
+    }
+
+    /**
+     * Whether $providerUserId on $provider is the account that claimed this code.
+     */
+    public function isClaimedBy(IdentityProvider $provider, string $providerUserId): bool
+    {
+        return $this->claimed_at !== null
+            && $this->pending_provider === $provider
+            && $this->pending_provider_user_id === $providerUserId;
+    }
+
+    /**
+     * A second account typed this claimed code: void it and its pending link.
+     * Returns false if it was already used, contested or never claimed.
+     */
+    public function contest(): bool
+    {
+        return self::whereKey($this->id)
+            ->whereNotNull('claimed_at')
+            ->whereNull('used_at')
+            ->whereNull('contested_at')
+            ->update(['contested_at' => now()]) === 1;
     }
 
     /**
@@ -133,7 +175,7 @@ class LinkCode extends Model
      */
     public function consume(): bool
     {
-        return self::whereKey($this->id)->whereNull('used_at')->update(['used_at' => now()]) === 1;
+        return self::whereKey($this->id)->whereNull('used_at')->whereNull('contested_at')->update(['used_at' => now()]) === 1;
     }
 
     /**
@@ -145,6 +187,17 @@ class LinkCode extends Model
      */
     public function confirm(): Identity
     {
+        // The page that offered this may be stale: read the code as it is now.
+        $current = self::find($this->id);
+        if ($current === null) {
+            throw new IdentityLinkException('There is no link waiting for you to confirm.');
+        }
+        $this->setRawAttributes($current->getAttributes(), true);
+
+        if ($this->contested_at !== null) {
+            throw IdentityLinkException::contested();
+        }
+
         if ($this->claimed_at === null || $this->used_at !== null || $this->pending_provider === null) {
             throw new IdentityLinkException('There is no link waiting for you to confirm.');
         }
@@ -191,7 +244,18 @@ class LinkCode extends Model
      */
     public function scopeUsable(Builder $query): void
     {
-        $query->whereNull('used_at')->where('expires_at', '>', now());
+        $query->whereNull('used_at')->whereNull('contested_at')->where('expires_at', '>', now());
+    }
+
+    /**
+     * Codes voided because more than one account typed them, so the owner
+     * can be told. Issuing a new code clears them.
+     *
+     * @param  Builder<LinkCode>  $query
+     */
+    public function scopeContested(Builder $query): void
+    {
+        $query->whereNotNull('contested_at')->whereNull('used_at');
     }
 
     /**

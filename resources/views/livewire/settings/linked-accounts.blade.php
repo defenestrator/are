@@ -26,6 +26,7 @@ new class extends Component {
         abort_if($user->isBanned(), 403);
 
         $this->linkCode = LinkCode::issueFor($user);
+        unset($this->contestedCode);
         $this->linkCodeExpiresAt = now()->addMinutes(LinkCode::MINUTES)->toIso8601String();
     }
 
@@ -61,6 +62,15 @@ new class extends Component {
         $this->linkCode = null;
         unset($this->pendingLinks);
         session()->now('identity_status', 'Link request discarded. Nothing was linked.');
+    }
+
+    /**
+     * The user's code, if it was voided because more than one account typed it.
+     */
+    #[Computed]
+    public function contestedCode(): ?LinkCode
+    {
+        return Auth::user()->linkCodes()->contested()->latest('id')->first();
     }
 
     /**
@@ -167,15 +177,29 @@ new class extends Component {
         @endforeach
     </ul>
 
+    @if ($this->contestedCode)
+        <div class="rounded-lg border border-red-300 p-3 dark:border-red-700" role="alert" data-link-contested>
+            <flux:text class="text-red-700 dark:text-red-400">
+                {{ __('Your link code was typed in chat by more than one account, so it was cancelled and nothing was linked. Someone may have copied it from chat. Get a new code and type it again.') }}
+            </flux:text>
+        </div>
+    @endif
+
     @foreach ($this->pendingLinks as $pending)
         <div class="space-y-2 rounded-lg border border-amber-300 p-3 dark:border-amber-700" wire:key="pending-link-{{ $pending->id }}">
             <flux:text>
                 {{ __('Link :provider channel', ['provider' => $pending->pending_provider->label()]) }}
-                <span class="font-semibold" data-pending-name>{{ $pending->pending_name }}</span>
-                <span class="text-zinc-500">({{ $pending->pending_provider_user_id }})</span>?
+                <span class="font-semibold" data-pending-name>{{ $pending->pending_name }}</span>?
             </flux:text>
+            {{-- Display names are not unique and can be look-alikes; the id is what identifies the account. --}}
+            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                <dt class="text-zinc-500">{{ __(':provider channel id', ['provider' => $pending->pending_provider->label()]) }}</dt>
+                <dd class="font-mono text-base font-semibold break-all" data-pending-id>{{ $pending->pending_provider_user_id }}</dd>
+                <dt class="text-zinc-500">{{ __('Typed at') }}</dt>
+                <dd data-pending-claimed-at>{{ $pending->claimed_at->toDateTimeString() }} UTC</dd>
+            </dl>
             <flux:text class="text-sm text-zinc-500">
-                {{ __('Someone typed your code in chat from this account. Confirm only if it is yours.') }}
+                {{ __('Someone typed your code in chat from this account. Check that the channel id is yours before you confirm.') }}
             </flux:text>
             <div class="flex gap-2">
                 <flux:button size="sm" variant="primary" wire:click="confirmLink({{ $pending->id }})">{{ __('Yes, link it') }}</flux:button>
@@ -186,7 +210,7 @@ new class extends Component {
 
     @foreach ($this->chatLinkable as $provider)
         <div class="space-y-2" wire:key="chat-link-{{ $provider->value }}">
-            @if ($linkCode && $this->pendingLinks->isEmpty())
+            @if ($linkCode && $this->pendingLinks->isEmpty() && ! $this->contestedCode)
                 <div wire:poll.5s></div>
                 <flux:text>
                     {{ __('Type this in :provider chat within :minutes minutes:', ['provider' => $provider->label(), 'minutes' => \App\Models\LinkCode::MINUTES]) }}
