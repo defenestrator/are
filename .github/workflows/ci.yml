@@ -1,7 +1,14 @@
 name: CI
 
+# Development CI runs on the EDOS-Engineering/are fork. defenestrator/are is
+# the deployment repository: when the fork's main passes CI, deploy-sync
+# fast-forwards defenestrator/are main to the tested commit, and Forge deploys
+# from there. A sync copies this file across too, so the sync job is guarded
+# to the fork and the test jobs double as a pre-deploy check upstream.
+
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
 
@@ -10,7 +17,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   tests:
@@ -48,3 +55,47 @@ jobs:
 
       - name: PHPStan
         run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+
+  # The single required status check (ruleset protecc-main). Add every job
+  # that must pass to `needs`; the ruleset never has to change.
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every needed job to have succeeded
+        run: |
+          echo '${{ toJSON(needs) }}' | jq -e 'all(.[]; .result == "success")' > /dev/null \
+            || { echo "A required job did not succeed:"; echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'; exit 1; }
+
+  deploy-sync:
+    name: Sync tested main to defenestrator/are
+    if: github.repository == 'EDOS-Engineering/are' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [ci-gate]
+    runs-on: ubuntu-latest
+    # Never let two syncs race; an older commit cannot overwrite a newer one
+    # anyway, because the push below is fast-forward only.
+    concurrency:
+      group: deploy-sync
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Load the deploy key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SYNC_KEY }}
+
+      - name: Fast-forward defenestrator/are main to the tested commit
+        run: |
+          git remote add deploy git@github.com:defenestrator/are.git
+          git fetch deploy main
+          if ! git merge-base --is-ancestor FETCH_HEAD "$GITHUB_SHA"; then
+            echo "::error::defenestrator/are main has commits the fork lacks. Bring them into the fork through a PR; this job never force-pushes."
+            exit 1
+          fi
+          git push deploy "$GITHUB_SHA:refs/heads/main"
