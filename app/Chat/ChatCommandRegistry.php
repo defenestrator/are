@@ -4,6 +4,7 @@ namespace App\Chat;
 
 use App\Identities;
 use App\IdentityProvider;
+use App\Models\ChatCommandRun;
 use Illuminate\Support\Facades\RateLimiter;
 use LogicException;
 use Throwable;
@@ -17,12 +18,15 @@ use Throwable;
  *
  * 1. Only "!name args" messages whose name is registered are commands. Other
  *    messages return null at no cost.
- * 2. The chatter is resolved to a user through App\Identities. Unknown chatters
+ * 2. Each message runs its command at most once. Its platform message id is
+ *    claimed in chat_command_runs before anything else runs; a claimed
+ *    message returns null.
+ * 3. The chatter is resolved to a user through App\Identities. Unknown chatters
  *    are not given a user: commands that require one answer Unlinked.
- * 3. Each person is rate-limited across all platforms and commands, keyed on
+ * 4. Each person is rate-limited across all platforms and commands, keyed on
  *    the user (or, if unlinked, on the platform account).
- * 4. Banned or timed-out users can run no command.
- * 5. A command that throws is reported and answers Failed. The exception is
+ * 5. Banned or timed-out users can run no command.
+ * 6. A command that throws is reported and answers Failed. The exception is
  *    not rethrown, so the chat job is not retried and the command cannot run twice.
  */
 class ChatCommandRegistry
@@ -101,6 +105,46 @@ class ChatCommandRegistry
 
         [$name, $arguments] = $parsed;
         $command = $this->commands[$name];
+
+        // At most once per message: a redelivery, or a retry of the chat job
+        // after the command already ran, must not add a second question. The
+        // claim comes first, so a retry also spends no rate-limit budget.
+        if ($messageId !== '' && ! ChatCommandRun::claim($provider, $messageId, $name)) {
+            return null;
+        }
+
+        $claimed = ChatCommandRun::where('provider', $provider)->where('message_id', $messageId);
+
+        try {
+            $result = $this->runClaimed($command, $provider, $name, $arguments, $channelId, $chatterId, $chatterName, $messageId);
+        } catch (Throwable $e) {
+            // Only the steps before the command can throw out of runClaimed
+            // (the command's own exceptions are caught there), so the command
+            // has not run. Release the claim, so the job's retry can run it.
+            if ($messageId !== '') {
+                (clone $claimed)->delete();
+            }
+
+            throw $e;
+        }
+
+        if ($messageId !== '') {
+            (clone $claimed)->update(['status' => $result->status->value]);
+        }
+
+        return $result;
+    }
+
+    private function runClaimed(
+        ChatCommand $command,
+        IdentityProvider $provider,
+        string $name,
+        string $arguments,
+        string $channelId,
+        string $chatterId,
+        string $chatterName,
+        string $messageId,
+    ): ChatCommandResult {
         $user = Identities::findUser($provider, $chatterId);
 
         $rateKey = 'chat-command:'.($user !== null ? 'user:'.$user->id : $provider->value.':'.$chatterId);

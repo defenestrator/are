@@ -7,6 +7,7 @@ use App\Chat\ChatCommandResult;
 use App\Chat\ChatCommandStatus;
 use App\IdentityProvider;
 use App\Jobs\EventSub\HandleChatMessage;
+use App\Models\ChatCommandRun;
 use App\Models\Question;
 use App\Models\Topic;
 use App\Models\TwitchBan;
@@ -14,7 +15,9 @@ use App\Models\User;
 use App\Models\UserTwitchSubscription;
 use App\TwitchSubscription;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
 
@@ -325,4 +328,121 @@ test('the vote page shows each question number for !vote', function () {
 
     Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
         ->assertSee('#'.$question->id);
+});
+
+// --- At most once per message (Andras, review of #77) --------------------------
+
+function andrasChatRun(User $user, string $text, string $messageId = 'm1')
+{
+    return app(ChatCommandRegistry::class)->run(IdentityProvider::Twitch, '1000', $user->twitch_id, 'Someone', $messageId, $text);
+}
+
+test('PR77-1: chat !q applies the same subscriber cap as the web', function () {
+    $user = User::factory()->create();
+    UserTwitchSubscription::create(['user_id' => $user->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier1]);
+    Topic::set('Kale');
+    Question::factory()->count(6)->for($user)->create();
+
+    expect(andrasChatRun($user, '!q one more please')->status)->toBe(ChatCommandStatus::Rejected)
+        ->and(Question::count())->toBe(6);
+});
+
+test('PR77-2: a redelivered chat message (same message id) does not add the question twice', function () {
+    $user = User::factory()->create();
+
+    andrasChatRun($user, '!q sing about soup', 'msg-42');
+    andrasChatRun($user, '!q sing about soup', 'msg-42');   // what a job retry after the command ran would do
+
+    expect(Question::where('question', 'sing about soup')->count())->toBe(1);
+});
+
+test('PR77-3: chat text with bidi overrides reaches the overlay as-is', function () {
+    $user = User::factory()->create();
+    andrasChatRun($user, "!q \u{202E}olleh dlrow");
+
+    expect(Question::first()?->question)->not->toContain("\u{202E}");
+});
+
+test('a retried chat job does not run the command again', function () {
+    chatViewer();
+    $event = [
+        'broadcaster_user_id' => '1000', 'chatter_user_id' => '4145994', 'chatter_user_login' => 'viewer32', 'chatter_user_name' => 'viewer32',
+        'message_id' => 'chat-msg-1', 'message' => ['text' => '!q only once please'], 'message_type' => 'text', 'badges' => [],
+    ];
+    $job = new HandleChatMessage('eventsub-msg-1', now()->toIso8601ZuluString(), $event);
+
+    $job->handle();
+    // The job's own handled marker was lost (a cache blip, or a worker killed after the command ran).
+    Cache::forget('twitch.eventsub.handled.eventsub-msg-1');
+    $job->handle();
+
+    expect(Question::count())->toBe(1)
+        ->and(ChatCommandRun::sole())
+        ->message_id->toBe('chat-msg-1')
+        ->command->toBe('q')
+        ->status->toBe('done');
+});
+
+test('the same message id on another platform is a different message', function () {
+    User::factory()->twitch('4145994')->youtube('UC-viewer')->create();
+
+    runChatCommandWithId('!q from twitch', 'shared-id');
+    app(ChatCommandRegistry::class)->run(IdentityProvider::YouTube, 'UC-chan', 'UC-viewer', 'v', 'shared-id', '!q from youtube');
+
+    expect(Question::count())->toBe(2);
+});
+
+test('a failure before the command runs releases the claim, so the retry runs it', function () {
+    chatViewer();
+    $limiter = RateLimiter::getFacadeRoot();
+    RateLimiter::shouldReceive('tooManyAttempts')->once()->andThrow(new RuntimeException('cache down'));
+
+    expect(fn () => runChatCommandWithId('!q after the blip', 'retry-me'))->toThrow(RuntimeException::class, 'cache down');
+    expect(ChatCommandRun::count())->toBe(0);
+
+    RateLimiter::swap($limiter);
+    expect(runChatCommandWithId('!q after the blip', 'retry-me')->status)->toBe(ChatCommandStatus::Done)
+        ->and(Question::count())->toBe(1);
+});
+
+test('old command claims are pruned', function () {
+    ChatCommandRun::claim(IdentityProvider::Twitch, 'old', 'q');
+    $this->travel(8)->days();
+    ChatCommandRun::claim(IdentityProvider::Twitch, 'new', 'q');
+
+    $this->artisan('model:prune', ['--model' => [ChatCommandRun::class]])->assertSuccessful();
+
+    expect(ChatCommandRun::pluck('message_id')->all())->toBe(['new']);
+});
+
+function runChatCommandWithId(string $text, string $messageId): ?ChatCommandResult
+{
+    return app(ChatCommandRegistry::class)->run(IdentityProvider::Twitch, '1000', '4145994', 'viewer32', $messageId, $text);
+}
+
+// --- Bidi controls are stripped at submit, for web and chat ---------------------
+
+test('bidi control characters are stripped from questions, from chat and the web', function () {
+    $viewer = chatViewer();
+
+    runChatCommand("!q \u{202E}olleh\u{2066} dlrow\u{2069}\u{200F}");
+    $this->actingAs($viewer);
+    Volt::test('vote')->set('question', "\u{202D}web \u{200E}question\u{202C}")->call('saveQuestion')->assertHasNoErrors();
+
+    expect(Question::orderBy('id')->pluck('question')->all())->toBe(['olleh dlrow', 'web question']);
+});
+
+test('a question that is only bidi controls is rejected', function () {
+    chatViewer();
+
+    expect(runChatCommand("!q \u{202E}\u{202E}\u{202E}\u{202E}")->status)->toBe(ChatCommandStatus::Rejected)
+        ->and(Question::count())->toBe(0);
+});
+
+test('emoji joined with zero-width joiners are kept', function () {
+    chatViewer();
+
+    runChatCommand("!q songs for the \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}");
+
+    expect(Question::sole()->question)->toBe("songs for the \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}");
 });

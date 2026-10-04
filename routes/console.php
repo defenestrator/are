@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ChatCommandRun;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -16,3 +17,6 @@ Schedule::command('twitch:sync-moderation')->hourly()->withoutOverlapping();
 // just fail to reach Redis every five minutes.
 Schedule::command('horizon:snapshot')->everyFiveMinutes()
     ->when(fn () => config('queue.default') === 'redis');
+
+// Chat commands claim each message id once; a week of claims is ample.
+Schedule::command('model:prune', ['--model' => [ChatCommandRun::class]])->daily();
