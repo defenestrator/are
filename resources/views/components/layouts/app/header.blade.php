@@ -18,9 +18,13 @@
                         {{ __('Moderation') }}
                     </flux:navbar.item>
                 @endcan
+                {{-- Leads and attribution share one broadcaster-only rule: LeadPolicy::viewAny. --}}
                 @can('viewAny', App\Models\Lead::class)
                     <flux:navbar.item icon="inbox" href="{{ route('leads.index') }}" :current="request()->routeIs('leads.index')" wire:navigate>
                         {{ __('Leads') }}
+                    </flux:navbar.item>
+                    <flux:navbar.item icon="chart-bar" href="{{ route('admin.attribution') }}" :current="request()->routeIs('admin.attribution')">
+                        {{ __('Attribution') }}
                     </flux:navbar.item>
                 @endcan
             </flux:navbar>
@@ -93,6 +97,9 @@
                     @can('viewAny', App\Models\Lead::class)
                         <flux:navlist.item icon="inbox" href="{{ route('leads.index') }}" wire:navigate>
                             {{ __('Leads') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="chart-bar" href="{{ route('admin.attribution') }}">
+                            {{ __('Attribution') }}
                         </flux:navlist.item>
                     @endcan
                 </flux:navlist.group>

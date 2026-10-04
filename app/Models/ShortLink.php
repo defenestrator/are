@@ -5,6 +5,7 @@ namespace App\Models;
 use Database\Factories\ShortLinkFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
@@ -159,12 +160,24 @@ class ShortLink extends Model
     }
 
     /**
-     * Record a click: count it atomically and remember its attribution in
-     * the session (last click wins).
+     * Dated clicks, one row each, for counting clicks in a date range.
+     *
+     * @return HasMany<ShortLinkClick, $this>
+     */
+    public function clickEvents(): HasMany
+    {
+        return $this->hasMany(ShortLinkClick::class);
+    }
+
+    /**
+     * Record a click: count it atomically, store a dated row for
+     * attribution, and remember its UTM params in the session (last click
+     * wins).
      */
     public function recordClick(): void
     {
         $this->increment('clicks');
+        $this->clickEvents()->create(['clicked_at' => now()]);
 
         session()->put(self::SESSION_KEY, [...$this->utm(), 'short_link_id' => $this->id]);
     }
