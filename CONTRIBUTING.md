@@ -12,9 +12,11 @@ process names machinery ARE does not have yet, do this instead.
   [`defenestrator/are`](https://github.com/defenestrator/are/issues); close
   them from a PR with `Closes defenestrator/are#N`.
 - **How it deploys.** `defenestrator/are` is the deployment repository:
-  Forge deploys its `main`. It receives changes only by syncing the fork's
-  `main` into it, and that sync is the release step. Nobody develops on it
-  or merges feature PRs there, and agents never push to it.
+  Forge deploys its `main`. When the fork's `main` passes CI, the
+  `deploy-sync` job fast-forwards `defenestrator/are` `main` to the tested
+  commit. Nobody develops on it or merges feature PRs there, and agents
+  never push to it. If it ever gains a commit the fork lacks, the sync fails
+  rather than force-pushing; bring that commit into the fork through a PR.
 - **CI.** CI is developed on, run on and written for the fork. That is
   where suites gate PRs. CI on `defenestrator/are` exists mainly for
   deployment. A workflow that should only run in one of the two repositories
@@ -22,12 +24,13 @@ process names machinery ARE does not have yet, do this instead.
   copies every workflow across.
 - **Milestone and labels.** Issues go on the `Streaming launch` milestone.
   Claim them with `ready-for-agent` → `assigned-to-agent`, exactly as in §3.
-- **Tests.** ARE's suite is Pest on in-memory SQLite, with no MongoDB. Run
-  `./vendor/bin/pest` and `./vendor/bin/phpstan analyse`, and report the real
-  counts in the PR. CI arrives with defenestrator/are#11; until then, the
-  local run is the gate.
-- **Not here yet:** a merge queue, changelog assembly, an ADR directory and
-  ECR deploys. A human still reviews and merges every PR. Skip
+- **Tests and the gate.** ARE's suite is Pest on in-memory SQLite, with no
+  MongoDB. Run `./vendor/bin/pest` and `./vendor/bin/phpstan analyse`, and
+  report the real counts in the PR. The fork carries Orkestera's rulesets:
+  `ci-gate` is the single required check, and PRs merge through a rebase
+  merge queue.
+- **Not here yet:** changelog assembly, the commit-trailer guard, an ADR
+  directory and ECR deploys. A human still reviews and merges every PR. Skip
   `changelog.d/` fragments until the assembly script exists. Where the text
   below says merging to `main` triggers a deploy, read it as the sync into
   `defenestrator/are` described above.
