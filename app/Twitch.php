@@ -38,6 +38,8 @@ class Twitch
      * - channel:moderate       channel.ban / channel.unban EventSub
      * - channel:manage:broadcast  set the stream title
      * - user:read:chat, user:bot, channel:bot  channel.chat.message, read as the broadcaster
+     * - user:write:chat         Send Chat Message with the broadcaster's user token
+     *   (https://dev.twitch.tv/docs/api/reference/#send-chat-message), for command replies (#89)
      * - channel:read:redemptions  channel.channel_points_custom_reward_redemption.add
      * - channel:read:subscriptions  channel.subscribe, channel.subscription.end
      * - moderator:read:followers  channel.follow v2, with the broadcaster as moderator
@@ -52,6 +54,7 @@ class Twitch
         'user:read:chat',
         'user:bot',
         'channel:bot',
+        'user:write:chat',
         'channel:read:redemptions',
         'channel:read:subscriptions',
         'moderator:read:followers',
@@ -251,6 +254,29 @@ class Twitch
         return Http::withHeaders([
             'Client-ID' => config('services.twitch.client_id'),
         ])->withToken(self::appAccessToken())->baseUrl(self::HELIX);
+    }
+
+    /**
+     * Send a chat message to a broadcaster's channel, as the broadcaster,
+     * optionally as a reply to one of the channel's messages. Returns Helix's
+     * response without throwing; the caller decides what a failure means.
+     * Twitch caps a message at 500 characters, so longer text is cut.
+     *
+     * Requires the broadcaster's user token to carry user:write:chat.
+     *
+     * @see https://dev.twitch.tv/docs/api/reference/#send-chat-message
+     */
+    public static function sendChatMessage(string $broadcasterId, string $message, ?string $replyParentMessageId = null): Response
+    {
+        return self::asBroadcaster($broadcasterId)
+            ->connectTimeout(3)
+            ->timeout(5)
+            ->post('/chat/messages', array_filter([
+                'broadcaster_id' => $broadcasterId,
+                'sender_id' => $broadcasterId,
+                'message' => mb_substr($message, 0, 500),
+                'reply_parent_message_id' => $replyParentMessageId,
+            ], fn ($value) => $value !== null && $value !== ''));
     }
 
     public static function setTitle(string $broadcasterId, string $title): void

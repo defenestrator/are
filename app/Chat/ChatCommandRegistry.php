@@ -4,6 +4,7 @@ namespace App\Chat;
 
 use App\Identities;
 use App\IdentityProvider;
+use App\Jobs\PostChatReply;
 use App\Models\ChatCommandRun;
 use Illuminate\Support\Facades\RateLimiter;
 use LogicException;
@@ -130,6 +131,17 @@ class ChatCommandRegistry
 
         if ($messageId !== '') {
             (clone $claimed)->update(['status' => $result->status->value]);
+        }
+
+        // 7. A non-empty reply is posted back to chat by a queued job (#89),
+        //    except "slow down": answering every message from someone who is
+        //    flooding chat would double the flood. A message without an id
+        //    cannot be claimed, so its reply could post twice; it is not sent.
+        if ($messageId !== ''
+            && trim($result->reply) !== ''
+            && $result->status !== ChatCommandStatus::RateLimited
+            && PostChatReply::supports($provider)) {
+            PostChatReply::dispatch($provider, $channelId, $messageId, $result->reply, now());
         }
 
         return $result;
