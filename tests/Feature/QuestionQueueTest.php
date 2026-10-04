@@ -89,8 +89,8 @@ test('a banned user is signed out of the vote page', function () {
 });
 
 test('broadcasters on either channel and their moderators are admins', function () {
-    $primary = User::factory()->create(['twitch_id' => '1000']);
-    $second = User::factory()->create(['twitch_id' => '2000']);
+    $primary = User::factory()->twitch('1000')->create();
+    $second = User::factory()->twitch('2000')->create();
     $mod = User::factory()->create();
     $viewer = User::factory()->create();
     TwitchModerator::create(['broadcaster_id' => '2000', 'twitch_user_id' => $mod->twitch_id]);
@@ -102,7 +102,7 @@ test('broadcasters on either channel and their moderators are admins', function 
 });
 
 test('clearing the topic archives questions and keeps their votes', function () {
-    $admin = User::factory()->create(['twitch_id' => '1000']);
+    $admin = User::factory()->twitch('1000')->create();
     $viewer = User::factory()->create();
     Topic::set('Old topic');
     $question = Question::factory()->for($viewer)->create();
@@ -170,7 +170,9 @@ test('authors can delete their own question but not someone else\'s', function (
 });
 
 test('a Facebook-only user can be created without Twitch fields', function () {
-    $user = User::create(['name' => 'Facebook Person', 'facebook_id' => 'fb-1', 'email' => 'fb@example.com']);
+    $user = User::factory()->facebook('fb-1')->create(['name' => 'Facebook Person', 'email' => 'fb@example.com']);
+
+    expect($user->twitch_id)->toBeNull()->and($user->facebook_id)->toBe('fb-1');
 
     expect($user->isBanned())->toBeFalse()
         ->and($user->isAdminUser())->toBeFalse()

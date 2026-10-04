@@ -25,6 +25,8 @@ new class extends Component {
                 <flux:radio value="system" icon="computer-desktop">{{ __('System') }}</flux:radio>
             </flux:radio.group>
 
+            <livewire:settings.linked-accounts />
+
             <livewire:settings.delete-user-form />
         </x-settings.layout>
     </div>

@@ -48,7 +48,7 @@ class Question extends Model
             ->orderBy('votes', 'desc')
             ->groupBy('questions.id')
             ->limit($limit)
-            ->with('user')
+            ->with('user.identities')
             ->get();
     }
 
@@ -61,7 +61,7 @@ class Question extends Model
             ->orderBy('id', 'desc')
             ->groupBy('questions.id')
             ->limit($limit)
-            ->with('user')
+            ->with('user.identities')
             ->get();
     }
 

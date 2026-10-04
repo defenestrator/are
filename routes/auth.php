@@ -1,85 +1,34 @@
 <?php
 
-use App\Models\User;
-use App\Models\UserTwitchSubscription;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Route;
-use Laravel\Socialite\Facades\Socialite;
-use App\Twitch;
+use App\Http\Controllers\Auth\SocialiteController;
 use App\Http\Controllers\Twitch\BroadcasterConnectionController;
 use App\Http\Controllers\Twitch\EventSubController;
+use App\IdentityProvider;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
-    Route::get("login", function () {
-        return Socialite::driver("twitch")->scopes([
-            "user:read:chat",
-            "user:read:subscriptions",
-        ])->redirect();
-    })->name("login");
+    Route::get('login', [SocialiteController::class, 'redirect'])
+        ->defaults('provider', IdentityProvider::Twitch->value)
+        ->name('login');
 
-    Route::get("login/facebook", function () {
-        return Socialite::driver("facebook")->redirect();
-    })->name("login.facebook");
-
-    Route::get("auth/facebook/callback", function () {
-        try {
-            $facebookUser = Socialite::driver("facebook")->user();
-
-            $user = User::updateOrCreate([
-                "facebook_id" => $facebookUser->id,
-            ], [
-                'name' => $facebookUser->name,
-                'email' => $facebookUser->email,
-                'facebook_avatar_url' => $facebookUser->avatar,
-            ]);
-
-            Auth::login($user);
-        } catch (\Exception $e) {
-            return redirect('/?failed_facebook_login=1');
-        }
-
-        return redirect('/vote');
-    });
-
-    Route::get("twitch/auth", function () {
-        try {
-            $twitchUser = Socialite::driver("twitch")->user();
-
-            $user = User::updateOrCreate([
-                "twitch_id" => $twitchUser->id,
-            ], [
-                'name' => $twitchUser->name,
-                'twitch_avatar_url' => $twitchUser->avatar,
-            ]);
-
-            $subscriptions = Twitch::checkUserSubscriptions(
-                $twitchUser->token,
-                User::getAllFriendIDs(),
-                $twitchUser->id,
-            );
-
-            $subscriptions->each(
-                fn($subscription, $broadcaster_id) =>
-                UserTwitchSubscription::updateOrCreate([
-                    "user_id" => $user->id,
-                    "broadcaster_id" => $broadcaster_id,
-                ], [
-                    "twitch_subscription" => $subscription,
-                ])
-            );
-
-            if ($user->isBanned()) {
-                return redirect('/?banned=1');
-            }
-
-            Auth::login($user);
-        } catch (\Exception $e) {
-            return redirect('/?failed_twitch_login=1');
-        }
-
-        return redirect('/vote');
-    });
+    Route::get('login/facebook', [SocialiteController::class, 'redirect'])
+        ->defaults('provider', IdentityProvider::Facebook->value)
+        ->name('login.facebook');
 });
+
+// These are the callback URLs registered with each provider. They finish both
+// signing in and linking from Settings, so they cannot require a guest.
+Route::get('twitch/auth', [SocialiteController::class, 'callback'])
+    ->defaults('provider', IdentityProvider::Twitch->value)
+    ->name('auth.twitch.callback');
+
+Route::get('auth/facebook/callback', [SocialiteController::class, 'callback'])
+    ->defaults('provider', IdentityProvider::Facebook->value)
+    ->name('auth.facebook.callback');
+
+Route::get('settings/linked-accounts/{provider}/link', [SocialiteController::class, 'link'])
+    ->middleware(['auth', 'not-banned'])
+    ->name('identities.link');
 
 Route::post('logout', App\Livewire\Actions\Logout::class)
     ->name('logout');

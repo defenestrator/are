@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\IdentityProvider;
 use App\TwitchSubscription;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
@@ -18,17 +20,14 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     /**
-     * The attributes that are mass assignable.
+     * The attributes that are mass assignable. Platform ids live on
+     * identities; link them through App\Identities, not here.
      *
      * @var list<string>
      */
     protected $fillable = [
         'name',
         'email',
-        'twitch_id',
-        'twitch_avatar_url',
-        'facebook_id',
-        'facebook_avatar_url',
     ];
 
     /**
@@ -80,6 +79,59 @@ class User extends Authenticatable
     public function questions()
     {
         return $this->hasMany(Question::class);
+    }
+
+    /**
+     * The platform accounts this person signs in or chats with.
+     *
+     * @return HasMany<Identity, $this>
+     */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(Identity::class);
+    }
+
+    /**
+     * This user's account on $provider, if linked. Reads the loaded relation,
+     * so eager-load `identities` when listing users.
+     */
+    public function identityFor(IdentityProvider $provider): ?Identity
+    {
+        return $this->identities->first(fn (Identity $identity) => $identity->provider === $provider);
+    }
+
+    /**
+     * Kept as read-only accessors so callers that predate identities still work.
+     *
+     * @return Attribute<mixed, never>
+     */
+    protected function twitchId(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->identityFor(IdentityProvider::Twitch)?->provider_user_id);
+    }
+
+    /**
+     * @return Attribute<mixed, never>
+     */
+    protected function twitchAvatarUrl(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->identityFor(IdentityProvider::Twitch)?->avatar_url);
+    }
+
+    /**
+     * @return Attribute<mixed, never>
+     */
+    protected function facebookId(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->identityFor(IdentityProvider::Facebook)?->provider_user_id);
+    }
+
+    /**
+     * @return Attribute<mixed, never>
+     */
+    protected function facebookAvatarUrl(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->identityFor(IdentityProvider::Facebook)?->avatar_url);
     }
 
     public static function getBroadcasterID(): string
@@ -149,12 +201,15 @@ class User extends Authenticatable
     }
 
     /**
-     * Banned or timed out on any Twitch channel this app serves.
+     * Banned or timed out on any Twitch channel this app serves, through any
+     * of the user's identities. A platform ban on one identity bans the person.
      */
     public function isTwitchBanned(): bool
     {
-        return $this->twitch_id !== null && TwitchBan::inEffect()
-            ->where('twitch_user_id', $this->twitch_id)
+        return TwitchBan::inEffect()
+            ->whereIn('twitch_user_id', $this->identities()
+                ->where('provider', IdentityProvider::Twitch)
+                ->select('provider_user_id'))
             ->whereIn('broadcaster_id', self::getBroadcasterIDs())
             ->exists();
     }

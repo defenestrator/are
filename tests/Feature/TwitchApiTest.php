@@ -99,7 +99,7 @@ test('a broadcaster can connect their channel', function () {
     Http::fake(['api.twitch.tv/*' => Http::response(['data' => [], 'pagination' => []])]);
     fakeTwitchUser('2000');
 
-    $this->actingAs(User::factory()->create(['twitch_id' => '2000']))
+    $this->actingAs(User::factory()->twitch('2000')->create())
         ->get('/twitch/broadcaster/callback')
         ->assertRedirect('/vote');
 
@@ -109,7 +109,7 @@ test('a broadcaster can connect their channel', function () {
 test('a broadcaster cannot attach a different Twitch account', function () {
     fakeTwitchUser('1000');
 
-    $this->actingAs(User::factory()->create(['twitch_id' => '2000']))
+    $this->actingAs(User::factory()->twitch('2000')->create())
         ->get('/twitch/broadcaster/callback')
         ->assertForbidden();
 

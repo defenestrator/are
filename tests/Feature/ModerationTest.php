@@ -39,7 +39,7 @@ function vote(Question $question, User $user, int $count = 1): void
 
 test('a local ban blocks a Facebook-only user and is logged', function () {
     $mod = moderator();
-    $target = User::create(['name' => 'Facebook Troll', 'facebook_id' => 'fb-9']);
+    $target = User::factory()->facebook('fb-9')->create(['name' => 'Facebook Troll']);
 
     Moderation::ban($mod, $target, null, 'spam');
 
@@ -73,7 +73,7 @@ test('viewers cannot ban, and nobody can ban a broadcaster or themselves', funct
     $mod = moderator();
 
     expect(fn () => Moderation::ban(User::factory()->create(), User::factory()->create(), 10))->toThrow(AuthorizationException::class)
-        ->and(fn () => Moderation::ban($mod, User::factory()->create(['twitch_id' => '1000']), 10))->toThrow(AuthorizationException::class, 'A broadcaster cannot be banned here.')
+        ->and(fn () => Moderation::ban($mod, User::factory()->twitch('1000')->create(), 10))->toThrow(AuthorizationException::class, 'A broadcaster cannot be banned here.')
         ->and(fn () => Moderation::ban($mod, $mod, 10))->toThrow(AuthorizationException::class, 'You cannot ban yourself.')
         ->and(fn () => Moderation::ban($mod, User::factory()->create(), 0))->toThrow(InvalidArgumentException::class);
 
@@ -82,7 +82,7 @@ test('viewers cannot ban, and nobody can ban a broadcaster or themselves', funct
 
 test('a banned moderator loses moderator powers', function () {
     $mod = moderator();
-    Moderation::ban(User::factory()->create(['twitch_id' => '1000']), $mod, null);
+    Moderation::ban(User::factory()->twitch('1000')->create(), $mod, null);
 
     expect(fn () => Moderation::ban($mod, User::factory()->create(), 10))->toThrow(AuthorizationException::class);
     $this->actingAs($mod)->get('/moderation')->assertRedirect('/?banned=1');
@@ -251,7 +251,7 @@ test('a moderator deletes from the card, and a banned moderator cannot', functio
     Volt::test('question-card', $props())->assertSeeHtml('aria-label="Delete question"')
         ->call('deleteQuestion')->assertDispatched('question-deleted');
 
-    Moderation::ban(User::factory()->create(['twitch_id' => '1000']), $mod, null);
+    Moderation::ban(User::factory()->twitch('1000')->create(), $mod, null);
     Volt::test('question-card', $props())->assertDontSeeHtml('aria-label="Delete question"')
         ->call('deleteQuestion')->assertForbidden();
 

@@ -16,14 +16,20 @@ new class extends Component {
     #[Locked]
     public bool $canEdit;
 
+    // Moderators see every account the author has linked, to spot sockpuppets.
+    #[Locked]
+    public bool $showIdentities = false;
+
     // The vote page passes $canModerate, resolved once per render, so a full
     // queue does not run the moderator check once per card. It mirrors
     // QuestionPolicy::delete, which stays the authority.
     public function mount(?bool $canModerate = null) {
         $user = Auth::user();
+        $canModerate ??= $user?->can('moderate') ?? false;
 
         $this->canEdit = $user !== null
-            && ($user->id === $this->question->user_id || ($canModerate ?? $user->can('moderate')));
+            && ($user->id === $this->question->user_id || $canModerate);
+        $this->showIdentities = $canModerate;
     }
 
     public function upvote(Question $question)
@@ -126,6 +132,13 @@ new class extends Component {
                     <img src="{{ $question->user->twitch_avatar_url }}" size="xs" class="w-10 rounded-full" />
                     <div class="flex-row" variant="strong">
                         {{ $question->user->name }}
+                        @if ($showIdentities)
+                            <ul class="text-xs text-zinc-500 dark:text-zinc-400" aria-label="Linked accounts">
+                                @foreach ($question->user->identities as $identity)
+                                    <li wire:key="identity-{{ $identity->id }}">{{ $identity->provider->label() }}: {{ $identity->name ?? '?' }} ({{ $identity->provider_user_id }})</li>
+                                @endforeach
+                            </ul>
+                        @endif
                 </div>
                 </div>
 
