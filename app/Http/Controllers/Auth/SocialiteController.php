@@ -6,8 +6,8 @@ use App\Exceptions\IdentityLinkException;
 use App\Http\Controllers\Controller;
 use App\Identities;
 use App\IdentityProvider;
+use App\Jobs\RefreshTwitchSubscriptions;
 use App\Models\User;
-use App\Models\UserTwitchSubscription;
 use App\Twitch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,12 +57,14 @@ class SocialiteController extends Controller
         try {
             $account = $this->driver($provider)->user();
             $user = Identities::signIn($provider, $account);
-            $this->syncTwitchSubscriptions($provider, $user, $account);
         } catch (Throwable $e) {
             report($e);
 
             return redirect("/?failed_{$provider->value}_login=1");
         }
+
+        // Outside the try: a Helix failure must not cost the viewer their sign-in.
+        $this->syncTwitchSubscriptions($provider, $user, $account);
 
         if ($user->isBanned()) {
             return redirect('/?banned=1');
@@ -89,18 +91,15 @@ class SocialiteController extends Controller
             return redirect()->route('settings')->with('identity_error', $e->getMessage());
         }
 
-        try {
-            $this->syncTwitchSubscriptions($provider, $user, $account);
-        } catch (Throwable $e) {
-            // The link stands; subscriptions refresh at the next Twitch sign-in.
-            report($e);
-        }
+        $this->syncTwitchSubscriptions($provider, $user, $account);
 
         return redirect()->route('settings')->with('identity_status', "{$provider->label()} account linked.");
     }
 
     /**
-     * A Twitch sub on any served or friend channel sets the user's question limit.
+     * A Twitch sub on any served or friend channel sets the user's question
+     * limit. This never throws: tiers Helix could not answer stay unknown,
+     * and a queued job retries them, so sign-in and linking always finish.
      */
     private function syncTwitchSubscriptions(IdentityProvider $provider, User $user, ProviderAccount $account): void
     {
@@ -108,13 +107,16 @@ class SocialiteController extends Controller
             return;
         }
 
-        Twitch::checkUserSubscriptions($account->token, User::getAllFriendIDs(), (string) $account->getId())
-            ->each(fn ($subscription, $broadcasterId) => UserTwitchSubscription::updateOrCreate([
-                'user_id' => $user->id,
-                'broadcaster_id' => $broadcasterId,
-            ], [
-                'twitch_subscription' => $subscription,
-            ]));
+        try {
+            $unknown = Twitch::syncUserSubscriptions($user, $account->token, (string) $account->getId());
+        } catch (Throwable $e) {
+            report($e);
+            $unknown = ['all'];
+        }
+
+        if ($unknown !== []) {
+            RefreshTwitchSubscriptions::dispatch($user->id)->delay(now()->addMinute());
+        }
     }
 
     private function driver(IdentityProvider $provider): AbstractProvider

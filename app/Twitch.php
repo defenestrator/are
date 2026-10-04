@@ -5,21 +5,32 @@ namespace App;
 use App\Models\BroadcasterToken;
 use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
+use App\Models\User;
+use App\Models\UserTwitchSubscription;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
 class Twitch
 {
     public const HELIX = 'https://api.twitch.tv/helix';
 
     public const TOKEN_URL = 'https://id.twitch.tv/oauth2/token';
+
+    /** Seconds. Sign-in waits on these lookups, so they stay short. */
+    private const SUBSCRIPTION_CONNECT_TIMEOUT = 3;
+
+    private const SUBSCRIPTION_TIMEOUT = 5;
 
     /**
      * Scopes a broadcaster grants when connecting their channel to this app.
@@ -90,7 +101,16 @@ class Twitch
     }
 
     /**
-     * @return Collection<string, TwitchSubscription>
+     * The viewer's tier on each channel. A channel whose lookup failed (no
+     * connection, a timeout, a 5xx, a rate limit or a rejected token) maps to
+     * null, meaning unknown, never to None: a Helix outage must not read as
+     * "not subscribed". Helix answers 404 for "not subscribed", which is None.
+     *
+     * Each lookup times out quickly and retries once on a connection failure
+     * or a 5xx, so a slow channel cannot hold up sign-in for long.
+     *
+     * @param  list<string>  $channels
+     * @return Collection<string, TwitchSubscription|null>
      */
     public static function checkUserSubscriptions(string $accessToken, array $channels, string $userId): Collection
     {
@@ -104,6 +124,9 @@ class Twitch
                 fn ($channel) => $pool
                     ->as($channel)
                     ->withHeaders($headers)
+                    ->connectTimeout(self::SUBSCRIPTION_CONNECT_TIMEOUT)
+                    ->timeout(self::SUBSCRIPTION_TIMEOUT)
+                    ->retry(2, 200, fn (Throwable $e) => ! $e instanceof RequestException || $e->response->serverError(), throw: false)
                     ->get(self::HELIX.'/subscriptions/user', [
                         'broadcaster_id' => $channel,
                         'user_id' => $userId,
@@ -111,22 +134,52 @@ class Twitch
             )
         );
 
-        return collect($responses)->map(function ($response) {
-            if ($response->successful()) {
-                $data = $response->json();
-                if (empty($data['data'])) {
-                    return TwitchSubscription::None;
-                }
+        return collect($responses)->map(function ($response, $channel) use ($userId) {
+            if ($response instanceof Response && $response->successful()) {
+                $tier = $response->json('data.0.tier');
 
-                $subscription = $data['data'][0];
-
-                return TwitchSubscription::tryFrom($subscription['tier']);
+                return $tier === null ? TwitchSubscription::None : (TwitchSubscription::tryFrom($tier) ?? TwitchSubscription::None);
             }
 
-            logger()->warning($response->json());
+            if ($response instanceof Response && $response->notFound()) {
+                return TwitchSubscription::None;
+            }
 
-            return TwitchSubscription::None;
+            // Never log the response body or headers: the request carried the viewer's token.
+            Log::warning('Twitch subscription lookup failed; treating the tier as unknown.', [
+                'broadcaster_id' => (string) $channel,
+                'twitch_user_id' => $userId,
+                'reason' => $response instanceof Response ? 'HTTP '.$response->status() : $response::class,
+            ]);
+
+            return null;
         });
+    }
+
+    /**
+     * Look up the viewer's tiers and store the ones Helix answered. Rows for
+     * channels whose lookup failed are left as they were, not overwritten.
+     *
+     * @return list<string> the channels whose tier is still unknown
+     */
+    public static function syncUserSubscriptions(User $user, string $accessToken, string $twitchUserId): array
+    {
+        $unknown = [];
+
+        foreach (self::checkUserSubscriptions($accessToken, User::getAllFriendIDs(), $twitchUserId) as $broadcasterId => $tier) {
+            if ($tier === null) {
+                $unknown[] = (string) $broadcasterId;
+
+                continue;
+            }
+
+            UserTwitchSubscription::updateOrCreate(
+                ['user_id' => $user->id, 'broadcaster_id' => (string) $broadcasterId],
+                ['twitch_subscription' => $tier],
+            );
+        }
+
+        return $unknown;
     }
 
     /**
