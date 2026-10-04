@@ -7,6 +7,7 @@ use App\Models\LinkCode;
 use App\Models\StreamSession;
 use App\Models\YouTubeLiveChat;
 use App\Readiness\SchedulerHeartbeat;
+use App\YouTube\ShowWindows;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -81,3 +82,10 @@ Schedule::call(fn () => YouTubeLiveChat::resumeStalled())
 Schedule::job(new SampleTwitchViewers)
     ->everyThreeMinutes()
     ->when(fn () => StreamSession::live()->exists());
+
+// Finds each channel's live YouTube video during the show windows (#127).
+// The command itself limits search.list to once per channel per 15 minutes.
+Schedule::command('youtube:chat --auto')
+    ->everyMinute()
+    ->when(fn () => ShowWindows::isOpen())
+    ->withoutOverlapping();

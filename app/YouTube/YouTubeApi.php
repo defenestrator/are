@@ -81,6 +81,25 @@ class YouTubeApi
     }
 
     /**
+     * search.list for a channel's live video (1 unit from the separate
+     * 100-calls/day Search Queries bucket) (#127).
+     *
+     * @see https://developers.google.com/youtube/v3/docs/search/list
+     */
+    public static function searchLive(string $channelId): Response
+    {
+        $http = self::withKey();
+
+        return self::send('search.list', fn () => $http->get('/search', [
+            'part' => 'id',
+            'channelId' => $channelId,
+            'eventType' => 'live',
+            'type' => 'video',
+            'maxResults' => 1,
+        ]));
+    }
+
+    /**
      * channels.list?mine=true (1 unit): the channel an OAuth token belongs to.
      *
      * @see https://developers.google.com/youtube/v3/docs/channels/list

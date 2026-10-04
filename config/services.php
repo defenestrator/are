@@ -63,6 +63,15 @@ return [
             'client_secret' => env('YOUTUBE_OAUTH_CLIENT_SECRET'),
             'redirect' => env('YOUTUBE_OAUTH_REDIRECT_URL'),
         ],
+        // Automatic discovery of the live video (#127): `youtube:chat --auto`
+        // runs every minute inside these weekly windows ("sun 17:00-21:00",
+        // comma separated, in `timezone`) and searches each channel at most
+        // every `search_every_minutes`.
+        'auto' => [
+            'windows' => array_values(array_filter(array_map('trim', explode(',', (string) env('YOUTUBE_SHOW_WINDOWS', ''))))),
+            'timezone' => env('YOUTUBE_SHOW_TIMEZONE', 'UTC'),
+            'search_every_minutes' => (int) env('YOUTUBE_AUTO_SEARCH_EVERY_MINUTES', 15),
+        ],
         'quota' => [
             // Per Google Cloud project, per Pacific Time day.
             'daily_units' => (int) env('YOUTUBE_QUOTA_DAILY_UNITS', 10000),
