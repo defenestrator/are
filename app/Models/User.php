@@ -108,7 +108,7 @@ class User extends Authenticatable
             ->orderBy('twitch_subscription', 'desc')
             ->first();
 
-        return $subscription?->twitch_subscription ?? TwitchSubscription::None;
+        return $subscription->twitch_subscription ?? TwitchSubscription::None;
     }
 
     public function canSubmitQuestion(): bool
