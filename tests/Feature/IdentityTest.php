@@ -233,6 +233,24 @@ test('a banned user cannot shed the identity the ban came through', function () 
     expect($user->identities()->count())->toBe(2);
 });
 
+test('unlinking a Twitch identity drops the tier it brought', function () {
+    $user = User::factory()->facebook('fb-1')->twitch('42')->create();
+    UserTwitchSubscription::create(['user_id' => $user->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier3]);
+
+    Identities::unlink($user, $user->identityFor(IdentityProvider::Twitch));
+
+    expect($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::None);
+});
+
+test('unlinking a non-Twitch identity keeps the Twitch tier', function () {
+    $user = User::factory()->twitch('42')->facebook('fb-1')->create();
+    UserTwitchSubscription::create(['user_id' => $user->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier3]);
+
+    Identities::unlink($user, $user->identityFor(IdentityProvider::Facebook));
+
+    expect($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::Tier3);
+});
+
 // One person, one vote
 
 test('a user with both a Twitch and a YouTube identity gets one vote', function () {
@@ -343,3 +361,35 @@ test('identity lists are eager-loaded with the queue', function () {
 
     expect($questions->every(fn ($q) => $q->user->relationLoaded('identities')))->toBeTrue();
 });
+
+test('showing linked identities adds no per-card moderator queries on /vote', function (bool $isModerator) {
+    $viewer = User::factory()->twitch('77')->create();
+    if ($isModerator) {
+        TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => '77']);
+    }
+    $this->actingAs($viewer);
+    $author = User::factory()->youtube('UC-yt-1')->create();
+
+    $queriesFor = function (int $questions) use ($isModerator, $author) {
+        Question::query()->delete();
+        Question::factory()->count($questions)->for($author)->create();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $response = $this->get('/vote')->assertOk();
+        DB::disableQueryLog();
+
+        $isModerator ? $response->assertSee('UC-yt-1') : $response->assertDontSee('UC-yt-1');
+
+        return collect(DB::getQueryLog())->pluck('query');
+    };
+
+    // The first request loads the signed-in user's identities onto the shared
+    // test user; later requests reuse them. Warm up so both counts compare alike.
+    $queriesFor(1);
+    $one = $queriesFor(1);
+    $full = $queriesFor(50);
+
+    expect($full->filter(fn (string $sql) => str_contains($sql, 'twitch_moderators'))->count())->toBeLessThan(5)
+        ->and($full->count())->toBe($one->count());
+})->with(['viewer' => false, 'moderator' => true]);

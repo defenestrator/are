@@ -5,6 +5,7 @@ namespace App;
 use App\Exceptions\IdentityLinkException;
 use App\Models\Identity;
 use App\Models\User;
+use App\Models\UserTwitchSubscription;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Contracts\User as ProviderAccount;
@@ -129,6 +130,12 @@ class Identities
 
             if ($count <= 1) {
                 throw IdentityLinkException::lastIdentity();
+            }
+
+            // Twitch tiers come from the Twitch account. A user holds at most
+            // one, so every tier row goes with it; re-linking re-syncs them.
+            if ($identity->provider === IdentityProvider::Twitch) {
+                UserTwitchSubscription::where('user_id', $user->id)->delete();
             }
 
             $identity->delete();
