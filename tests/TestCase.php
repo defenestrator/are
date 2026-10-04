@@ -3,6 +3,8 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Testing\TestResponse;
+use Livewire\Livewire;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -21,6 +23,29 @@ abstract class TestCase extends BaseTestCase
         );
 
         return parent::setUpTraits();
+    }
+
+    /**
+     * Keep the cookies a response set for this test's later requests,
+     * including Livewire and Volt tests, as a browser would. Laravel's test
+     * client does not carry cookies between requests by itself.
+     */
+    protected function keepCookies(TestResponse $response): static
+    {
+        foreach ($response->headers->getCookies() as $cookie) {
+            $value = $response->getCookie($cookie->getName())?->getValue();
+
+            if ($cookie->isCleared() || $value === null) {
+                unset($this->defaultCookies[$cookie->getName()]);
+
+                continue;
+            }
+
+            $this->withCookie($cookie->getName(), $value);
+            Livewire::withCookie($cookie->getName(), $value);
+        }
+
+        return $this;
     }
 
     protected function setUp(): void

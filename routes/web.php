@@ -4,8 +4,11 @@ use App\Http\Controllers\AttributionController;
 use App\Http\Controllers\ShortLinkRedirectController;
 use App\Http\Controllers\StreamSafePackController;
 use App\Models\Track;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Livewire\Volt\Volt;
 
 Route::get('/', function () {
@@ -41,8 +44,15 @@ Route::get('/visualizer', function () {
 
 // Conversion (#15): the /about page with its lead form, and UTM short links.
 Route::view('about', 'about')->name('about');
+// /go keeps its state in cookies, not the session, so it starts none: a
+// cookieless bot or script must not write a sessions row per hit (#90).
 Route::get('go/{shortLink:code}', ShortLinkRedirectController::class)
     ->middleware('throttle:short-links')
+    ->withoutMiddleware([
+        StartSession::class,
+        ShareErrorsFromSession::class,
+        ValidateCsrfToken::class,
+    ])
     ->name('short-links.go');
 // Leads list (#31): broadcasters only, through LeadPolicy.
 Route::view('leads', 'leads')

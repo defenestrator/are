@@ -37,7 +37,7 @@ test('a viewer goes from a stream short link to a stored, attributed enquiry in 
     $link = ShortLink::for('/about#work-with-us', 'twitch', 'stream', '2026-10-04-orkestera-live', 'overlay');
 
     // Click 1: the link shown on stream lands on the enquiry form.
-    $this->get($link->url())->assertRedirectContains('/about?')->assertRedirectContains('#work-with-us');
+    $this->keepCookies($this->get($link->url())->assertRedirectContains('/about?')->assertRedirectContains('#work-with-us'));
     $this->get('/about')->assertOk()->assertSeeLivewire('lead-form');
 
     // Click 2: submit.

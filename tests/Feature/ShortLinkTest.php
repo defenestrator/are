@@ -3,6 +3,7 @@
 use App\Models\ShortLink;
 use App\Models\ShortLinkClick;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 test('a short link 302s to its destination with the UTM params appended and the fragment kept', function () {
@@ -22,11 +23,10 @@ test('a short link 302s to its destination with the UTM params appended and the 
     expect($link->fresh()->clicks)->toBe(1);
 });
 
-test('clicks from different sessions are each counted, as a counter and a dated row', function () {
+test('clicks from different browsers are each counted, as a counter and a dated row', function () {
     $link = ShortLink::factory()->create();
 
     foreach (range(1, 3) as $i) {
-        $this->flushSession();
         $this->get($link->url())->assertRedirect();
     }
 
@@ -35,26 +35,28 @@ test('clicks from different sessions are each counted, as a counter and a dated 
 });
 
 describe('which hits count as clicks (#73)', function () {
-    test('a refresh in the same session within 30 minutes is the same click, but still redirects and refreshes attribution', function () {
+    test('a refresh in the same browser within 30 minutes is the same click, but still redirects and refreshes attribution', function () {
         $link = ShortLink::factory()->create();
 
-        $this->get($link->url())->assertRedirect();
+        $this->keepCookies($this->get($link->url())->assertRedirect());
         $this->travel(29)->minutes();
-        $this->get($link->url())->assertRedirect()->assertSessionHas(ShortLink::SESSION_KEY.'.short_link_id', $link->id);
+        $this->get($link->url())->assertRedirect()->assertCookie(ShortLink::ATTRIBUTION_COOKIE);
 
         expect($link->fresh()->clicks)->toBe(1)->and(ShortLinkClick::count())->toBe(1);
 
-        $this->travel(2)->minutes(); // 31 minutes after the counted click
+        // 31 minutes after the counted click. The browser would have expired
+        // the marker cookie; the timestamp inside it is checked as well.
+        $this->travel(2)->minutes();
         $this->get($link->url())->assertRedirect();
 
         expect($link->fresh()->clicks)->toBe(2)->and(ShortLinkClick::count())->toBe(2);
     });
 
-    test('dedupe is per link: the same session clicking another link counts', function () {
+    test('dedupe is per link: the same browser clicking another link counts', function () {
         [$a, $b] = ShortLink::factory()->count(2)->create();
 
-        $this->get($a->url());
-        $this->get($b->url());
+        $this->keepCookies($this->get($a->url()));
+        $this->keepCookies($this->get($b->url()));
         $this->get($a->url());
 
         expect($a->fresh()->clicks)->toBe(1)->and($b->fresh()->clicks)->toBe(1);
@@ -63,7 +65,7 @@ describe('which hits count as clicks (#73)', function () {
     test('HEAD requests redirect but record nothing and leave the session alone', function () {
         $link = ShortLink::factory()->create();
 
-        $this->call('HEAD', $link->url())->assertRedirect($link->destinationUrl())->assertSessionMissing(ShortLink::SESSION_KEY);
+        $this->call('HEAD', $link->url())->assertRedirect($link->destinationUrl())->assertCookieMissing(ShortLink::ATTRIBUTION_COOKIE);
 
         expect($link->fresh()->clicks)->toBe(0)->and(ShortLinkClick::count())->toBe(0);
     });
@@ -73,7 +75,7 @@ describe('which hits count as clicks (#73)', function () {
 
         $this->withHeader('User-Agent', $agent)->get($link->url())
             ->assertRedirect($link->destinationUrl())
-            ->assertSessionMissing(ShortLink::SESSION_KEY);
+            ->assertCookieMissing(ShortLink::ATTRIBUTION_COOKIE);
 
         expect($link->fresh()->clicks)->toBe(0)->and(ShortLinkClick::count())->toBe(0);
     })->with([
@@ -121,15 +123,13 @@ describe('which hits count as clicks (#73)', function () {
         'X app' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Twitter for iPhone/10.60',
     ]);
 
-    test('a client that drops its session cookie is counted at most 5 times per link and IP per 30 minutes', function () {
+    test('a client that drops its cookies is counted at most 5 times per link and IP per 30 minutes', function () {
         $link = ShortLink::factory()->create();
 
         foreach (range(1, 8) as $i) {
-            $this->flushSession();
             $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])->get($link->url())->assertRedirect();
         }
 
-        $this->flushSession();
         $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.4'])->get($link->url())->assertRedirect();
 
         expect($link->fresh()->clicks)->toBe(ShortLink::MAX_COUNTED_PER_IP + 1)
@@ -160,24 +160,24 @@ describe('which hits count as clicks (#73)', function () {
     });
 });
 
-test('a click stores its attribution in the session, and the last click wins', function () {
+test('a click stores its attribution in a cookie, and the last click wins', function () {
     $first = ShortLink::factory()->create(['utm_campaign' => 'first-stream']);
     $second = ShortLink::factory()->create(['utm_campaign' => 'second-stream', 'utm_content' => 'chat']);
 
-    $this->get($first->url())->assertSessionHas(ShortLink::SESSION_KEY, [
+    $this->keepCookies($this->get($first->url())->assertCookie(ShortLink::ATTRIBUTION_COOKIE, json_encode([
         'utm_source' => 'twitch',
         'utm_medium' => 'stream',
         'utm_campaign' => 'first-stream',
         'short_link_id' => $first->id,
-    ]);
+    ])));
 
-    $this->get($second->url())->assertSessionHas(ShortLink::SESSION_KEY, [
+    $this->get($second->url())->assertCookie(ShortLink::ATTRIBUTION_COOKIE, json_encode([
         'utm_source' => 'twitch',
         'utm_medium' => 'stream',
         'utm_campaign' => 'second-stream',
         'utm_content' => 'chat',
         'short_link_id' => $second->id,
-    ]);
+    ]));
 });
 
 test('unknown codes 404 and count nothing', function () {
@@ -296,4 +296,73 @@ test('short-link:create refuses a custom code for a tuple that already has a lin
         ->assertFailed();
 
     expect(ShortLink::count())->toBe(1);
+});
+
+describe('/go starts no session (#90)', function () {
+    beforeEach(function () {
+        config(['session.driver' => 'database']);
+    });
+
+    test('20 cookieless hits create no sessions rows, people and bots alike', function () {
+        $link = ShortLink::factory()->create();
+
+        // withHeader() sticks for later requests, so set the agent every time.
+        foreach (range(1, 10) as $i) {
+            $this->withHeader('User-Agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1')
+                ->get($link->url())->assertRedirect()->assertCookieMissing(config('session.cookie'));
+            $this->withHeader('User-Agent', 'curl/8.4.0')->get($link->url())->assertRedirect();
+        }
+
+        expect(DB::table('sessions')->count())->toBe(0)
+            ->and($link->fresh()->clicks)->toBe(ShortLink::MAX_COUNTED_PER_IP);
+    });
+
+    test('control: other pages still start a database session, so the test above measures something', function () {
+        $this->get('/about')->assertOk()->assertCookie(config('session.cookie'));
+
+        expect(DB::table('sessions')->count())->toBe(1);
+    });
+
+    test('unknown codes still 404 without a session', function () {
+        $this->get('/go/nope')->assertNotFound();
+
+        expect(DB::table('sessions')->count())->toBe(0);
+    });
+});
+
+describe('the attribution cookie', function () {
+    test('is first-party, HTTP-only and SameSite=Lax, and lasts as long as a session', function () {
+        $link = ShortLink::factory()->create();
+
+        $cookie = $this->get($link->url())->getCookie(ShortLink::ATTRIBUTION_COOKIE, decrypt: false);
+
+        expect($cookie->isHttpOnly())->toBeTrue()
+            ->and($cookie->getSameSite())->toBe('lax')
+            ->and($cookie->getDomain())->toBeNull()
+            ->and($cookie->getExpiresTime())->toBe(now()->addMinutes((int) config('session.lifetime'))->getTimestamp());
+    });
+
+    test('is encrypted: its raw value is not readable JSON', function () {
+        $link = ShortLink::factory()->create(['utm_campaign' => 'secret-campaign']);
+
+        $raw = $this->get($link->url())->getCookie(ShortLink::ATTRIBUTION_COOKIE, decrypt: false)->getValue();
+
+        expect($raw)->not->toContain('secret-campaign')->and(json_decode($raw))->toBeNull();
+    });
+
+    test('attribution() keeps only the UTM keys and short_link_id, and ignores junk', function () {
+        $request = Request::create('/', cookies: [
+            ShortLink::ATTRIBUTION_COOKIE => json_encode(['utm_campaign' => 'ep-1', 'short_link_id' => 7, 'evil' => 'x', 'utm_source' => ['nested']]),
+        ]);
+
+        expect(ShortLink::attribution($request))->toBe(['utm_campaign' => 'ep-1', 'short_link_id' => 7])
+            ->and(ShortLink::attribution(Request::create('/', cookies: [ShortLink::ATTRIBUTION_COOKIE => 'not json'])))->toBe([]);
+    });
+
+    test('attribution stored in the session before #90 is still read', function () {
+        $request = Request::create('/');
+        $request->setLaravelSession(tap(app('session')->driver())->put(ShortLink::SESSION_KEY, ['utm_campaign' => 'before-deploy', 'short_link_id' => 3]));
+
+        expect(ShortLink::attribution($request))->toBe(['utm_campaign' => 'before-deploy', 'short_link_id' => 3]);
+    });
 });

@@ -36,7 +36,7 @@ test('submitting the form notifies the configured address with the lead', functi
     Notification::fake();
 
     $link = ShortLink::for('/about#work-with-us', 'twitch', 'stream', '2026-10-04-orkestera-live', 'overlay');
-    $this->get($link->url());
+    $this->keepCookies($this->get($link->url()));
 
     submitLead();
 

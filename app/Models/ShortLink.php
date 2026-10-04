@@ -7,14 +7,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Cookie as SymfonyCookie;
 
 /**
  * A UTM-tagged short link: GET /go/{code} counts the click, remembers the
- * UTM params in the session for lead attribution, and 302s to the
- * destination with the UTM params appended.
+ * UTM params in an encrypted first-party cookie for lead attribution, and
+ * 302s to the destination with the UTM params appended. /go runs without a
+ * session, so no hit, cookieless or not, writes a sessions row (#90).
  *
  * The public interface is deliberately small, because overlays, clips and
  * analytics build on it:
@@ -22,7 +25,7 @@ use Illuminate\Support\Str;
  *   $link = ShortLink::for('/about#work-with-us', 'twitch', 'stream', '2026-10-04-orkestera', 'overlay');
  *   $link->url();            // https://app/go/k3x9q2 (what you show on stream)
  *   $link->destinationUrl(); // https://app/about?utm_source=twitch&...#work-with-us
- *   ShortLink::attribution(); // UTM + short_link_id of the last link this session clicked
+ *   ShortLink::attribution(); // UTM + short_link_id of the last link this browser clicked
  *
  * Convention: utm_source is the channel (twitch, youtube), utm_medium is the
  * surface (stream, clip, vod), utm_campaign names the stream, and
@@ -43,18 +46,24 @@ class ShortLink extends Model
     /** @use HasFactory<ShortLinkFactory> */
     use HasFactory;
 
-    /** Session key holding the last-clicked link's attribution. */
+    /** Cookie holding the last-clicked link's attribution (encrypted by EncryptCookies). */
+    public const ATTRIBUTION_COOKIE = 'are_attribution';
+
+    /**
+     * Session key that held attribution before #90. Still read, so visitors
+     * who clicked just before the deploy keep their attribution.
+     */
     public const SESSION_KEY = 'lead_attribution';
 
     public const UTM_FIELDS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'];
 
-    /** Session key prefix holding when this session's click on a link was last counted. */
-    public const SEEN_SESSION_KEY = 'short_link_seen';
+    /** Cookie name prefix (plus the link id) marking that this browser's click was counted. */
+    public const SEEN_COOKIE_PREFIX = 'are_go_';
 
-    /** A repeat click from the same session within this window is not a new click. */
+    /** A repeat click from the same browser within this window is not a new click. */
     public const DEDUPE_MINUTES = 30;
 
-    /** Counted clicks per link and IP address per DEDUPE_MINUTES, for clients without a session. */
+    /** Counted clicks per link and IP address per DEDUPE_MINUTES, for clients that drop cookies. */
     public const MAX_COUNTED_PER_IP = 5;
 
     /**
@@ -142,16 +151,32 @@ class ShortLink extends Model
     }
 
     /**
-     * The attribution stored by the last short link clicked in this session:
-     * the utm_* keys plus short_link_id, or an empty array.
+     * The attribution stored by the last short link this browser clicked: the
+     * utm_* keys plus short_link_id, or an empty array. Read from the
+     * attribution cookie, or else from the session where it lived before #90.
      *
      * @return array<string, int|string|null>
      */
-    public static function attribution(): array
+    public static function attribution(?Request $request = null): array
     {
-        $stored = session(self::SESSION_KEY);
+        $request ??= request();
 
-        return is_array($stored) ? $stored : [];
+        $stored = json_decode((string) $request->cookie(self::ATTRIBUTION_COOKIE), true);
+
+        if (! is_array($stored) && $request->hasSession()) {
+            $stored = $request->session()->get(self::SESSION_KEY);
+        }
+
+        if (! is_array($stored)) {
+            return [];
+        }
+
+        $attribution = array_filter(
+            array_intersect_key($stored, array_flip([...self::UTM_FIELDS, 'short_link_id'])),
+            fn ($value) => is_string($value) || is_int($value),
+        );
+
+        return $attribution;
     }
 
     public static function generateCode(int $length = 6): string
@@ -196,12 +221,15 @@ class ShortLink extends Model
      * `short_link_clicks` rows in step: both are written or neither is.
      *
      * - HEAD requests, prefetches, and link-preview or bot user agents are not
-     *   clicks: they record nothing and leave the session alone.
-     * - A person's click always refreshes their attribution (last click wins),
-     *   but the same session clicking the same link again within
-     *   DEDUPE_MINUTES is the same click, not a new one.
+     *   clicks: they record nothing and set no cookie.
+     * - A person's click always refreshes their attribution cookie (last click
+     *   wins), but the same browser clicking the same link again within
+     *   DEDUPE_MINUTES is the same click, not a new one. A short-lived cookie
+     *   per link marks the counted click.
      * - At most MAX_COUNTED_PER_IP clicks per link and IP address count per
-     *   DEDUPE_MINUTES, which catches clients that drop the session cookie.
+     *   DEDUPE_MINUTES, which catches clients that drop cookies.
+     *
+     * State lives in cookies, not the session, so /go writes no sessions row.
      *
      * Returns whether the click was counted. The caller redirects either way.
      */
@@ -213,12 +241,18 @@ class ShortLink extends Model
             return false;
         }
 
-        session()->put(self::SESSION_KEY, [...$this->utm(), 'short_link_id' => $this->id]);
+        Cookie::queue(self::cookie(
+            self::ATTRIBUTION_COOKIE,
+            (string) json_encode([...$this->utm(), 'short_link_id' => $this->id]),
+            (int) config('session.lifetime', 120),
+        ));
 
-        $seenKey = self::SEEN_SESSION_KEY.'.'.$this->id;
-        $lastCounted = session($seenKey);
+        $seenCookie = self::SEEN_COOKIE_PREFIX.$this->id;
 
-        if (is_int($lastCounted) && $lastCounted > now()->subMinutes(self::DEDUPE_MINUTES)->getTimestamp()) {
+        // The cookie expires after DEDUPE_MINUTES; the timestamp inside also
+        // bounds it, in case a client keeps a cookie past its expiry.
+        $lastCounted = (int) $request->cookie($seenCookie);
+        if ($lastCounted > now()->subMinutes(self::DEDUPE_MINUTES)->getTimestamp()) {
             return false;
         }
 
@@ -229,7 +263,7 @@ class ShortLink extends Model
         }
 
         RateLimiter::hit($ipKey, self::DEDUPE_MINUTES * 60);
-        session()->put($seenKey, now()->getTimestamp());
+        Cookie::queue(self::cookie($seenCookie, (string) now()->getTimestamp(), self::DEDUPE_MINUTES));
 
         DB::transaction(function () {
             $this->increment('clicks');
@@ -237,6 +271,12 @@ class ShortLink extends Model
         });
 
         return true;
+    }
+
+    /** A first-party, HTTP-only, SameSite=Lax cookie, secure when sessions are. */
+    private static function cookie(string $name, string $value, int $minutes): SymfonyCookie
+    {
+        return Cookie::make($name, $value, $minutes, null, null, config('session.secure'), true, false, 'lax');
     }
 
     /** Whether this request is a person following the link, not a preview, prefetch or bot. */

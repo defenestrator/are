@@ -183,5 +183,11 @@ test('a real Twitch chat message runs !edos through the chat job, and clicking t
 
     $this->get($link->url())
         ->assertRedirectContains('/about?utm_source=twitch&utm_medium=stream&utm_campaign=2026-10-04-stream-40123456789&utm_content=chat#work-with-us')
-        ->assertSessionHas(ShortLink::SESSION_KEY.'.utm_campaign', '2026-10-04-stream-40123456789');
+        ->assertCookie(ShortLink::ATTRIBUTION_COOKIE, json_encode([
+            'utm_source' => 'twitch',
+            'utm_medium' => 'stream',
+            'utm_campaign' => '2026-10-04-stream-40123456789',
+            'utm_content' => 'chat',
+            'short_link_id' => $link->id,
+        ]));
 });
