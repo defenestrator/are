@@ -49,5 +49,21 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('user_twitch_subscriptions');
+
+        // Put back the columns up() dropped. Their data is gone, so the token
+        // columns (required when first created) come back nullable.
+        $columns = [
+            'twitch_access_token' => fn (Blueprint $table) => $table->string('twitch_access_token')->nullable(),
+            'twitch_refresh_token' => fn (Blueprint $table) => $table->string('twitch_refresh_token')->nullable(),
+            'twitch_expires_in' => fn (Blueprint $table) => $table->integer('twitch_expires_in')->nullable(),
+            'twitch_subscription' => fn (Blueprint $table) => $table->string('twitch_subscription')->default(TwitchSubscription::None),
+            'poki_sub' => fn (Blueprint $table) => $table->string('poki_sub')->default('0000'),
+        ];
+
+        foreach ($columns as $column => $add) {
+            if (! Schema::hasColumn('users', $column)) {
+                Schema::table('users', $add);
+            }
+        }
     }
 };
