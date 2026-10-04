@@ -4,6 +4,11 @@ includes:
 
 parameters:
 
+    # Keep the result cache inside this checkout (gitignored by
+    # storage/framework/cache/.gitignore). The default, the system temp
+    # directory, is shared by every worktree, which then see each other's results.
+    tmpDir: %currentWorkingDirectory%/storage/framework/cache/phpstan
+
     paths:
         - app/
 
