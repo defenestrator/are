@@ -138,7 +138,9 @@ new class extends Component {
                         @endif
                         @if ($user->isLocallyBanned())
                             <flux:badge color="red">Banned here</flux:badge>
-                            <flux:button size="sm" wire:click="unban({{ $user->id }})">Lift local ban</flux:button>
+                            @can('unban', $user)
+                                <flux:button size="sm" wire:click="unban({{ $user->id }})">Lift local ban</flux:button>
+                            @endcan
                         @elseif (auth()->user()->can('ban', $user))
                             <flux:button size="sm" variant="danger" wire:click="ban({{ $user->id }})" wire:confirm="Ban {{ $user->name }}?">Ban</flux:button>
                         @endif
@@ -156,7 +158,9 @@ new class extends Component {
                         <span class="w-48 text-zinc-500">{{ $ban->ends_at ? 'until '.$ban->ends_at->toDateTimeString() : 'permanent' }}</span>
                         <span class="w-32 text-zinc-500">by {{ $ban->moderator?->name ?? 'deleted user' }}</span>
                         <span class="flex-1 text-zinc-500">{{ $ban->reason }}</span>
-                        <flux:button size="sm" wire:click="unban({{ $ban->user_id }})">Lift</flux:button>
+                        @can('unban', $ban->user)
+                            <flux:button size="sm" wire:click="unban({{ $ban->user_id }})">Lift</flux:button>
+                        @endcan
                     </li>
                 @empty
                     <li class="py-2 text-zinc-500">Nobody is banned here.</li>

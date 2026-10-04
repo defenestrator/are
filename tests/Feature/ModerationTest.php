@@ -304,3 +304,39 @@ test('the page offers no Ban button for a moderator, and calling ban anyway is a
 
     expect($b->isBanned())->toBeFalse();
 });
+
+test('a moderator cannot lift the broadcaster\'s ban on another moderator', function () {
+    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $rogue = moderator();
+    $other = moderator();
+    Moderation::ban($broadcaster, $rogue, null, 'rogue');
+
+    expect($other->can('unban', $rogue))->toBeFalse()
+        ->and(fn () => Moderation::unban($other, $rogue))->toThrow(AuthorizationException::class, 'Only the broadcaster can lift a ban on a moderator.')
+        ->and($rogue->isBanned())->toBeTrue()
+        ->and($broadcaster->can('unban', $rogue))->toBeTrue();
+});
+
+test('the page hides Lift on a banned moderator from other moderators, and calling unban anyway is a 403', function () {
+    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $rogue = User::factory()->create(['name' => 'Rogue Mod']);
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $rogue->twitch_id]);
+    $viewer = User::factory()->create(['name' => 'Rogue Fan']);
+    Moderation::ban($broadcaster, $rogue, null);
+    Moderation::ban($broadcaster, $viewer, null);
+
+    $this->actingAs(moderator())->get('/moderation')->assertOk();
+
+    fragment('moderation', 'moderation')
+        ->set('search', 'Rogue')
+        ->assertSee('Rogue Mod')
+        ->assertDontSeeHtml('wire:click="unban('.$rogue->id.')"')
+        ->assertSeeHtml('wire:click="unban('.$viewer->id.')"')
+        ->call('unban', $rogue->id)
+        ->assertForbidden();
+
+    expect($rogue->isBanned())->toBeTrue();
+
+    $this->actingAs($broadcaster);
+    fragment('moderation', 'moderation')->assertSeeHtml('wire:click="unban('.$rogue->id.')"');
+});

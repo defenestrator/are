@@ -32,10 +32,18 @@ class UserPolicy
     }
 
     /**
-     * Lift a user's local bans.
+     * Lift a user's local bans. Mirrors ban(): only the broadcaster can lift a
+     * ban on a moderator, or another mod could undo it and restore a rogue.
      */
-    public function unban(User $user, User $target): bool
+    public function unban(User $user, User $target): Response
     {
-        return $user->can('moderate');
+        if (! $user->can('moderate')) {
+            return Response::deny();
+        }
+        if ($target->isModerator() && ! $user->isBroadcaster()) {
+            return Response::deny('Only the broadcaster can lift a ban on a moderator.');
+        }
+
+        return Response::allow();
     }
 }
