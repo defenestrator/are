@@ -24,6 +24,7 @@ use App\Models\User;
 use App\Models\UserTwitchSubscription;
 use App\TwitchSubscription;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
@@ -113,7 +114,7 @@ test('!do opens a vote window sized to the slowest connected platform and schedu
 
     $window = BusWindow::sole();
     expect($result->status)->toBe(ChatCommandStatus::Done)
-        ->and($result->reply)->toBe('Voted for #1: task Write the README.')
+        ->and($result->reply)->toBe('', 'a vote is not answered in chat')
         ->and($window->mode)->toBe(Mode::Democracy)
         ->and((int) $window->opens_at->diffInSeconds($window->closes_at))->toBe(72);
     Queue::assertPushed(ResolveBusWindow::class, fn (ResolveBusWindow $job) => $job->windowId === $window->id && $job->queue === 'broadcasts');
@@ -145,8 +146,23 @@ test('!do #N backs option N of the open vote', function () {
 
     $result = busSay(User::factory()->create(), '!do #2');
 
-    expect($result->reply)->toBe('Voted for #2: task Fix the tests.')
+    expect($result->status)->toBe(ChatCommandStatus::Done)
+        ->and(BusBallot::latest('id')->first()->only(['option_number', 'argument']))->toBe(['option_number' => 2, 'argument' => 'Fix the tests'])
         ->and(BusBallot::where('option_number', 2)->where('status', BallotStatus::Counted)->count())->toBe(2);
+});
+
+test('chat hears back only about refusals: votes and rate limits get no reply', function () {
+    config(['bus.games.orkestera.anarchy' => ['actions' => 1, 'per_seconds' => 60]]);
+    busStart(Mode::Anarchy);
+    $viewer = User::factory()->create();
+
+    $sent = busSay($viewer, '!do task First idea');
+    $limited = busSay($viewer, '!do task Second idea');
+    $invalid = busSay(User::factory()->create(), '!do jump');
+
+    expect([$sent->status, $sent->reply])->toBe([ChatCommandStatus::Done, ''])
+        ->and([$limited->status, $limited->reply])->toBe([ChatCommandStatus::Rejected, ''])
+        ->and($invalid->reply)->toBe('Try !do task <text>.');
 });
 
 // --- One person, one vote ---------------------------------------------------
@@ -440,7 +456,8 @@ test('BUS_ENABLED=false is a deploy-time kill switch', function () {
 });
 
 test('a queued broadcast checks the switches again when it is sent', function () {
-    Event::fake([BusActionPublished::class]);
+    config(['broadcasting.default' => 'reverb']);
+    Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class]);
     $mod = busStart(Mode::Anarchy);
     busSay(User::factory()->create(), '!do task An action');
     $event = new BusActionPublished('orkestera', BusPublication::sole()->id);
@@ -555,6 +572,28 @@ test('a published action goes to bus.{game} as bus.action, on the broadcasts que
         ->and($event->broadcastQueue())->toBe('broadcasts')
         ->and(array_keys($event->broadcastWith()))->toBe(['id', 'game', 'verb', 'argument', 'mode', 'votes', 'total_votes', 'window_id', 'flair', 'vetoed', 'published_at'])
         ->and(json_encode($event->broadcastWith()))->not->toContain('Secret Name');
+});
+
+test('with broadcasting off (production until Reverb), nothing is queued for Reverb and adapters poll instead', function () {
+    config(['broadcasting.default' => 'log']);
+    Queue::fake();
+    $token = BusAdapterToken::issue('orkestera');
+    busStart(Mode::Anarchy);
+
+    busSay(User::factory()->create(), '!do task An action');
+
+    Queue::assertNotPushed(BroadcastEvent::class);
+    $this->withToken($token)->getJson('/bus/orkestera/actions')->assertJsonPath('actions.0.argument', 'An action');
+});
+
+test('with Reverb configured, a published action queues its broadcast on the broadcasts queue', function () {
+    config(['broadcasting.default' => 'reverb']);
+    Queue::fake();
+    busStart(Mode::Anarchy);
+
+    busSay(User::factory()->create(), '!do task An action');
+
+    Queue::assertPushedOn('broadcasts', BroadcastEvent::class, fn (BroadcastEvent $job) => $job->event instanceof BusActionPublished);
 });
 
 test('adapters can poll for actions with their token', function () {

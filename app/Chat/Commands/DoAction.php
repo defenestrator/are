@@ -5,6 +5,7 @@ namespace App\Chat\Commands;
 use App\Chat\ChatCommand;
 use App\Chat\ChatCommandInvocation;
 use App\Chat\ChatCommandResult;
+use App\ControlBus\BallotStatus;
 use App\ControlBus\ControlBus;
 
 /**
@@ -36,8 +37,17 @@ class DoAction implements ChatCommand
             $invocation->arguments,
         );
 
-        return $submission->accepted()
-            ? ChatCommandResult::done($submission->reply)
-            : ChatCommandResult::rejected($submission->reply);
+        // The registry posts every non-empty reply back to chat (#89). In a
+        // chat game the votes are the chat, so an accepted vote gets no reply:
+        // answering each one would double the flood and spend the channel's
+        // reply budget. Refusals are answered, except a rate limit, for the
+        // same reason the registry never answers "slow down".
+        if ($submission->accepted()) {
+            return ChatCommandResult::done();
+        }
+
+        return ChatCommandResult::rejected(
+            $submission->ballot->status === BallotStatus::RateLimited ? '' : $submission->reply,
+        );
     }
 }
