@@ -49,6 +49,7 @@ composer run dev            # or: php artisan serve + npm run dev
 | `twitch:sync-moderation` | Pulls bans and moderators for every connected channel |
 | `twitch:eventsub-subscribe` | Creates the EventSub webhook subscriptions |
 | `twitch:generate-event-sub-key` | Writes `TWITCH_HELIX_EVENTSUB_SECRET` to `.env` |
+| `short-link:create /about#work-with-us --campaign=<stream> [--source=twitch] [--medium=stream] [--content=overlay] [--code=ork]` | Creates a UTM-tagged short link served at `/go/{code}`. Enquiries from `/about` record the last link clicked |
 
 Moderators of any served channel get the same admin powers as the broadcaster. Anyone banned or timed out on a served channel can't log in, submit or vote until the ban lifts.
 ## OBS overlays

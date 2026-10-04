@@ -36,5 +36,9 @@ Route::get('/visualizer', function () {
     return view('visualizer');
 })->name('visualizer');
 
+// Conversion (#15): the /about page with its lead form, and UTM short links.
+Route::view('about', 'about')->name('about');
+Route::get('go/{shortLink:code}', App\Http\Controllers\ShortLinkRedirectController::class)->name('short-links.go');
+
 require __DIR__ . '/auth.php';
 require __DIR__ . '/overlays.php';
