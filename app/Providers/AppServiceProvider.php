@@ -27,7 +27,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // The web vote queue is one queue shared by every served channel
+        // (topics and questions have no channel), so a moderator of any
+        // served channel moderates it.
         Gate::define('moderate', fn (User $user) => $user->isAdminUser() && ! $user->isBanned());
+
+        // Acting on one channel, such as a chat command or a Helix call on
+        // it: only that channel's broadcaster or moderators (#96).
+        Gate::define('moderateChannel', fn (User $user, string $broadcasterId) => ($user->isBroadcasterOf($broadcasterId) || $user->isModeratorOf($broadcasterId))
+            && ! $user->isBanned());
 
         // Livewire actions arrive at /livewire/update, which runs only its
         // persistent middleware. Re-apply the ban check to every action on a

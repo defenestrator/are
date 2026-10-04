@@ -4,6 +4,7 @@ namespace App\Chat;
 
 use App\IdentityProvider;
 use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * A parsed chat command and who sent it, independent of the platform.
@@ -27,4 +28,16 @@ final readonly class ChatCommandInvocation
         public string $messageId,
         public ?User $user,
     ) {}
+
+    /**
+     * Whether the chatter is the broadcaster or a moderator of the channel this
+     * message arrived on (not of some other channel this app serves). Only
+     * Twitch channels have known moderators, so other platforms answer false.
+     */
+    public function canModerate(): bool
+    {
+        return $this->user !== null
+            && $this->provider === IdentityProvider::Twitch
+            && Gate::forUser($this->user)->allows('moderateChannel', $this->channelId);
+    }
 }

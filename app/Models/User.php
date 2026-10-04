@@ -189,6 +189,41 @@ class User extends Authenticatable
     }
 
     /**
+     * The broadcaster of this one channel, which must be one this app serves.
+     */
+    public function isBroadcasterOf(string $broadcasterId): bool
+    {
+        return $this->twitch_id !== null
+            && $this->twitch_id === $broadcasterId
+            && in_array($broadcasterId, self::getBroadcasterIDs(), true);
+    }
+
+    /**
+     * A Twitch moderator of this one channel, which must be one this app
+     * serves. Use this, not isModerator(), for anything that acts on a
+     * channel (chat commands, Helix calls): a moderator of channel B has no
+     * powers on channel A.
+     *
+     * Memoised like isModerator(), per user instance and per channel (once()
+     * keys on the Twitch ID and broadcaster ID the closure uses).
+     */
+    public function isModeratorOf(string $broadcasterId): bool
+    {
+        $twitchId = $this->twitch_id;
+
+        return $twitchId !== null
+            && in_array($broadcasterId, self::getBroadcasterIDs(), true)
+            && once(fn () => TwitchModerator::where('twitch_user_id', $twitchId)
+                ->where('broadcaster_id', $broadcasterId)
+                ->exists());
+    }
+
+    /**
+     * A moderator of ANY channel this app serves. The web vote queue, topic
+     * and moderation page are one queue shared by every served channel
+     * (topics and questions carry no channel), so the global `moderate` gate
+     * uses this. For a channel-scoped action use isModeratorOf().
+     *
      * Memoised per user instance for the request (keyed on the Twitch ID and
      * served channels), so every @can('moderate') does not re-query. Bans
      * are deliberately not memoised: the moderate gate checks isBanned()

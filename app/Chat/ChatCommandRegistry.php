@@ -27,7 +27,10 @@ use Throwable;
  * 4. Each person is rate-limited across all platforms and commands, keyed on
  *    the user (or, if unlinked, on the platform account).
  * 5. Banned or timed-out users can run no command.
- * 6. A command that throws is reported and answers Failed. The exception is
+ * 6. A ModeratorChatCommand runs only for the broadcaster or a moderator of
+ *    the channel the message arrived on. A moderator of another served
+ *    channel is refused (#96).
+ * 7. A command that throws is reported and answers Failed. The exception is
  *    not rethrown, so the chat job is not retried and the command cannot run twice.
  */
 class ChatCommandRegistry
@@ -173,17 +176,23 @@ class ChatCommandRegistry
             return new ChatCommandResult(ChatCommandStatus::Banned, 'You are banned or timed out in this channel.');
         }
 
+        $invocation = new ChatCommandInvocation(
+            name: $name,
+            arguments: $arguments,
+            provider: $provider,
+            channelId: $channelId,
+            chatterId: $chatterId,
+            chatterName: $chatterName,
+            messageId: $messageId,
+            user: $user,
+        );
+
+        if ($command instanceof ModeratorChatCommand && ! $invocation->canModerate()) {
+            return ChatCommandResult::rejected('Only moderators of this channel can use !'.$name.'.');
+        }
+
         try {
-            return $command->handle(new ChatCommandInvocation(
-                name: $name,
-                arguments: $arguments,
-                provider: $provider,
-                channelId: $channelId,
-                chatterId: $chatterId,
-                chatterName: $chatterName,
-                messageId: $messageId,
-                user: $user,
-            ));
+            return $command->handle($invocation);
         } catch (Throwable $e) {
             report($e);
 
