@@ -74,11 +74,59 @@ test('each event broadcasts a minimal payload on public channels via the broadca
 ]);
 
 test('dispatching an event queues its broadcast on the broadcasts queue', function () {
+    config(['broadcasting.default' => 'reverb']);
     Queue::fake();
 
     VoteCast::dispatch(1, 1, 1);
 
     Queue::assertPushedOn('broadcasts', BroadcastEvent::class);
+});
+
+// #100 (Andras's repro): Laravel queues a broadcast job whatever the driver,
+// so with BROADCAST_CONNECTION=log every vote left a row in `jobs`.
+
+/**
+ * Five votes, then one of each other event. Returns the number of broadcast jobs queued.
+ */
+function changeTheQueueAndCountBroadcasts(): int
+{
+    config(['queue.default' => 'database']);
+    $question = Question::factory()->for(User::factory())->create();
+    Question::cachedQueue();   // warm the cache, so the listener has something to retire
+
+    foreach (User::factory()->count(5)->create() as $voter) {
+        $question->recordVote($voter, 1);
+    }
+    QuestionSubmitted::dispatch($question->id);
+    TopicChanged::dispatch('Kale');
+    QuestionArchived::dispatch([$question->id]);
+
+    // The non-broadcast listener still ran: the cached queue shows the votes.
+    expect(Question::cachedQueue()['top']->first()->votes)->toEqual(5);
+
+    return DB::table('jobs')->where('queue', 'broadcasts')->count();
+}
+
+test('with a log or null broadcaster, no event queues a broadcast job', function (string $connection) {
+    config(['broadcasting.default' => $connection]);
+
+    expect(changeTheQueueAndCountBroadcasts())->toBe(0);
+})->with(['log', 'null']);
+
+test('with Reverb configured, every event queues its broadcast job', function () {
+    config(['broadcasting.default' => 'reverb']);
+
+    expect(changeTheQueueAndCountBroadcasts())->toBe(8);
+});
+
+test('broadcastWhen follows the configured driver, not the connection name', function () {
+    $event = new VoteCast(1, 1, 1);
+
+    config(['broadcasting.default' => 'quiet', 'broadcasting.connections.quiet' => ['driver' => 'log']]);
+    expect($event->broadcastWhen())->toBeFalse();
+
+    config(['broadcasting.default' => 'live', 'broadcasting.connections.live' => ['driver' => 'reverb']]);
+    expect($event->broadcastWhen())->toBeTrue();
 });
 
 test('submitting a question dispatches QuestionSubmitted', function () {

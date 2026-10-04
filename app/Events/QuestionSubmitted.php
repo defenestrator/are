@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\BroadcastsWhenEnabled;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -15,7 +16,7 @@ use Illuminate\Foundation\Events\Dispatchable;
  */
 class QuestionSubmitted implements ShouldBroadcast, ShouldDispatchAfterCommit
 {
-    use Dispatchable, InteractsWithSockets;
+    use BroadcastsWhenEnabled, Dispatchable, InteractsWithSockets;
 
     public function __construct(public int $questionId) {}
 
