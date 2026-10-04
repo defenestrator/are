@@ -9,7 +9,7 @@ class UserPolicy
 {
     /**
      * Ban or time out a user locally. A broadcaster cannot be banned here,
-     * and nobody can ban themselves.
+     * nobody can ban themselves, and only the broadcaster can ban a moderator.
      */
     public function ban(User $user, User $target): Response
     {
@@ -21,6 +21,11 @@ class UserPolicy
         }
         if ($target->isBroadcaster()) {
             return Response::deny('A broadcaster cannot be banned here.');
+        }
+        // As on Twitch, moderators cannot ban each other. Otherwise one rogue
+        // mod could ban the rest, who (being banned) could not lift it.
+        if ($target->isModerator() && ! $user->isBroadcaster()) {
+            return Response::deny('Only the broadcaster can ban a moderator.');
         }
 
         return Response::allow();

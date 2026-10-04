@@ -266,3 +266,41 @@ test('a moderator cannot ban themselves from the page', function () {
 
     expect($mod->isBanned())->toBeFalse();
 });
+
+test('one moderator cannot ban another', function () {
+    $a = User::factory()->create();
+    $b = User::factory()->create();
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $a->twitch_id]);
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $b->twitch_id]);
+
+    expect($a->can('ban', $b))->toBeFalse()
+        ->and(fn () => Moderation::ban($a, $b, null))->toThrow(AuthorizationException::class, 'Only the broadcaster can ban a moderator.');
+
+    expect($b->isBanned())->toBeFalse();
+});
+
+test('the broadcaster can ban a moderator', function () {
+    $broadcaster = User::factory()->create(['twitch_id' => '1000']);
+    $mod = moderator();
+
+    expect($broadcaster->can('ban', $mod))->toBeTrue();
+
+    Moderation::ban($broadcaster, $mod, 60);
+    expect($mod->isBanned())->toBeTrue();
+});
+
+test('the page offers no Ban button for a moderator, and calling ban anyway is a 403', function () {
+    $a = moderator();
+    $b = User::factory()->create(['name' => 'Fellow Mod']);
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $b->twitch_id]);
+    $this->actingAs($a)->get('/moderation')->assertOk();
+
+    fragment('moderation', 'moderation')
+        ->set('search', 'Fellow')
+        ->assertSee('Fellow Mod')
+        ->assertDontSeeHtml('wire:click="ban('.$b->id.')"')
+        ->call('ban', $b->id)
+        ->assertForbidden();
+
+    expect($b->isBanned())->toBeFalse();
+});
