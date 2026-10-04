@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Question;
+use App\Moderation;
+use Illuminate\Auth\Access\AuthorizationException;
 use Flux\Flux;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Component;
@@ -66,12 +68,12 @@ new class extends Component {
 
     public function deleteQuestion()
     {
-        // Moderators can remove any question; authors can remove their own.
-        if (! Auth::user()->isAdminUser() && Auth::user()->id !== $this->question->user_id) {
+        // Moderators can remove any question (logged); authors can remove their own.
+        try {
+            Moderation::deleteQuestion(Auth::user(), $this->question);
+        } catch (AuthorizationException) {
             return;
         }
-
-        $this->question->delete();
 
         $this->dispatch('question-deleted');
     }
@@ -111,6 +113,11 @@ new class extends Component {
 
                     </div>
                 </div>
+
+                @if ($canEdit)
+                    <flux:button wire:click="deleteQuestion" wire:confirm="Delete this question?" variant="ghost" size="sm"
+                        icon="trash" aria-label="Delete question" class="mr-1" />
+                @endif
 
                 <div class="flex items-center pt-2 gap-2 p-3">
                     <img src="{{ $question->user->twitch_avatar_url }}" size="xs" class="w-10 rounded-full" />

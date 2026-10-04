@@ -84,9 +84,6 @@ Route::middleware('guest')->group(function () {
 Route::post('logout', App\Livewire\Actions\Logout::class)
     ->name('logout');
 
-Route::get('logout', App\Livewire\Actions\Logout::class)
-    ->name('getLogout');
-
 // A broadcaster grants this app moderation and channel scopes, so it can sync
 // bans and moderators and set the stream title. Register the callback URL in
 // the Twitch developer console alongside the login callback.

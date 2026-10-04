@@ -31,6 +31,12 @@ Route::middleware(['auth', 'not-banned'])->group(function () {
     })->name('settings');
 });
 
+Route::get('moderation', function () {
+    return view('moderation');
+})
+    ->middleware(['auth', 'not-banned', 'can:moderate'])
+    ->name('moderation');
+
 Route::get('/visualizer', function () {
     return view('visualizer');
 })->name('visualizer');

@@ -90,14 +90,26 @@ class User extends Authenticatable
     }
 
     /**
-     * Banned or timed out on any channel this app serves.
+     * Banned or timed out here (a local ban), or on any Twitch channel this app serves.
      */
     public function isBanned(): bool
     {
+        if ($this->localBans()->inEffect()->exists()) {
+            return true;
+        }
+
         return $this->twitch_id !== null && TwitchBan::inEffect()
             ->where('twitch_user_id', $this->twitch_id)
             ->whereIn('broadcaster_id', self::getBroadcasterIDs())
             ->exists();
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<UserBan, $this>
+     */
+    public function localBans(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(UserBan::class);
     }
 
     public function getHighestSubscription(): TwitchSubscription

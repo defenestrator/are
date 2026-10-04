@@ -13,6 +13,11 @@
                 <flux:navbar.item icon="hand-thumb-up" href="/vote" :current="request()->routeIs('dashboard')" wire:navigate>
                     {{ __('Ideas') }}
                 </flux:navbar.item>
+                @can('moderate')
+                    <flux:navbar.item icon="shield-check" href="{{ route('moderation') }}" :current="request()->routeIs('moderation')" wire:navigate>
+                        {{ __('Moderation') }}
+                    </flux:navbar.item>
+                @endcan
             </flux:navbar>
 
             <flux:spacer />
@@ -75,6 +80,11 @@
                     <flux:navlist.item icon="hand-thumb-up" href="/vote" wire:navigate>
                     {{ __('Votes') }}
                     </flux:navlist.item>
+                    @can('moderate')
+                        <flux:navlist.item icon="shield-check" href="{{ route('moderation') }}" wire:navigate>
+                            {{ __('Moderation') }}
+                        </flux:navlist.item>
+                    @endcan
                 </flux:navlist.group>
             </flux:navlist>
         </flux:sidebar>

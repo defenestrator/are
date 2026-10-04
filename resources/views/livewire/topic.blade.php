@@ -1,5 +1,6 @@
 <?php
 use App\Models\Topic;
+use App\Moderation;
 use Livewire\Volt\Component;
 
 new class extends Component {
@@ -12,7 +13,7 @@ new class extends Component {
 
     public function clear() {
         if (Auth::user()->isAdminUser()) {
-            Topic::archiveAll();
+            Moderation::clearTopic(Auth::user());
             $this->topic = "";
 
             $this->dispatch("topic-changed");
@@ -22,7 +23,7 @@ new class extends Component {
     public function save() {
         if (Auth::user()->isAdminUser()) {
             $this->validate(['topic' => 'required|string|max:255']);
-            Topic::set($this->topic);
+            Moderation::setTopic(Auth::user(), $this->topic);
 
             $this->dispatch("topic-changed");
         }
