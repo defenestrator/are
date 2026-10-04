@@ -62,10 +62,21 @@ The `cta` lower-third rotates between the Orkestera and EDOS Professional Servic
 
 **Upgrading from `/top-vote`.** `/top-vote` used to be public. It now redirects permanently to `/overlay/top-vote`, which needs a token, so an existing `/top-vote` source shows nothing (its request gets a 403). OBS caches the redirect. Replace the source URL with the one printed by `php artisan overlay:token top-vote`.
 
-**Where overlay tokens end up.** The token travels in the URL's query string, because OBS browser sources can't send headers. So:
+**How the token travels.** `overlay:token` prints URLs like `/overlay/queue?layout=vertical#token=…`. The token is in the **fragment**, which browsers never send to the server, so it doesn't appear in access logs. When OBS loads the source:
 
-- **The web server's access logs contain overlay URLs, tokens included.** On Forge that means nginx's access log, which records every OBS source load. Anyone who can read those logs can open the overlays. If a log leaks, rotate the affected tokens. To keep tokens out of the log, give the `/overlay/` location a log format that records `$uri` (the path without its query) instead of `$request`, for example `log_format no_query '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent';` and `access_log /var/log/nginx/<site>-access.log no_query;` inside `location /overlay/ { ... }`. This snippet hasn't been tried on our Forge server yet.
-- **Sentry never receives them.** `App\Support\SentryScrubber`, set as `before_send`, `before_send_transaction` and `before_breadcrumb` in `config/sentry.php`, replaces every `token=` value with `[Filtered]`. Sentry would otherwise attach the full URL and query string to every event, whatever `SENTRY_SEND_DEFAULT_PII` says.
+1. The server answers with a small bootstrap page that holds no overlay data.
+2. The page reads `#token=` and POSTs it, in the request body, to `/overlay/{name}/session`.
+3. The server checks the token and sets a grant cookie (`App\Support\OverlayGrant`). The cookie is encrypted, HttpOnly, SameSite=Strict, scoped to that overlay's path, valid for 2 minutes and works once.
+4. The page reloads, and the reload with the grant cookie gets the overlay. Rotating the token voids any unused grant, and an open overlay goes blank on its next refresh as before.
+
+If something goes wrong, the bootstrap page logs a line in OBS's log (**Help → Log Files**) starting `[ARE overlay]`.
+
+**Upgrading old `?token=` URLs.** URLs from before this change put the token in the query string. They **still work for one release**, but each load logs a deprecation warning (without the token) to the Laravel log, and nginx still records the token. To move a source over, run `php artisan overlay:token <name> --rotate` and paste the new `#token=` URL into OBS. Once no warnings appear, set `ARE_OVERLAY_ALLOW_QUERY_TOKEN=false` so a leaked old URL is refused.
+
+**Where overlay tokens can still end up.**
+
+- **The web server's access logs: only from old `?token=` URLs.** Fragment URLs never put the token in a request line. If a log with old URLs leaks, rotate the affected tokens.
+- **Sentry never receives them.** `App\Support\SentryScrubber`, set as `before_send`, `before_send_transaction` and `before_breadcrumb` in `config/sentry.php`, replaces every `token=` value and every `token` field with `[Filtered]`. Sentry would otherwise attach the full URL and query string to every event, whatever `SENTRY_SEND_DEFAULT_PII` says, and the exchange's request body when PII is on.
 - **OBS stores them** in its scene collection JSON on the streaming machine.
 - **Pages never pass them on.** Responses send `Referrer-Policy: no-referrer`, so a token never leaves in a `Referer` header, and `Cache-Control: no-store` keeps it out of caches.
 

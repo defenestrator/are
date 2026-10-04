@@ -27,7 +27,7 @@ const LIVE_TOKEN = '6f1c0e2a9b8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c
  *
  * @return array{HubInterface, ArrayObject<int, Event>}
  */
-function sentryHubFor(ServerRequestInterface $request): array
+function sentryHubFor(ServerRequestInterface $request, bool $sendDefaultPii = false): array
 {
     $sent = new ArrayObject;
 
@@ -63,6 +63,7 @@ function sentryHubFor(ServerRequestInterface $request): array
         'default_integrations' => false,
         'integrations' => [new RequestIntegration($fetcher)],
         'traces_sample_rate' => 1.0,
+        'send_default_pii' => $sendDefaultPii,
         'before_send' => config('sentry.before_send'),
         'before_send_transaction' => config('sentry.before_send_transaction'),
         'before_breadcrumb' => config('sentry.before_breadcrumb'),
@@ -154,3 +155,24 @@ test('only the token parameter is filtered', function (string $input, string $ex
     'other parameters untouched' => ['/vote?page=2&csrf_token=keep&tokens=keep', '/vote?page=2&csrf_token=keep&tokens=keep'],
     'no query' => ['/overlay/queue', '/overlay/queue'],
 ]);
+
+test('a token field in a request body is filtered, even with send_default_pii on', function () {
+    $body = json_encode(['token' => LIVE_TOKEN, 'note' => 'kept']);
+    $request = (new ServerRequest('POST', 'https://are.example/overlay/queue/session', [
+        'Content-Type' => 'application/json',
+        // The SDK skips bodies it cannot size.
+        'Content-Length' => (string) strlen($body),
+    ], $body))->withParsedBody(json_decode($body, true));
+    [$hub, $sent] = sentryHubFor($request, sendDefaultPii: true);
+
+    $hub->captureMessage('exchange failed');
+
+    // With PII on, the SDK attaches the body: that is the case being covered.
+    expect($sent[0]->getRequest()['data'] ?? null)->toBe(['token' => '[Filtered]', 'note' => 'kept'])
+        ->and(serialize($sent[0]))->not->toContain(LIVE_TOKEN);
+});
+
+test('token fields are filtered at any depth, other keys are not', function () {
+    expect(SentryScrubber::scrub(['data' => ['Token' => 'abc', 'tokens' => 'keep', 'nested' => ['token' => 'abc']], 'csrf_token' => 'keep']))
+        ->toBe(['data' => ['Token' => '[Filtered]', 'tokens' => 'keep', 'nested' => ['token' => '[Filtered]']], 'csrf_token' => 'keep']);
+});

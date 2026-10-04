@@ -8,13 +8,16 @@ use Sentry\EventHint;
 use Sentry\Tracing\Span;
 
 /**
- * Removes `token` query parameters from everything ARE sends to Sentry.
+ * Removes `token` query parameters and `token` fields from everything ARE
+ * sends to Sentry.
  *
- * OBS overlay URLs carry their access token as `?token=` (browser sources
- * cannot send headers). Sentry's RequestIntegration attaches the full request
- * URL and query string to every event and transaction whatever
- * `send_default_pii` says, so without this a single exception on
- * /overlay/* would store a live token in Sentry.
+ * Old OBS overlay URLs carry their access token as `?token=` (deprecated by
+ * #58 in favour of `#token=`, which never reaches the server). Sentry's
+ * RequestIntegration attaches the full request URL and query string to every
+ * event and transaction whatever `send_default_pii` says, so without this a
+ * single exception on /overlay/* would store a live token in Sentry. The
+ * fragment exchange sends the token as a `token` field in a JSON body, which
+ * Sentry includes only with send_default_pii on, and that is filtered too.
  *
  * Wired up in config/sentry.php as before_send, before_send_transaction and
  * before_breadcrumb. The callables are [class, method] arrays rather than
@@ -100,7 +103,18 @@ final class SentryScrubber
         }
 
         if (is_array($value)) {
-            return array_map(self::scrub(...), $value);
+            $scrubbed = [];
+
+            foreach ($value as $key => $item) {
+                // A `token` field, e.g. the JSON body of POST
+                // /overlay/{overlay}/session, which Sentry includes with request
+                // data when send_default_pii is on.
+                $scrubbed[$key] = is_string($key) && strtolower($key) === 'token' && is_scalar($item)
+                    ? self::FILTERED
+                    : self::scrub($item);
+            }
+
+            return $scrubbed;
         }
 
         return $value;

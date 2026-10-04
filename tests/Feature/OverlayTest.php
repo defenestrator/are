@@ -41,10 +41,17 @@ function configureCtas(): void
 
 // Tokens
 
-test('an overlay without a token is forbidden', function (Overlay $overlay) {
+test('an overlay without a token or grant gets only the bootstrap page', function (Overlay $overlay) {
     OverlayToken::issue($overlay);
 
-    $this->get(overlayUrl($overlay, null))->assertForbidden();
+    // Since #58 the token lives in the URL fragment, which the server never
+    // sees, so a bare request gets the bootstrap page and no overlay content.
+    $this->get(overlayUrl($overlay, null))
+        ->assertOk()
+        ->assertViewIs('overlays.bootstrap')
+        ->assertDontSee('visualizer-container', false)
+        ->assertDontSee('wire:poll', false)
+        ->assertDontSee('data-cta', false);
 })->with('overlays');
 
 test('an overlay with the wrong token is forbidden', function () {
@@ -280,9 +287,12 @@ test('overlay:token issues a token and prints working URLs for both layouts', fu
     $output = Artisan::output();
     $token = tokenFromOutput($output);
 
-    expect($output)->toContain('/overlay/vote?layout=horizontal&token=')
-        ->toContain('/overlay/vote?layout=vertical&token=');
-    $this->get(overlayUrl(Overlay::Vote, $token))->assertOk();
+    // The token is printed in the fragment, never the query string (#58).
+    expect($output)->toContain('/overlay/vote?layout=horizontal#token='.$token)
+        ->toContain('/overlay/vote?layout=vertical#token='.$token)
+        ->not->toContain('?token=')
+        ->not->toContain('&token=');
+    $this->postJson(route('overlay.session', ['overlay' => 'vote']), ['token' => $token])->assertNoContent();
 });
 
 test('overlay:token refuses to replace a token without --rotate', function () {

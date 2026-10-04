@@ -4,6 +4,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | OBS overlay access (/overlay/*)
+    |--------------------------------------------------------------------------
+    |
+    | Overlay URLs carry their token in the fragment (#token=…), which browsers
+    | never send to the server. The page trades it for a grant cookie that is
+    | valid for `grant_seconds` and used once (App\Support\OverlayGrant).
+    |
+    | `allow_query_token` keeps the old ?token= URLs working for one release.
+    | Each use logs a deprecation warning. Set it to false once every OBS source
+    | has a #token= URL; it is due to be removed in the release after #58.
+    |
+    */
+
+    'overlays' => [
+        'grant_seconds' => (int) env('ARE_OVERLAY_GRANT_SECONDS', 120),
+        'allow_query_token' => (bool) env('ARE_OVERLAY_ALLOW_QUERY_TOKEN', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Call-to-action lower-third (/overlay/cta)
     |--------------------------------------------------------------------------
     |

@@ -39,7 +39,9 @@ class IssueOverlayToken extends Command
 
         foreach (OverlayLayout::cases() as $layout) {
             $this->line(sprintf('  %-10s (%dx%d)', $layout->value, $layout->width(), $layout->height()));
-            $this->line('  '.route('overlay.show', ['overlay' => $overlay, 'layout' => $layout->value, 'token' => $token]));
+            // The token goes in the fragment, which browsers never send, so
+            // it stays out of access logs (#58).
+            $this->line('  '.route('overlay.show', ['overlay' => $overlay, 'layout' => $layout->value]).'#token='.$token);
             $this->newLine();
         }
 
