@@ -2,8 +2,11 @@
 
 use App\Http\Controllers\AttributionController;
 use App\Http\Controllers\ShortLinkRedirectController;
+use App\Http\Controllers\StreamSafePackController;
+use App\Models\Track;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Livewire\Volt\Volt;
 
 Route::get('/', function () {
     if (Auth::check()) {
@@ -51,6 +54,19 @@ Route::middleware('can:viewAttribution')->prefix('admin')->group(function () {
     Route::get('attribution', [AttributionController::class, 'index'])->name('admin.attribution');
     Route::get('attribution.csv', [AttributionController::class, 'export'])->name('admin.attribution.export');
 });
+
+// The public stream-safe pack: original music other creators may use on stream.
+Route::controller(StreamSafePackController::class)->prefix('music')->name('music.')->group(function () {
+    Route::get('/', 'index')->name('index');
+    Route::middleware('throttle:60,1')->group(function () {
+        Route::get('{track}/download', 'download')->whereNumber('track')->name('download');
+        Route::get('{track}/stems', 'stems')->whereNumber('track')->name('stems');
+    });
+});
+
+Volt::route('music/catalogue', 'music.catalogue')
+    ->middleware(['auth', 'not-banned', 'can:viewAny,'.Track::class])
+    ->name('music.catalogue');
 
 require __DIR__.'/auth.php';
 require __DIR__.'/overlays.php';

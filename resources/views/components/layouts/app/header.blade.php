@@ -27,6 +27,11 @@
                         {{ __('Attribution') }}
                     </flux:navbar.item>
                 @endcan
+                @can('viewAny', App\Models\Track::class)
+                    <flux:navbar.item icon="musical-note" href="{{ route('music.catalogue') }}" :current="request()->routeIs('music.catalogue')" wire:navigate>
+                        {{ __('Music') }}
+                    </flux:navbar.item>
+                @endcan
             </flux:navbar>
 
             <flux:spacer />
@@ -100,6 +105,11 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="chart-bar" href="{{ route('admin.attribution') }}">
                             {{ __('Attribution') }}
+                        </flux:navlist.item>
+                    @endcan
+                    @can('viewAny', App\Models\Track::class)
+                        <flux:navlist.item icon="musical-note" href="{{ route('music.catalogue') }}" wire:navigate>
+                            {{ __('Music') }}
                         </flux:navlist.item>
                     @endcan
                 </flux:navlist.group>
