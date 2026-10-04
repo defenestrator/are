@@ -3,6 +3,7 @@
 use App\Models\ModerationAction;
 use App\Models\Question;
 use App\Models\User;
+use App\Models\UserBan;
 use App\Moderation;
 use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Component;
@@ -14,15 +15,22 @@ new class extends Component {
     public string $duration = '10';
     public string $reason = '';
 
+    // Livewire actions are public endpoints: each one authorises itself, and
+    // App\Moderation authorises again for any other caller.
     public function merge(): void
     {
+        $this->authorize('moderate');
+
         $this->validate([
             'duplicateId' => 'required|integer|exists:questions,id',
             'targetId' => 'required|integer|exists:questions,id',
         ]);
 
+        $duplicate = Question::findOrFail($this->duplicateId);
+        $this->authorize('merge', $duplicate);
+
         try {
-            Moderation::mergeQuestions(auth()->user(), Question::findOrFail($this->duplicateId), Question::findOrFail($this->targetId));
+            Moderation::mergeQuestions(auth()->user(), $duplicate, Question::findOrFail($this->targetId));
         } catch (InvalidArgumentException $e) {
             throw ValidationException::withMessages(['duplicateId' => $e->getMessage()]);
         }
@@ -32,6 +40,9 @@ new class extends Component {
 
     public function ban(int $userId): void
     {
+        $target = User::findOrFail($userId);
+        $this->authorize('ban', $target);
+
         $this->validate([
             'duration' => 'required|in:10,60,1440,10080,permanent',
             'reason' => 'nullable|string|max:255',
@@ -40,7 +51,7 @@ new class extends Component {
         try {
             Moderation::ban(
                 auth()->user(),
-                User::findOrFail($userId),
+                $target,
                 $this->duration === 'permanent' ? null : (int) $this->duration,
                 $this->reason ?: null,
             );
@@ -53,7 +64,10 @@ new class extends Component {
 
     public function unban(int $userId): void
     {
-        Moderation::unban(auth()->user(), User::findOrFail($userId));
+        $target = User::findOrFail($userId);
+        $this->authorize('unban', $target);
+
+        Moderation::unban(auth()->user(), $target);
     }
 
     public function with(): array
@@ -65,13 +79,14 @@ new class extends Component {
             'users' => $term === ''
                 ? collect()
                 : User::where('name', 'like', '%' . addcslashes($term, '%_\\') . '%')->orderBy('name')->limit(20)->get(),
+            'bans' => UserBan::inEffect()->with('user', 'moderator')->latest('id')->get(),
             'actions' => ModerationAction::with('moderator')->latest('id')->limit(50)->get(),
         ];
     }
 }; ?>
 
 <x-layouts.app>
-    @volt
+    @volt('moderation')
     <div class="space-y-10">
         <flux:heading size="xl" level="1">Moderation</flux:heading>
 
@@ -118,14 +133,34 @@ new class extends Component {
                 @foreach ($users as $user)
                     <li class="py-2 flex items-center gap-3" wire:key="mu-{{ $user->id }}">
                         <span class="flex-1">{{ $user->name }}</span>
-                        @if ($user->isBanned())
-                            <flux:badge color="red">Banned</flux:badge>
+                        @if ($user->isTwitchBanned())
+                            <flux:badge color="red">Banned on Twitch</flux:badge>
+                        @endif
+                        @if ($user->isLocallyBanned())
+                            <flux:badge color="red">Banned here</flux:badge>
                             <flux:button size="sm" wire:click="unban({{ $user->id }})">Lift local ban</flux:button>
-                        @else
+                        @elseif (auth()->user()->can('ban', $user))
                             <flux:button size="sm" variant="danger" wire:click="ban({{ $user->id }})" wire:confirm="Ban {{ $user->name }}?">Ban</flux:button>
                         @endif
                     </li>
                 @endforeach
+            </ul>
+        </section>
+
+        <section class="space-y-3">
+            <flux:heading size="lg">Local bans in effect</flux:heading>
+            <ul class="divide-y divide-zinc-200 dark:divide-zinc-700 text-sm">
+                @forelse ($bans as $ban)
+                    <li class="py-2 flex items-center gap-3" wire:key="mb-{{ $ban->id }}">
+                        <span class="w-40">{{ $ban->user->name }}</span>
+                        <span class="w-48 text-zinc-500">{{ $ban->ends_at ? 'until '.$ban->ends_at->toDateTimeString() : 'permanent' }}</span>
+                        <span class="w-32 text-zinc-500">by {{ $ban->moderator?->name ?? 'deleted user' }}</span>
+                        <span class="flex-1 text-zinc-500">{{ $ban->reason }}</span>
+                        <flux:button size="sm" wire:click="unban({{ $ban->user_id }})">Lift</flux:button>
+                    </li>
+                @empty
+                    <li class="py-2 text-zinc-500">Nobody is banned here.</li>
+                @endforelse
             </ul>
         </section>
 

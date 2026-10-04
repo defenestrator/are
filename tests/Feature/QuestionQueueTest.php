@@ -120,7 +120,8 @@ test('a non-admin cannot clear or set the topic', function () {
     $this->actingAs(User::factory()->create());
     Topic::set('Keep me');
 
-    Volt::test('topic')->set('topic', 'Hijacked')->call('save')->call('clear');
+    Volt::test('topic')->set('topic', 'Hijacked')->call('save')->assertForbidden();
+    Volt::test('topic')->call('clear')->assertForbidden();
 
     expect(Topic::current()->topic)->toBe('Keep me');
 });
@@ -143,7 +144,7 @@ test('authors can delete their own question but not someone else\'s', function (
     $theirs = Question::factory()->for($other)->create();
 
     $this->actingAs($author);
-    Volt::test('question-card', ['question' => $theirs, 'voteCount' => 0, 'userVotes' => []])->call('deleteQuestion');
+    Volt::test('question-card', ['question' => $theirs, 'voteCount' => 0, 'userVotes' => []])->call('deleteQuestion')->assertForbidden();
     Volt::test('question-card', ['question' => $mine, 'voteCount' => 0, 'userVotes' => []])->call('deleteQuestion');
 
     expect(Question::pluck('id')->all())->toBe([$theirs->id]);

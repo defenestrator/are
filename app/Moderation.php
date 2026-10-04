@@ -7,12 +7,15 @@ use App\Models\Question;
 use App\Models\Topic;
 use App\Models\User;
 use App\Models\UserBan;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
 
 /**
- * Moderator actions. Every one checks the actor and writes to the audit log.
+ * Moderator actions. Every one authorises the actor through the gate and
+ * policies (so it is safe to call from anywhere) and writes to the audit log.
+ * Callers get an AuthorizationException (a 403 in HTTP and Livewire) when the
+ * actor may not act, and an InvalidArgumentException for a bad request.
  */
 class Moderation
 {
@@ -21,14 +24,8 @@ class Moderation
      */
     public static function ban(User $moderator, User $target, ?int $minutes, ?string $reason = null): UserBan
     {
-        self::authorize($moderator);
+        Gate::forUser($moderator)->authorize('ban', $target);
 
-        if ($target->is($moderator)) {
-            throw new InvalidArgumentException('You cannot ban yourself.');
-        }
-        if ($target->isBroadcaster()) {
-            throw new InvalidArgumentException('A broadcaster cannot be banned here.');
-        }
         if ($minutes !== null && $minutes < 1) {
             throw new InvalidArgumentException('A timeout must last at least one minute.');
         }
@@ -54,7 +51,7 @@ class Moderation
      */
     public static function unban(User $moderator, User $target): int
     {
-        self::authorize($moderator);
+        Gate::forUser($moderator)->authorize('unban', $target);
 
         return DB::transaction(function () use ($moderator, $target) {
             $lifted = $target->localBans()->inEffect()->update(['lifted_at' => now()]);
@@ -70,10 +67,8 @@ class Moderation
      */
     public static function deleteQuestion(User $actor, Question $question): void
     {
+        Gate::forUser($actor)->authorize('delete', $question);
         $isAuthor = $actor->id === $question->user_id;
-        if (! $isAuthor && ! $actor->isAdminUser()) {
-            throw new AuthorizationException;
-        }
 
         DB::transaction(function () use ($actor, $question, $isAuthor) {
             if (! $isAuthor) {
@@ -92,7 +87,7 @@ class Moderation
      */
     public static function mergeQuestions(User $moderator, Question $duplicate, Question $target): void
     {
-        self::authorize($moderator);
+        Gate::forUser($moderator)->authorize('merge', $duplicate);
 
         if ($duplicate->is($target)) {
             throw new InvalidArgumentException('A question cannot be merged into itself.');
@@ -109,6 +104,9 @@ class Moderation
                 ->whereNotIn('user_id', $alreadyVoted)
                 ->update(['question_id' => $target->id]);
 
+            // What is left is the second vote of someone who voted on both.
+            DB::table('question_votes')->where('question_id', $duplicate->id)->delete();
+
             ModerationAction::record($moderator, 'question.merged', $target, [
                 'duplicate_id' => $duplicate->id,
                 'duplicate' => $duplicate->question,
@@ -121,7 +119,7 @@ class Moderation
 
     public static function setTopic(User $moderator, string $topic): Topic
     {
-        self::authorize($moderator);
+        Gate::forUser($moderator)->authorize('moderate');
 
         return DB::transaction(function () use ($moderator, $topic) {
             $new = Topic::set($topic);
@@ -133,19 +131,12 @@ class Moderation
 
     public static function clearTopic(User $moderator): void
     {
-        self::authorize($moderator);
+        Gate::forUser($moderator)->authorize('moderate');
 
         DB::transaction(function () use ($moderator) {
             $current = Topic::current();
             Topic::archiveAll();
             ModerationAction::record($moderator, 'topic.cleared', $current, ['topic' => $current?->topic]);
         });
-    }
-
-    private static function authorize(User $moderator): void
-    {
-        if (! $moderator->isAdminUser() || $moderator->isBanned()) {
-            throw new AuthorizationException;
-        }
     }
 }

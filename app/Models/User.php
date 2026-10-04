@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\TwitchSubscription;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -49,7 +50,7 @@ class User extends Authenticatable
         return $this->hasMany(Question::class);
     }
 
-    static public function getBroadcasterID(): string
+    public static function getBroadcasterID(): string
     {
         return config('services.twitch.broadcaster_id');
     }
@@ -59,7 +60,7 @@ class User extends Authenticatable
      *
      * @return list<string>
      */
-    static public function getBroadcasterIDs(): array
+    public static function getBroadcasterIDs(): array
     {
         return array_values(array_unique(array_filter(array_merge(
             [config('services.twitch.broadcaster_id')],
@@ -67,7 +68,7 @@ class User extends Authenticatable
         ))));
     }
 
-    static public function getAllFriendIDs(): array
+    public static function getAllFriendIDs(): array
     {
         return array_values(array_unique(array_merge(self::getBroadcasterIDs(), config('services.twitch.friend_ids', []))));
     }
@@ -94,10 +95,23 @@ class User extends Authenticatable
      */
     public function isBanned(): bool
     {
-        if ($this->localBans()->inEffect()->exists()) {
-            return true;
-        }
+        return $this->isLocallyBanned() || $this->isTwitchBanned();
+    }
 
+    /**
+     * Banned or timed out by a moderator in ARE. Keyed on the user, so it
+     * applies however they signed in.
+     */
+    public function isLocallyBanned(): bool
+    {
+        return $this->localBans()->inEffect()->exists();
+    }
+
+    /**
+     * Banned or timed out on any Twitch channel this app serves.
+     */
+    public function isTwitchBanned(): bool
+    {
         return $this->twitch_id !== null && TwitchBan::inEffect()
             ->where('twitch_user_id', $this->twitch_id)
             ->whereIn('broadcaster_id', self::getBroadcasterIDs())
@@ -105,9 +119,12 @@ class User extends Authenticatable
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany<UserBan, $this>
+     * Every local ban ever placed on this user, lifted or not. Use the
+     * UserBan::inEffect() scope for the ones that still apply.
+     *
+     * @return HasMany<UserBan, $this>
      */
-    public function localBans(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function localBans(): HasMany
     {
         return $this->hasMany(UserBan::class);
     }
@@ -153,7 +170,7 @@ class User extends Authenticatable
     {
         return Str::of($this->name)
             ->explode(' ')
-            ->map(fn(string $name) => Str::of($name)->substr(0, 1))
+            ->map(fn (string $name) => Str::of($name)->substr(0, 1))
             ->implode('');
     }
 }

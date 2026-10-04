@@ -3,12 +3,16 @@
 use App\Models\ModerationAction;
 use App\Models\Question;
 use App\Models\Topic;
+use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Models\UserBan;
 use App\Moderation;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
+use Livewire\Volt\FragmentAlias;
 use Livewire\Volt\Volt;
 
 function moderator(): User
@@ -17,6 +21,14 @@ function moderator(): User
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $mod->twitch_id]);
 
     return $mod;
+}
+
+/**
+ * Test an anonymous @volt fragment that lives inside a full-page view.
+ */
+function fragment(string $name, string $view): Testable
+{
+    return Livewire::test(FragmentAlias::encode($name, resource_path("views/{$view}.blade.php")));
 }
 
 function vote(Question $question, User $user, int $count = 1): void
@@ -60,8 +72,9 @@ test('viewers cannot ban, and nobody can ban a broadcaster or themselves', funct
     $mod = moderator();
 
     expect(fn () => Moderation::ban(User::factory()->create(), User::factory()->create(), 10))->toThrow(AuthorizationException::class)
-        ->and(fn () => Moderation::ban($mod, User::factory()->create(['twitch_id' => '1000']), 10))->toThrow(InvalidArgumentException::class)
-        ->and(fn () => Moderation::ban($mod, $mod, 10))->toThrow(InvalidArgumentException::class);
+        ->and(fn () => Moderation::ban($mod, User::factory()->create(['twitch_id' => '1000']), 10))->toThrow(AuthorizationException::class, 'A broadcaster cannot be banned here.')
+        ->and(fn () => Moderation::ban($mod, $mod, 10))->toThrow(AuthorizationException::class, 'You cannot ban yourself.')
+        ->and(fn () => Moderation::ban($mod, User::factory()->create(), 0))->toThrow(InvalidArgumentException::class);
 
     expect(UserBan::count())->toBe(0);
 });
@@ -89,6 +102,7 @@ test('merging moves votes to the kept question without double-counting', functio
     expect(Question::find($dupe->id))->toBeNull()
         ->and($keep->voteCount())->toBe(1)
         ->and(DB::table('question_votes')->where('question_id', $keep->id)->count())->toBe(3)
+        ->and(DB::table('question_votes')->where('user_id', $a->id)->count())->toBe(1)
         ->and(ModerationAction::where('action', 'question.merged')->first()->details)
         ->toMatchArray(['duplicate_id' => $dupe->id, 'votes_moved' => 2]);
 });
@@ -152,4 +166,103 @@ test('logging out requires POST', function () {
     $this->assertAuthenticated();
     $this->post('/logout')->assertRedirect();
     $this->assertGuest();
+});
+
+test('banned users cannot submit questions, whether the ban is local or from Twitch', function (string $source) {
+    $user = User::factory()->create();
+    $this->actingAs($user)->get('/vote')->assertOk();   // the page is open before the ban lands
+
+    $source === 'local'
+        ? Moderation::ban(moderator(), $user, 10)
+        : TwitchBan::create(['broadcaster_id' => '1000', 'twitch_user_id' => $user->twitch_id]);
+
+    fragment('vote', 'vote')
+        ->set('question', 'Sing about kale')
+        ->call('saveQuestion')
+        ->assertHasErrors(['question' => 'You are banned or timed out in this channel.']);
+
+    expect(Question::count())->toBe(0);
+})->with(['local', 'twitch']);
+
+test('an unbanned user can submit through the same form', function () {
+    $this->actingAs(User::factory()->create())->get('/vote')->assertOk();
+
+    fragment('vote', 'vote')->set('question', 'Sing about kale')->call('saveQuestion')->assertHasNoErrors();
+
+    expect(Question::count())->toBe(1);
+});
+
+test('a viewer calling deleteQuestion on someone else\'s card gets a 403', function () {
+    $question = Question::factory()->create();
+    $this->actingAs(User::factory()->create());
+
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
+        ->call('deleteQuestion')
+        ->assertForbidden();
+
+    expect(Question::find($question->id))->not->toBeNull();
+});
+
+test('a moderator deletes from the card, and a banned moderator cannot', function () {
+    $mod = moderator();
+    $props = fn () => ['question' => Question::factory()->create(), 'voteCount' => 0, 'userVotes' => []];
+    $this->actingAs($mod);
+
+    Volt::test('question-card', $props())->assertSeeHtml('aria-label="Delete question"')
+        ->call('deleteQuestion')->assertDispatched('question-deleted');
+
+    Moderation::ban(User::factory()->create(['twitch_id' => '1000']), $mod, null);
+    Volt::test('question-card', $props())->assertDontSeeHtml('aria-label="Delete question"')
+        ->call('deleteQuestion')->assertForbidden();
+
+    expect(Question::count())->toBe(1)
+        ->and(ModerationAction::where('action', 'question.deleted')->count())->toBe(1);
+});
+
+test('a viewer calling the moderation page actions gets a 403', function () {
+    $this->actingAs(moderator())->get('/moderation')->assertOk();   // registers the fragment
+
+    $viewer = User::factory()->create();
+    $victim = User::factory()->create();
+    [$keep, $dupe] = Question::factory()->count(2)->create();
+    $this->actingAs($viewer);
+
+    fragment('moderation', 'moderation')->call('ban', $victim->id)->assertForbidden();
+    fragment('moderation', 'moderation')->call('unban', $victim->id)->assertForbidden();
+    fragment('moderation', 'moderation')
+        ->set('duplicateId', $dupe->id)->set('targetId', $keep->id)
+        ->call('merge')->assertForbidden();
+
+    expect($victim->isBanned())->toBeFalse()
+        ->and(Question::count())->toBe(2)
+        ->and(ModerationAction::count())->toBe(0);
+});
+
+test('a moderator bans, merges and lifts from the page, and active bans are listed', function () {
+    $mod = moderator();
+    $target = User::factory()->create(['name' => 'Spammy McSpam']);
+    [$keep, $dupe] = Question::factory()->count(2)->create();
+    $this->actingAs($mod)->get('/moderation')->assertSee('Nobody is banned here.');
+
+    fragment('moderation', 'moderation')
+        ->set('duration', '60')->set('reason', 'link spam')->call('ban', $target->id)->assertHasNoErrors()
+        ->set('duplicateId', $dupe->id)->set('targetId', $keep->id)->call('merge')->assertHasNoErrors();
+
+    expect($target->isLocallyBanned())->toBeTrue()->and(Question::find($dupe->id))->toBeNull();
+
+    $this->get('/moderation')->assertSee('Spammy McSpam')->assertSee('link spam')->assertDontSee('Nobody is banned here.');
+
+    fragment('moderation', 'moderation')->call('unban', $target->id);
+
+    expect($target->isBanned())->toBeFalse()
+        ->and(ModerationAction::pluck('action')->all())->toBe(['user.banned', 'question.merged', 'user.unbanned']);
+});
+
+test('a moderator cannot ban themselves from the page', function () {
+    $mod = moderator();
+    $this->actingAs($mod)->get('/moderation')->assertOk();
+
+    fragment('moderation', 'moderation')->call('ban', $mod->id)->assertForbidden();
+
+    expect($mod->isBanned())->toBeFalse();
 });

@@ -2,23 +2,22 @@
 
 use App\Models\Question;
 use App\Moderation;
-use Illuminate\Auth\Access\AuthorizationException;
 use Flux\Flux;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 new class extends Component {
     public Question $question;
     public int $voteCount;
     public array $userVotes;
+
+    // Only decides whether the button shows; deleteQuestion() authorises itself.
+    #[Locked]
     public bool $canEdit;
 
     public function mount() {
-        if (Auth::user() == null) {
-            $this->canEdit = false;
-        } else {
-            $this->canEdit = Auth::user()->isAdminUser() || Auth::user()->id === $this->question->user_id;
-        }
+        $this->canEdit = Auth::user()?->can('delete', $this->question) ?? false;
     }
 
     public function upvote(Question $question)
@@ -69,11 +68,9 @@ new class extends Component {
     public function deleteQuestion()
     {
         // Moderators can remove any question (logged); authors can remove their own.
-        try {
-            Moderation::deleteQuestion(Auth::user(), $this->question);
-        } catch (AuthorizationException) {
-            return;
-        }
+        $this->authorize('delete', $this->question);
+
+        Moderation::deleteQuestion(Auth::user(), $this->question);
 
         $this->dispatch('question-deleted');
     }

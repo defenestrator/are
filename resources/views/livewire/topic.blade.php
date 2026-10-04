@@ -12,28 +12,28 @@ new class extends Component {
     }
 
     public function clear() {
-        if (Auth::user()->isAdminUser()) {
-            Moderation::clearTopic(Auth::user());
-            $this->topic = "";
+        $this->authorize('moderate');
 
-            $this->dispatch("topic-changed");
-        }
+        Moderation::clearTopic(Auth::user());
+        $this->topic = "";
+
+        $this->dispatch("topic-changed");
     }
 
     public function save() {
-        if (Auth::user()->isAdminUser()) {
-            $this->validate(['topic' => 'required|string|max:255']);
-            Moderation::setTopic(Auth::user(), $this->topic);
+        $this->authorize('moderate');
 
-            $this->dispatch("topic-changed");
-        }
+        $this->validate(['topic' => 'required|string|max:255']);
+        Moderation::setTopic(Auth::user(), $this->topic);
+
+        $this->dispatch("topic-changed");
     }
 }
 
 ?>
 
 <div>
-@if (Auth::user()->isAdminUser())
+@can('moderate')
     <form>
         <div class="flex gap-4 max-w-xl mb-2">
             <flux:input wire:model="topic" />
@@ -41,9 +41,7 @@ new class extends Component {
             <flux:button wire:click="clear"> Clear </flux:button>
         </div>
     </form>
-@else
-
-@endif
+@endcan
 <div class="bg-violet-100 dark:bg-violet-800 font-bold p-4 rounded-md text-zinc-900 dark:text-white">
     Prime Directive: {{ Topic::current()?->topic ?? 'Be funny.' }}
 </div>

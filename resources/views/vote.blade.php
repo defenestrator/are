@@ -49,7 +49,7 @@ new class extends Component {
 
 <x-layouts.app>
 
-    @volt
+    @volt('vote')
     <div>
         <livewire:topic @topic-changed="$refresh" />
         <div class="mt-4" wire:poll.keep-alive>
