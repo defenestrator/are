@@ -292,7 +292,8 @@ test('overlay:token issues a token and prints working URLs for both layouts', fu
         ->toContain('/overlay/vote?layout=vertical#token='.$token)
         ->not->toContain('?token=')
         ->not->toContain('&token=');
-    $this->postJson(route('overlay.session', ['overlay' => 'vote']), ['token' => $token])->assertNoContent();
+    $this->postJson(route('overlay.session', ['overlay' => 'vote']), ['token' => $token], ['Sec-Fetch-Site' => 'same-origin'])
+        ->assertNoContent();
 });
 
 test('overlay:token refuses to replace a token without --rotate', function () {

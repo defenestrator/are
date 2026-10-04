@@ -16,7 +16,6 @@
         (() => {
             const overlay = @js($overlay->value);
             const exchangeUrl = @js(route('overlay.session', ['overlay' => $overlay]));
-            const csrf = @js(csrf_token());
             const reloadsKey = 'are-overlay-reloads:' + overlay;
             const log = (message) => console.warn('[ARE overlay] ' + overlay + ': ' + message);
 
@@ -63,12 +62,19 @@
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                        'X-CSRF-TOKEN': csrf,
                         'X-Requested-With': 'XMLHttpRequest',
                     },
                     body: JSON.stringify({token}),
                 }).then((response) => {
                     if (response.status === 204) {
+                        remember(reloads);
+                        window.location.reload();
+                    } else if (response.status === 419) {
+                        // A stale session (the exchange is CSRF-exempt, but an
+                        // older deploy or a proxy may still answer 419). A reload
+                        // picks up the cookie jar's current session. This counts
+                        // toward the 3-reload guard above.
+                        log('Exchange got HTTP 419. Reloading to retry.');
                         remember(reloads);
                         window.location.reload();
                     } else if (response.status === 429 || response.status >= 500) {

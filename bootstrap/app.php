@@ -18,7 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         // Twitch signs EventSub webhooks with HMAC; there is no CSRF token to check.
-        $middleware->validateCsrfTokens(except: ['twitch/eventsub']);
+        // The overlay token exchange carries its own credential (the overlay
+        // token in the body), and OBS sources sharing one cookie jar would race
+        // each other's session-bound CSRF tokens (#58). ExchangeOverlayTokenRequest
+        // checks Sec-Fetch-Site/Origin instead.
+        $middleware->validateCsrfTokens(except: ['twitch/eventsub', 'overlay/*/session']);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         Integration::handles($exceptions);

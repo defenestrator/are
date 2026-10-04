@@ -9,9 +9,15 @@ use Illuminate\Support\Js;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Cookie;
 
-function exchange(Overlay $overlay, mixed $token): TestResponse
+/**
+ * POST the token as the bootstrap page's fetch() does. Browsers add
+ * Sec-Fetch-Site themselves, and the exchange requires it to be same-origin.
+ *
+ * @param  array<string, string>  $headers
+ */
+function exchange(Overlay $overlay, mixed $token, array $headers = ['Sec-Fetch-Site' => 'same-origin']): TestResponse
 {
-    return test()->postJson(route('overlay.session', ['overlay' => $overlay->value]), ['token' => $token]);
+    return test()->postJson(route('overlay.session', ['overlay' => $overlay->value]), ['token' => $token], $headers);
 }
 
 function grantCookie(TestResponse $response, Overlay $overlay): ?Cookie
@@ -71,15 +77,49 @@ test('the exchange is not found for an unknown overlay', function () {
     $this->postJson('/overlay/everything/session', ['token' => 'x'])->assertNotFound();
 });
 
-test('the exchange is rate limited per address', function () {
+test('the exchange is rate limited per address and overlay', function () {
     OverlayToken::issue(Overlay::Queue);
+    $voteToken = OverlayToken::issue(Overlay::Vote);
 
     foreach (range(1, 30) as $attempt) {
         exchange(Overlay::Queue, 'wrong')->assertForbidden();
     }
 
     exchange(Overlay::Queue, 'wrong')->assertTooManyRequests();
+
+    // A flood on one overlay doesn't starve the others, which OBS reloads
+    // independently (for example on "Refresh browser when scene becomes active").
+    exchange(Overlay::Vote, $voteToken)->assertNoContent();
 });
+
+// The cross-site guard (the exchange is CSRF-exempt)
+
+test('the exchange accepts a same-origin request by Sec-Fetch-Site or Origin', function (array $headers) {
+    // The request itself is http://localhost; APP_URL is the public HTTPS origin.
+    config(['app.url' => 'https://are.example']);
+    $token = OverlayToken::issue(Overlay::Queue);
+
+    exchange(Overlay::Queue, $token, $headers)->assertNoContent();
+})->with([
+    'Sec-Fetch-Site same-origin' => [['Sec-Fetch-Site' => 'same-origin']],
+    'Origin of this request' => [['Origin' => 'http://localhost']],
+    'Origin of APP_URL, when TLS ends at a proxy' => [['Origin' => 'https://are.example']],
+]);
+
+test('the exchange refuses a cross-site or origin-less request even with the right token', function (array $headers) {
+    $token = OverlayToken::issue(Overlay::Queue);
+
+    $response = exchange(Overlay::Queue, $token, $headers)->assertForbidden();
+
+    expect(grantCookie($response, Overlay::Queue))->toBeNull();
+})->with([
+    'cross-site' => [['Sec-Fetch-Site' => 'cross-site']],
+    'same-site but another origin' => [['Sec-Fetch-Site' => 'same-site']],
+    'Sec-Fetch-Site wins over a matching Origin' => [['Sec-Fetch-Site' => 'cross-site', 'Origin' => 'http://localhost']],
+    'foreign Origin' => [['Origin' => 'https://evil.example']],
+    'opaque Origin' => [['Origin' => 'null']],
+    'neither header' => [[]],
+]);
 
 // Using the grant
 

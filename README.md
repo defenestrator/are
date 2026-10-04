@@ -65,7 +65,7 @@ The `cta` lower-third rotates between the Orkestera and EDOS Professional Servic
 **How the token travels.** `overlay:token` prints URLs like `/overlay/queue?layout=vertical#token=…`. The token is in the **fragment**, which browsers never send to the server, so it doesn't appear in access logs. When OBS loads the source:
 
 1. The server answers with a small bootstrap page that holds no overlay data.
-2. The page reads `#token=` and POSTs it, in the request body, to `/overlay/{name}/session`.
+2. The page reads `#token=` and POSTs it, in the request body, to `/overlay/{name}/session`. That endpoint skips Laravel's CSRF token check: every OBS source shares one cookie jar, so overlays starting together would overwrite each other's session and CSRF token, and all but one would fail. The body token is the credential. A same-origin check (`Sec-Fetch-Site`, or `Origin` against the request or `APP_URL`) refuses cross-site requests, and each overlay gets 30 exchanges a minute per address.
 3. The server checks the token and sets a grant cookie (`App\Support\OverlayGrant`). The cookie is encrypted, HttpOnly, SameSite=Strict, scoped to that overlay's path, valid for 2 minutes and works once.
 4. The page reloads, and the reload with the grant cookie gets the overlay. Rotating the token voids any unused grant, and an open overlay goes blank on its next refresh as before.
 
