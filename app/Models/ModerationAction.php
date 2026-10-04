@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
  * Append-only record of what a moderator did, so actions can be reviewed.
+ * moderator_id is null for actions run from the CLI (such as bus:kill) or by
+ * a moderator whose account was since deleted.
  */
 class ModerationAction extends Model
 {
@@ -31,10 +33,10 @@ class ModerationAction extends Model
     /**
      * @param  array<string, mixed>  $details
      */
-    public static function record(User $moderator, string $action, ?Model $subject = null, array $details = []): self
+    public static function record(?User $moderator, string $action, ?Model $subject = null, array $details = []): self
     {
         return self::create([
-            'moderator_id' => $moderator->id,
+            'moderator_id' => $moderator?->id,
             'action' => $action,
             'subject_type' => $subject?->getMorphClass(),
             'subject_id' => $subject?->getKey(),

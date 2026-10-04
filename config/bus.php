@@ -30,6 +30,16 @@ return [
     // Platforms whose chat feeds the bus right now, comma separated.
     'platforms' => array_values(array_filter(array_map('trim', explode(',', (string) env('BUS_PLATFORMS', 'twitch'))))),
 
+    // Free-text actions (any 'text' verb, such as Orkestera's task) are only
+    // published once a moderator approves them on /bus. Undecided, they are
+    // rejected after this long.
+    'approval_timeout_seconds' => (int) env('BUS_APPROVAL_TIMEOUT_SECONDS', 120),
+
+    // The kill switch voids every action not yet handed to an adapter, and
+    // those handed over in the last this-many seconds, and tells adapters to
+    // undo them.
+    'kill_undo_seconds' => (int) env('BUS_KILL_UNDO_SECONDS', 300),
+
     /*
     | Each game: a label, its default mode (democracy, anarchy or
     | weighted_random, which moderators can change live), the base window in
@@ -40,6 +50,9 @@ return [
     |   text (min, max)           !do task Write the README
     |   integer (min, max)        !do move 3
     |   choice (options)          !do lane left
+    |
+    | A text verb needs moderator approval before each action is published.
+    | Set 'approval' => false on a verb only if its text cannot do harm.
     */
     'games' => [
 

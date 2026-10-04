@@ -5,6 +5,7 @@ use App\ControlBus\BusState;
 use App\ControlBus\ControlBus;
 use App\ControlBus\Game;
 use App\ControlBus\Mode;
+use App\Models\BusApproval;
 use App\Models\BusBallot;
 use App\Models\BusControl;
 use App\Models\BusPublication;
@@ -59,6 +60,23 @@ new class extends Component {
         $bus->vetoOption(auth()->user(), BusWindow::findOrFail($windowId), $actionKey);
     }
 
+    public function approve(ControlBus $bus, int $approvalId): void
+    {
+        $this->authorize('moderate');
+
+        try {
+            $bus->approve(auth()->user(), BusApproval::findOrFail($approvalId));
+        } catch (InvalidArgumentException $e) {
+            $this->addError('approval', $e->getMessage());
+        }
+    }
+
+    public function reject(ControlBus $bus, int $approvalId): void
+    {
+        $this->authorize('moderate');
+        $bus->reject(auth()->user(), BusApproval::findOrFail($approvalId));
+    }
+
     public function vetoPublication(ControlBus $bus, int $publicationId): void
     {
         $this->authorize('moderate');
@@ -96,6 +114,7 @@ new class extends Component {
             'killed' => ! config('bus.enabled') || $global?->killed_at !== null,
             'disabled' => ! config('bus.enabled'),
             'games' => $games,
+            'approvals' => BusApproval::pending()->orderBy('id')->get(),
             'publications' => BusPublication::latest('id')->limit(20)->get(),
             'ballots' => BusBallot::with('user')->latest('id')->limit(40)->get(),
         ];
@@ -189,6 +208,27 @@ new class extends Component {
                 @endif
             </section>
         @endforeach
+
+        <section class="space-y-3">
+            <flux:heading size="lg">Waiting for approval</flux:heading>
+            <flux:text>Free-text actions, such as Orkestera tasks, are only published once a moderator approves them. Undecided ones are rejected after {{ config('bus.approval_timeout_seconds') }} s.</flux:text>
+            <flux:error name="approval" />
+            <ul class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                @forelse ($approvals as $approval)
+                    <li class="py-2 flex items-center gap-3" wire:key="bus-approval-{{ $approval->id }}">
+                        <span class="w-24">{{ $approval->game }}</span>
+                        <span class="flex-1">{{ $approval->label() }}</span>
+                        <span class="tabular-nums text-zinc-500">{{ $approval->votes }}/{{ $approval->total_votes }}</span>
+                        <span class="text-zinc-500 text-sm">expires {{ $approval->expires_at->diffForHumans() }}</span>
+                        <flux:button size="xs" variant="primary" wire:click="approve({{ $approval->id }})"
+                            wire:confirm="Publish this to the game?">Approve</flux:button>
+                        <flux:button size="xs" variant="danger" wire:click="reject({{ $approval->id }})">Reject</flux:button>
+                    </li>
+                @empty
+                    <li class="py-2 text-zinc-500">Nothing is waiting.</li>
+                @endforelse
+            </ul>
+        </section>
 
         <section class="space-y-3">
             <flux:heading size="lg">Published actions</flux:heading>

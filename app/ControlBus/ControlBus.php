@@ -7,6 +7,7 @@ use App\Events\BusActionVetoed;
 use App\Events\BusStateChanged;
 use App\IdentityProvider;
 use App\Jobs\ResolveBusWindow;
+use App\Models\BusApproval;
 use App\Models\BusBallot;
 use App\Models\BusControl;
 use App\Models\BusPublication;
@@ -23,18 +24,30 @@ use InvalidArgumentException;
  *
  * - submit() takes one person's chat action (from !do) and records a ballot.
  *   In democracy and weighted-random it counts in the game's open vote
- *   window; in anarchy it is published at once, rate-limited per person.
- * - resolve() closes a due window and publishes its winner.
+ *   window; in anarchy it is released at once, rate-limited per person.
+ * - resolve() closes a due window and releases its winner.
+ * - Releasing publishes a fixed-verb action straight away. A free-text action
+ *   (Orkestera's task, whose text goes to AI agents) waits as a BusApproval
+ *   until a moderator approves it; rejected or left to expire, it is never
+ *   published.
  * - publish() is the only way an action reaches adapters. It reads the kill
  *   switch and pause from the database every time (BusState::read), and the
  *   broadcast reads them again when it is sent.
+ * - The kill switch voids what adapters have not run yet: every action not
+ *   yet delivered, and those delivered in the last bus.kill_undo_seconds, are
+ *   vetoed and adapters told to undo them. Nothing comes back on restore.
  *
  * One person, one vote: ballots belong to users, so someone linked on several
  * platforms still has one vote per window, and subscribers weigh the same as
  * everyone else. Their only perk is cosmetic flair.
  *
- * Everything per game runs under a row lock on its bus_controls row, so two
- * chat jobs cannot open two windows or resolve one twice.
+ * Locks, always taken in this order, so they cannot deadlock:
+ *   1. the game's bus_controls row, FOR UPDATE: everything that opens, fills,
+ *      closes or decides on a game's windows and approvals;
+ *   2. the global row, FOR SHARE, by anything that may publish; the kill
+ *      switch takes it FOR UPDATE, so a kill waits for publishes in flight
+ *      and then voids them, and no publish starts until the kill commits;
+ *   3. window and approval rows.
  */
 class ControlBus
 {
@@ -74,10 +87,11 @@ class ControlBus
             $base += ['verb' => $action->verb, 'argument' => $action->argument, 'action_key' => $action->key()];
         }
 
-        BusControl::for($game->key);
+        $this->ensureControls($game);
 
         return DB::transaction(function () use ($game, $base, $reference, $action, $user) {
             $this->lock($game);
+            $this->shareGlobal();
             $state = BusState::read($game);
 
             if ($state->killed) {
@@ -88,7 +102,7 @@ class ControlBus
             }
 
             return $state->mode === Mode::Anarchy
-                ? $this->submitAnarchy($game, $base, $reference, $action, $user)
+                ? $this->submitAnarchy($game, $base, $action, $user)
                 : $this->submitToWindow($game, $state->mode, $base, $reference, $action, $user);
         }, attempts: 3);
     }
@@ -96,7 +110,7 @@ class ControlBus
     /**
      * @param  array<string, mixed>  $base
      */
-    private function submitAnarchy(Game $game, array $base, ?int $reference, ?Action $action, User $user): Submission
+    private function submitAnarchy(Game $game, array $base, ?Action $action, User $user): Submission
     {
         if ($action === null) {
             return $this->refuse($base, BallotStatus::Invalid, "In anarchy every action runs: send it yourself, e.g. {$game->usage()}.");
@@ -108,7 +122,14 @@ class ControlBus
         }
         RateLimiter::hit($key, $game->anarchyPerSeconds);
 
-        $ballot = BusBallot::create($base + ['status' => BallotStatus::Published]);
+        $needsApproval = $game->requiresApproval($action->verb);
+        $ballot = BusBallot::create($base + ['status' => $needsApproval ? BallotStatus::PendingApproval : BallotStatus::Published]);
+
+        if ($needsApproval) {
+            $this->awaitApproval($game, Mode::Anarchy, $action, 1, 1, null, $ballot);
+
+            return new Submission($ballot, 'Sent to the moderators for approval: '.$action->label().'.');
+        }
 
         if ($this->publish($game, Mode::Anarchy, $action, 1, 1, null, $ballot) === null) {
             $ballot->update(['status' => BallotStatus::Killed]);
@@ -140,6 +161,12 @@ class ControlBus
 
         if ($window->ballots()->where('action_key', $key)->where('status', BallotStatus::Vetoed)->exists()) {
             return $this->refuse($base, BallotStatus::Vetoed, 'A moderator vetoed that option.');
+        }
+
+        // Someone who backed a vetoed option sits out the rest of the window,
+        // so a veto cannot be dodged by retyping the option some other way.
+        if ($window->ballots()->where('user_id', $user->id)->where('status', BallotStatus::Vetoed)->exists()) {
+            return $this->refuse($base, BallotStatus::Vetoed, 'You backed an option a moderator vetoed, so you sit out this vote.');
         }
 
         $number = $window->ballots()->where('action_key', $key)->whereNotNull('option_number')->value('option_number')
@@ -193,10 +220,10 @@ class ControlBus
     // --- Windows ------------------------------------------------------------
 
     /**
-     * Close a window if it is due, and publish its winner. Safe to call more
+     * Close a window if it is due, and release its winner. Safe to call more
      * than once, from the delayed job and the scheduler alike.
      */
-    public function resolve(BusWindow $window): ?BusPublication
+    public function resolve(BusWindow $window): BusPublication|BusApproval|null
     {
         $game = Game::find($window->game);
         if ($game === null) {
@@ -205,10 +232,11 @@ class ControlBus
             return null;
         }
 
-        BusControl::for($game->key);
+        $this->ensureControls($game);
 
         return DB::transaction(function () use ($window, $game) {
             $this->lock($game);
+            $this->shareGlobal();
             $fresh = BusWindow::whereKey($window->id)->lockForUpdate()->first();
 
             return $fresh !== null && $fresh->isDue() ? $this->resolveLocked($fresh, $game) : null;
@@ -216,20 +244,24 @@ class ControlBus
     }
 
     /**
-     * Resolve every window that is due. Returns how many were closed.
+     * Resolve every window that is due, and reject approvals nobody decided
+     * in time. Returns how many windows were closed.
      */
     public function resolveDue(): int
     {
         $due = BusWindow::open()->where('closes_at', '<=', now())->orderBy('id')->get();
         $due->each(fn (BusWindow $window) => $this->resolve($window));
 
+        $this->expireApprovals();
+
         return $due->count();
     }
 
     /**
-     * Tally a due window and publish its winner. Call under lock().
+     * Tally a due window and release its winner. Call under lock() and
+     * shareGlobal().
      */
-    private function resolveLocked(BusWindow $window, Game $game): ?BusPublication
+    private function resolveLocked(BusWindow $window, Game $game): BusPublication|BusApproval|null
     {
         $counted = $window->ballots()->where('status', BallotStatus::Counted)->orderBy('id')->get();
 
@@ -261,16 +293,15 @@ class ControlBus
             : $this->mostVotes($options);
 
         $first = $options[$winner]['first'];
-        $publication = $this->publish(
-            $game,
-            $window->mode,
-            new Action((string) $first->verb, $first->argument),
-            $options[$winner]['votes'],
-            $total,
-            $window,
-            $first,
-        );
+        $action = new Action((string) $first->verb, $first->argument);
 
+        if ($game->requiresApproval($action->verb)) {
+            $close(WindowStatus::AwaitingApproval);
+
+            return $this->awaitApproval($game, $window->mode, $action, $options[$winner]['votes'], $total, $window, $first);
+        }
+
+        $publication = $this->publish($game, $window->mode, $action, $options[$winner]['votes'], $total, $window, $first);
         $close($publication !== null ? WindowStatus::Resolved : WindowStatus::Killed);
 
         return $publication;
@@ -294,11 +325,171 @@ class ControlBus
         return (string) $best;
     }
 
+    // --- Approval of free-text actions --------------------------------------
+
+    private function awaitApproval(Game $game, Mode $mode, Action $action, int $votes, int $total, ?BusWindow $window, BusBallot $proposer): BusApproval
+    {
+        return BusApproval::create([
+            'game' => $game->key,
+            'mode' => $mode,
+            'window_id' => $window?->id,
+            'ballot_id' => $proposer->id,
+            'verb' => $action->verb,
+            'argument' => $action->argument === null ? null : (string) $action->argument,
+            'action_key' => $action->key(),
+            'votes' => $votes,
+            'total_votes' => $total,
+            'flair' => $proposer->subscriber ? self::FLAIR_SUBSCRIBER : null,
+            'status' => ApprovalStatus::Pending,
+            'expires_at' => now()->addSeconds(max(1, (int) config('bus.approval_timeout_seconds'))),
+        ]);
+    }
+
+    /**
+     * A moderator approves a free-text action: it is published now, if the
+     * bus is running and the approval has not expired.
+     *
+     * @throws InvalidArgumentException with a message for the moderator
+     */
+    public function approve(User $moderator, BusApproval $approval): BusPublication
+    {
+        Gate::forUser($moderator)->authorize('moderate');
+        $game = $this->gameOrFail($approval->game);
+        $this->ensureControls($game);
+
+        $publication = DB::transaction(function () use ($moderator, $approval, $game) {
+            $this->lock($game);
+            $this->shareGlobal();
+            $fresh = BusApproval::whereKey($approval->id)->lockForUpdate()->firstOrFail();
+
+            if ($fresh->status !== ApprovalStatus::Pending) {
+                throw new InvalidArgumentException('That action was already '.$fresh->status->value.'.');
+            }
+            if ($fresh->expires_at->lte(now())) {
+                // Committed, then reported below: throwing here would roll it back.
+                $this->decide($fresh, ApprovalStatus::Rejected, null, 'timed out');
+
+                return null;
+            }
+
+            $proposer = BusBallot::find($fresh->ballot_id);
+            $publication = $proposer === null ? null : $this->publish(
+                $game,
+                $fresh->mode,
+                new Action($fresh->verb, $fresh->argument),
+                $fresh->votes,
+                $fresh->total_votes,
+                $fresh->window,
+                $proposer,
+            );
+
+            if ($publication === null) {
+                throw new InvalidArgumentException('The bus is stopped or the game is paused, so nothing can be published.');
+            }
+
+            $this->decide($fresh, ApprovalStatus::Approved, $moderator, null, $publication);
+            if ($proposer->status === BallotStatus::PendingApproval) {
+                $proposer->update(['status' => BallotStatus::Published]);
+            }
+            ModerationAction::record($moderator, 'bus.approved', $fresh, ['game' => $fresh->game, 'action' => $fresh->label(), 'publication_id' => $publication->id]);
+
+            return $publication;
+        }, attempts: 3);
+
+        return $publication ?? throw new InvalidArgumentException('That action timed out before it was approved.');
+    }
+
+    /**
+     * A moderator rejects a free-text action: it is never published, and its
+     * ballots count as vetoed.
+     */
+    public function reject(User $moderator, BusApproval $approval, ?string $reason = null): void
+    {
+        Gate::forUser($moderator)->authorize('moderate');
+        $game = $this->gameOrFail($approval->game);
+        $this->ensureControls($game);
+
+        DB::transaction(function () use ($moderator, $approval, $game, $reason) {
+            $this->lock($game);
+            $fresh = BusApproval::whereKey($approval->id)->lockForUpdate()->firstOrFail();
+
+            if ($fresh->status !== ApprovalStatus::Pending) {
+                return;
+            }
+
+            $this->decide($fresh, ApprovalStatus::Rejected, $moderator, $reason);
+            ModerationAction::record($moderator, 'bus.rejected', $fresh, array_filter(['game' => $fresh->game, 'action' => $fresh->label(), 'reason' => $reason]));
+        }, attempts: 3);
+    }
+
+    /**
+     * Reject every approval nobody decided before it expired.
+     */
+    public function expireApprovals(): int
+    {
+        $expired = 0;
+
+        BusApproval::pending()->where('expires_at', '<=', now())->orderBy('id')->get()
+            ->each(function (BusApproval $approval) use (&$expired) {
+                $game = Game::find($approval->game);
+                if ($game === null) {
+                    return;
+                }
+                $this->ensureControls($game);
+
+                DB::transaction(function () use ($approval, $game, &$expired) {
+                    $this->lock($game);
+                    $fresh = BusApproval::whereKey($approval->id)->lockForUpdate()->first();
+                    if ($fresh?->status === ApprovalStatus::Pending && $fresh->expires_at->lte(now())) {
+                        $this->decide($fresh, ApprovalStatus::Rejected, null, 'timed out');
+                        $expired++;
+                    }
+                }, attempts: 3);
+            });
+
+        return $expired;
+    }
+
+    private function decide(BusApproval $approval, ApprovalStatus $status, ?User $by, ?string $reason, ?BusPublication $publication = null): void
+    {
+        $approval->update([
+            'status' => $status,
+            'decided_by_id' => $by?->id,
+            'decided_at' => now(),
+            'reason' => $reason,
+            'publication_id' => $publication?->id,
+        ]);
+
+        if ($status === ApprovalStatus::Approved) {
+            $approval->window?->update(['status' => WindowStatus::Resolved]);
+
+            return;
+        }
+
+        $approval->window?->update(['status' => $status === ApprovalStatus::Cancelled ? WindowStatus::Cancelled : WindowStatus::Rejected]);
+
+        if ($status !== ApprovalStatus::Rejected) {
+            return;
+        }
+
+        // The rejected option's backers count as vetoed, like a vetoed option.
+        if ($approval->window_id !== null) {
+            BusBallot::where('window_id', $approval->window_id)
+                ->where('action_key', $approval->action_key)
+                ->whereIn('status', [BallotStatus::Counted, BallotStatus::Replaced])
+                ->update(['status' => BallotStatus::Vetoed]);
+        } elseif ($approval->ballot_id !== null) {
+            BusBallot::whereKey($approval->ballot_id)->update(['status' => BallotStatus::Vetoed]);
+        }
+    }
+
     // --- Publishing ---------------------------------------------------------
 
     /**
      * Send an action to the game's adapters, unless the bus is killed or the
-     * game paused. Both are read from the database here, on every call.
+     * game paused. Both are read from the database here, on every call. Call
+     * inside a transaction holding shareGlobal(), so a kill cannot commit
+     * between this check and the publication.
      */
     private function publish(Game $game, Mode $mode, Action $action, int $votes, int $total, ?BusWindow $window, BusBallot $proposer): ?BusPublication
     {
@@ -337,8 +528,10 @@ class ControlBus
             throw new InvalidArgumentException("There is no game called {$gameKey}.");
         }
 
+        BusControl::for(BusControl::GLOBAL);
+
         DB::transaction(function () use ($moderator, $gameKey) {
-            $global = BusControl::for(BusControl::GLOBAL);
+            $global = BusControl::whereKey(BusControl::GLOBAL)->lockForUpdate()->firstOrFail();
             $previous = $global->active_game;
             $global->update(['active_game' => $gameKey]);
 
@@ -357,9 +550,9 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($gameKey);
+        $this->ensureControls($game);
 
         DB::transaction(function () use ($moderator, $game, $mode) {
-            BusControl::for($game->key);
             $this->lock($game)->update(['mode' => $mode]);
 
             // Votes cast under the old rules do not carry over.
@@ -385,9 +578,9 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($gameKey);
+        $this->ensureControls($game);
 
         DB::transaction(function () use ($moderator, $game, $paused) {
-            BusControl::for($game->key);
             $this->lock($game)->update([
                 'paused_at' => $paused ? now() : null,
                 'paused_by_id' => $paused ? $moderator->id : null,
@@ -400,7 +593,8 @@ class ControlBus
 
     /**
      * The kill switch: nothing is published, for any game, until a broadcaster
-     * resets it. Any moderator may throw it; $moderator is null from the CLI.
+     * resets it, and what adapters have not run yet is voided. Any moderator
+     * may throw it; $moderator is null from the CLI.
      */
     public function kill(?User $moderator, ?string $reason = null): void
     {
@@ -413,6 +607,7 @@ class ControlBus
 
     /**
      * Reset the kill switch. Only a broadcaster may, or the CLI ($moderator null).
+     * Nothing voided by the kill comes back.
      */
     public function restore(?User $broadcaster): void
     {
@@ -425,21 +620,64 @@ class ControlBus
 
     private function setKilled(?User $by, bool $killed, ?string $reason): void
     {
+        BusControl::for(BusControl::GLOBAL);
+
         DB::transaction(function () use ($by, $killed, $reason) {
-            BusControl::for(BusControl::GLOBAL);
-            BusControl::whereKey(BusControl::GLOBAL)->lockForUpdate()->first()?->update([
+            // Waits for any publish in flight (they hold the row FOR SHARE),
+            // and blocks new ones until this commits.
+            BusControl::whereKey(BusControl::GLOBAL)->lockForUpdate()->firstOrFail()->update([
                 'killed_at' => $killed ? now() : null,
                 'killed_by_id' => $killed ? $by?->id : null,
             ]);
 
-            if ($by !== null) {
-                ModerationAction::record($by, $killed ? 'bus.killed' : 'bus.restored', null, array_filter(['reason' => $reason]));
-            }
+            $voided = $killed ? $this->voidPending($by) : ['publications' => 0, 'approvals' => 0, 'windows' => 0];
+
+            ModerationAction::record($by, $killed ? 'bus.killed' : 'bus.restored', null, array_filter([
+                'via' => $by === null ? 'cli' : null,
+                'reason' => $reason,
+            ]) + ($killed ? ['voided' => $voided] : []));
 
             foreach (array_keys(Game::all()) as $key) {
                 $this->announceState($key);
             }
         });
+    }
+
+    /**
+     * Void everything the kill switch must stop: open votes, approvals still
+     * waiting, and published actions adapters have not run (undelivered, or
+     * delivered within bus.kill_undo_seconds). Vetoed actions are announced,
+     * so an adapter that ran one can undo it, and polling never returns them.
+     *
+     * @return array{publications: int, approvals: int, windows: int}
+     */
+    private function voidPending(?User $by): array
+    {
+        $windows = BusWindow::open()->update(['status' => WindowStatus::Cancelled, 'resolved_at' => now()]);
+
+        $approvals = 0;
+        BusApproval::pending()->orderBy('id')->get()->each(function (BusApproval $approval) use (&$approvals) {
+            $this->decide($approval, ApprovalStatus::Cancelled, null, 'kill switch');
+            $approvals++;
+        });
+
+        $since = now()->subSeconds(max(0, (int) config('bus.kill_undo_seconds')));
+        $publications = BusPublication::whereNull('vetoed_at')
+            ->where(fn ($q) => $q->whereNull('delivered_at')->orWhere('delivered_at', '>=', $since))
+            ->orderBy('id')
+            ->get(['id', 'game']);
+
+        if ($publications->isNotEmpty()) {
+            BusPublication::whereKey($publications->pluck('id'))->update([
+                'vetoed_at' => now(),
+                'vetoed_by_id' => $by?->id,
+                'veto_reason' => 'kill',
+            ]);
+
+            $publications->each(fn (BusPublication $p) => BusActionVetoed::dispatch($p->game, $p->id));
+        }
+
+        return ['publications' => $publications->count(), 'approvals' => $approvals, 'windows' => $windows];
     }
 
     /**
@@ -455,7 +693,7 @@ class ControlBus
         }
 
         DB::transaction(function () use ($moderator, $publication) {
-            $publication->update(['vetoed_at' => now(), 'vetoed_by_id' => $moderator->id]);
+            $publication->update(['vetoed_at' => now(), 'vetoed_by_id' => $moderator->id, 'veto_reason' => 'moderator']);
             ModerationAction::record($moderator, 'bus.vetoed', $publication, [
                 'game' => $publication->game,
                 'action' => trim($publication->verb.' '.$publication->argument),
@@ -465,8 +703,8 @@ class ControlBus
     }
 
     /**
-     * Veto an option in an open window: its votes stop counting, and nobody
-     * can back it again in this window.
+     * Veto an option in an open window: its votes stop counting, nobody can
+     * back it again in this window, and its backers sit out the rest of it.
      */
     public function vetoOption(User $moderator, BusWindow $window, string $actionKey): int
     {
@@ -490,12 +728,30 @@ class ControlBus
     // --- Helpers ------------------------------------------------------------
 
     /**
-     * Lock the game's control row for the rest of the transaction. Everything
-     * that opens, fills or closes a window for the game takes this lock first.
+     * Create the game's and the global control rows if missing. Outside any
+     * lock: createOrFirst is safe when two requests race.
+     */
+    private function ensureControls(Game $game): void
+    {
+        BusControl::for(BusControl::GLOBAL);
+        BusControl::for($game->key);
+    }
+
+    /**
+     * Lock the game's control row for the rest of the transaction (lock 1).
      */
     private function lock(Game $game): BusControl
     {
         return BusControl::whereKey($game->key)->lockForUpdate()->firstOrFail();
+    }
+
+    /**
+     * Hold the global row FOR SHARE for the rest of the transaction (lock 2),
+     * so the kill switch cannot change between reading it and publishing.
+     */
+    private function shareGlobal(): void
+    {
+        BusControl::whereKey(BusControl::GLOBAL)->sharedLock()->first();
     }
 
     private function gameOrFail(string $key): Game

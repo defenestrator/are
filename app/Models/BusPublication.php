@@ -20,7 +20,9 @@ use Illuminate\Support\Carbon;
  * @property int $votes
  * @property int $total_votes
  * @property string|null $flair
+ * @property Carbon|null $delivered_at
  * @property Carbon|null $vetoed_at
+ * @property string|null $veto_reason
  * @property Carbon $created_at
  */
 class BusPublication extends Model
@@ -35,8 +37,10 @@ class BusPublication extends Model
         'votes',
         'total_votes',
         'flair',
+        'delivered_at',
         'vetoed_at',
         'vetoed_by_id',
+        'veto_reason',
     ];
 
     protected function casts(): array
@@ -45,6 +49,7 @@ class BusPublication extends Model
             'mode' => Mode::class,
             'votes' => 'integer',
             'total_votes' => 'integer',
+            'delivered_at' => 'datetime',
             'vetoed_at' => 'datetime',
         ];
     }

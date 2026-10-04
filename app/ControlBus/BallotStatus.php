@@ -17,7 +17,14 @@ enum BallotStatus: string
     /** Anarchy: published straight away. */
     case Published = 'published';
 
-    /** A moderator vetoed this option in its window. */
+    /** Anarchy: a free-text action waiting for a moderator (see BusApproval). */
+    case PendingApproval = 'pending_approval';
+
+    /**
+     * A moderator vetoed this option in its window. Also given to a refused
+     * attempt to back a vetoed option, and to anything more from someone
+     * who backed one, for the rest of that window.
+     */
     case Vetoed = 'vetoed';
 
     /** Anarchy: the person sent too many actions. */
@@ -37,6 +44,6 @@ enum BallotStatus: string
 
     public function accepted(): bool
     {
-        return in_array($this, [self::Counted, self::Replaced, self::Published], true);
+        return in_array($this, [self::Counted, self::Replaced, self::Published, self::PendingApproval], true);
     }
 }

@@ -3,6 +3,8 @@
 use App\Chat\ChatCommandRegistry;
 use App\Chat\ChatCommandResult;
 use App\Chat\ChatCommandStatus;
+use App\ControlBus\Action;
+use App\ControlBus\ApprovalStatus;
 use App\ControlBus\BallotStatus;
 use App\ControlBus\ControlBus;
 use App\ControlBus\Mode;
@@ -14,6 +16,7 @@ use App\Events\BusStateChanged;
 use App\IdentityProvider;
 use App\Jobs\ResolveBusWindow;
 use App\Models\BusAdapterToken;
+use App\Models\BusApproval;
 use App\Models\BusBallot;
 use App\Models\BusControl;
 use App\Models\BusPublication;
@@ -26,6 +29,7 @@ use App\TwitchSubscription;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -79,7 +83,7 @@ function busStart(Mode $mode = Mode::Democracy, string $game = 'orkestera'): Use
 }
 
 /** Let the open window run out and resolve it, as the delayed job would. */
-function busCloseWindow(): ?BusPublication
+function busCloseWindow(): BusPublication|BusApproval|null
 {
     test()->travel(5)->minutes();
 
@@ -93,12 +97,16 @@ function busPage(): Testable
 
 beforeEach(function () {
     config(['bus.platforms' => ['twitch']]);
+    // Orkestera's task is free text, so it waits for moderator approval
+    // (tested below). The mechanics run on `say`: free text with approval
+    // switched off, which a harmless verb may do.
+    config(['bus.games.orkestera.verbs.say' => ['argument' => 'text', 'min' => 5, 'max' => 200, 'approval' => false]]);
 });
 
 // --- Chat into ballots ------------------------------------------------------
 
 test('!do with no game running is refused and still audited', function () {
-    $result = busSay(User::factory()->create(), '!do task Write the README');
+    $result = busSay(User::factory()->create(), '!do say Write the README');
 
     expect($result->status)->toBe(ChatCommandStatus::Rejected)
         ->and($result->reply)->toContain('No chat game')
@@ -110,7 +118,7 @@ test('!do opens a vote window sized to the slowest connected platform and schedu
     config(['bus.platforms' => ['twitch', 'youtube'], 'bus.platform_latency_seconds.youtube' => 12, 'bus.games.orkestera.window_seconds' => 60]);
     busStart();
 
-    $result = busSay(User::factory()->create(), '!do task Write the README');
+    $result = busSay(User::factory()->create(), '!do say Write the README');
 
     $window = BusWindow::sole();
     expect($result->status)->toBe(ChatCommandStatus::Done)
@@ -123,11 +131,11 @@ test('!do opens a vote window sized to the slowest connected platform and schedu
 test('actions are normalised: case and spacing do not split an option', function () {
     busStart();
 
-    busSay(User::factory()->create(), '!do task Write the README');
-    busSay(User::factory()->create(), '!do TASK   write  the readme');
+    busSay(User::factory()->create(), '!do say Write the README');
+    busSay(User::factory()->create(), '!do SAY   write  the readme');
 
     expect(BusBallot::where('status', BallotStatus::Counted)->orderBy('id')->pluck('option_number')->all())->toBe([1, 1])
-        ->and(BusBallot::orderBy('id')->pluck('action_key')->unique()->all())->toBe(['task:write the readme']);
+        ->and(BusBallot::orderBy('id')->pluck('action_key')->unique()->all())->toBe(['say:write the readme']);
 });
 
 test('an action the game does not know is refused with its usage', function (string $text) {
@@ -137,12 +145,12 @@ test('an action the game does not know is refused with its usage', function (str
 
     expect($result->status)->toBe(ChatCommandStatus::Rejected)
         ->and(BusBallot::sole()->status)->toBe(BallotStatus::Invalid);
-})->with(['!do', '!do jump', '!do task hi', '!do task '.str_repeat('x', 201), '!do #7']);
+})->with(['!do', '!do jump', '!do say hi', '!do say '.str_repeat('x', 201), '!do #7']);
 
 test('!do #N backs option N of the open vote', function () {
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Write the README');
+    busSay(User::factory()->create(), '!do say Fix the tests');
 
     $result = busSay(User::factory()->create(), '!do #2');
 
@@ -156,13 +164,13 @@ test('chat hears back only about refusals: votes and rate limits get no reply', 
     busStart(Mode::Anarchy);
     $viewer = User::factory()->create();
 
-    $sent = busSay($viewer, '!do task First idea');
-    $limited = busSay($viewer, '!do task Second idea');
+    $sent = busSay($viewer, '!do say First idea');
+    $limited = busSay($viewer, '!do say Second idea');
     $invalid = busSay(User::factory()->create(), '!do jump');
 
     expect([$sent->status, $sent->reply])->toBe([ChatCommandStatus::Done, ''])
         ->and([$limited->status, $limited->reply])->toBe([ChatCommandStatus::Rejected, ''])
-        ->and($invalid->reply)->toBe('Try !do task <text>.');
+        ->and($invalid->reply)->toBe('Try !do task <text>, !do say <text>.');
 });
 
 // --- One person, one vote ---------------------------------------------------
@@ -171,8 +179,8 @@ test('voting again in a window replaces your vote, so each person counts once', 
     busStart();
     $viewer = User::factory()->create();
 
-    busSay($viewer, '!do task Write the README');
-    busSay($viewer, '!do task Fix the tests');
+    busSay($viewer, '!do say Write the README');
+    busSay($viewer, '!do say Fix the tests');
 
     expect(BusBallot::where('user_id', $viewer->id)->orderBy('id')->pluck('status')->all())->toBe([BallotStatus::Replaced, BallotStatus::Counted]);
 });
@@ -181,8 +189,8 @@ test('one person on two platforms still has one vote', function () {
     busStart();
     $viewer = User::factory()->youtube('UC-viewer')->create();
 
-    busSay($viewer, '!do task Write the README', IdentityProvider::Twitch);
-    busSay($viewer, '!do task Write the README', IdentityProvider::YouTube);
+    busSay($viewer, '!do say Write the README', IdentityProvider::Twitch);
+    busSay($viewer, '!do say Write the README', IdentityProvider::YouTube);
 
     expect(BusBallot::where('status', BallotStatus::Counted)->count())->toBe(1)
         ->and(busCloseWindow()->votes)->toBe(1);
@@ -193,22 +201,22 @@ test('one person on two platforms still has one vote', function () {
 test('democracy publishes the option with the most people behind it', function () {
     Event::fake([BusActionPublished::class]);
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Write the README');
+    busSay(User::factory()->create(), '!do say Fix the tests');
     busSay(User::factory()->create(), '!do #2');
 
     $publication = busCloseWindow();
 
     expect($publication->only(['game', 'verb', 'argument', 'votes', 'total_votes']))
-        ->toBe(['game' => 'orkestera', 'verb' => 'task', 'argument' => 'Fix the tests', 'votes' => 2, 'total_votes' => 3])
+        ->toBe(['game' => 'orkestera', 'verb' => 'say', 'argument' => 'Fix the tests', 'votes' => 2, 'total_votes' => 3])
         ->and(BusWindow::sole()->status)->toBe(WindowStatus::Resolved);
     Event::assertDispatched(BusActionPublished::class, fn (BusActionPublished $e) => $e->publicationId === $publication->id && $e->game === 'orkestera');
 });
 
 test('a democracy tie goes to the option proposed first', function () {
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Write the README');
+    busSay(User::factory()->create(), '!do say Fix the tests');
 
     expect(busCloseWindow()->argument)->toBe('Write the README');
 });
@@ -228,13 +236,13 @@ test('weighted random draws with odds equal to each option\'s headcount', functi
     app()->instance(Picker::class, $picker);
     busStart(Mode::WeightedRandom);
 
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
     busSay(User::factory()->create(), '!do #1');
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Fix the tests');
 
     $publication = busCloseWindow();
 
-    expect($picker->weights)->toBe(['task:write the readme' => 2, 'task:fix the tests' => 1])
+    expect($picker->weights)->toBe(['say:write the readme' => 2, 'say:fix the tests' => 1])
         ->and($publication->argument)->toBe('Fix the tests')
         ->and($publication->mode)->toBe(Mode::WeightedRandom);
 });
@@ -250,7 +258,7 @@ test('the default picker only ever returns a backed option', function () {
 
 test('an empty window publishes nothing', function () {
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
     BusBallot::query()->update(['status' => BallotStatus::Vetoed]);
 
     expect(busCloseWindow())->toBeNull()
@@ -259,7 +267,7 @@ test('an empty window publishes nothing', function () {
 
 test('resolving is idempotent, and bus:resolve closes due windows', function () {
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
     $this->travel(5)->minutes();
 
     $this->artisan('bus:resolve')->expectsOutputToContain('Closed 1 window')->assertSuccessful();
@@ -271,7 +279,7 @@ test('resolving is idempotent, and bus:resolve closes due windows', function () 
 
 test('the delayed job resolves its window', function () {
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
     $this->travel(5)->minutes();
 
     (new ResolveBusWindow(BusWindow::sole()->id))->handle(busBus());
@@ -281,10 +289,10 @@ test('the delayed job resolves its window', function () {
 
 test('a ballot arriving after the window closed resolves it and opens the next', function () {
     busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
     $this->travel(5)->minutes();
 
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Fix the tests');
 
     expect(BusWindow::orderBy('id')->pluck('status')->all())->toBe([WindowStatus::Resolved, WindowStatus::Open])
         ->and(BusPublication::sole()->argument)->toBe('Write the README')
@@ -298,8 +306,8 @@ test('a subscriber\'s vote weighs exactly what anyone else\'s does', function ()
     $sub = User::factory()->create();
     busSubscribe($sub, TwitchSubscription::Tier3);
 
-    busSay($sub, '!do task Subscriber idea');
-    busSay(User::factory()->create(), '!do task Viewer idea');
+    busSay($sub, '!do say Subscriber idea');
+    busSay(User::factory()->create(), '!do say Viewer idea');
     busSay(User::factory()->create(), '!do #2');
 
     $publication = busCloseWindow();
@@ -326,11 +334,11 @@ test('in weighted random a subscriber adds one to the odds, like everyone', func
     $sub = User::factory()->create();
     busSubscribe($sub, TwitchSubscription::Tier3);
 
-    busSay($sub, '!do task Subscriber idea');
-    busSay(User::factory()->create(), '!do task Viewer idea');
+    busSay($sub, '!do say Subscriber idea');
+    busSay(User::factory()->create(), '!do say Viewer idea');
     busCloseWindow();
 
-    expect($picker->weights)->toBe(['task:subscriber idea' => 1, 'task:viewer idea' => 1]);
+    expect($picker->weights)->toBe(['say:subscriber idea' => 1, 'say:viewer idea' => 1]);
 });
 
 test('a subscriber\'s proposal carries cosmetic flair when it wins, and nothing else changes', function () {
@@ -338,7 +346,7 @@ test('a subscriber\'s proposal carries cosmetic flair when it wins, and nothing 
     $sub = User::factory()->create();
     busSubscribe($sub);
 
-    busSay($sub, '!do task Subscriber idea');
+    busSay($sub, '!do say Subscriber idea');
 
     $publication = busCloseWindow();
     expect(BusBallot::sole()->subscriber)->toBeTrue()
@@ -355,8 +363,8 @@ test('anarchy publishes every action at once, rate-limited per person', function
     busStart(Mode::Anarchy);
     $eager = User::factory()->create();
 
-    $results = collect(range(1, 3))->map(fn ($i) => busSay($eager, "!do task Idea number {$i}"));
-    $other = busSay(User::factory()->create(), '!do task Someone else');
+    $results = collect(range(1, 3))->map(fn ($i) => busSay($eager, "!do say Idea number {$i}"));
+    $other = busSay(User::factory()->create(), '!do say Someone else');
 
     expect($results->pluck('status')->all())->toBe([ChatCommandStatus::Done, ChatCommandStatus::Done, ChatCommandStatus::Rejected])
         ->and($other->status)->toBe(ChatCommandStatus::Done)
@@ -378,10 +386,10 @@ test('anarchy has no options to back', function () {
 
 test('a paused game refuses actions, and a window that closes while paused publishes nothing', function () {
     $mod = busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
 
     busBus()->pause($mod, 'orkestera');
-    $refused = busSay(User::factory()->create(), '!do task Fix the tests');
+    $refused = busSay(User::factory()->create(), '!do say Fix the tests');
 
     expect($refused->status)->toBe(ChatCommandStatus::Rejected)
         ->and(BusBallot::latest('id')->first()->status)->toBe(BallotStatus::Paused)
@@ -389,7 +397,7 @@ test('a paused game refuses actions, and a window that closes while paused publi
         ->and(BusWindow::sole()->status)->toBe(WindowStatus::Held);
 
     busBus()->resume($mod, 'orkestera');
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Fix the tests');
     expect(busCloseWindow()->argument)->toBe('Fix the tests')
         ->and(ModerationAction::orderBy('id')->pluck('action')->all())->toBe(['bus.game', 'bus.paused', 'bus.resumed']);
 });
@@ -398,7 +406,7 @@ test('the kill switch stops every publish, and only a broadcaster can reset it',
     $mod = busStart(Mode::Anarchy);
 
     busBus()->kill($mod, 'testing');
-    $refused = busSay(User::factory()->create(), '!do task Write the README');
+    $refused = busSay(User::factory()->create(), '!do say Write the README');
 
     expect($refused->reply)->toContain('stopped')
         ->and(BusBallot::sole()->status)->toBe(BallotStatus::Killed)
@@ -406,17 +414,30 @@ test('the kill switch stops every publish, and only a broadcaster can reset it',
         ->and(fn () => busBus()->restore($mod))->toThrow(AuthorizationException::class);
 
     busBus()->restore(busBroadcaster());
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
 
     expect(BusPublication::count())->toBe(1)
         ->and(ModerationAction::orderBy('id')->pluck('action')->all())->toBe(['bus.game', 'bus.mode', 'bus.killed', 'bus.restored'])
-        ->and(ModerationAction::where('action', 'bus.killed')->first()->details)->toBe(['reason' => 'testing']);
+        ->and(ModerationAction::where('action', 'bus.killed')->first()->details)->toBe(['reason' => 'testing', 'voided' => ['publications' => 0, 'approvals' => 0, 'windows' => 0]]);
 });
 
-test('a window that closes while the bus is killed publishes nothing', function () {
+test('the kill switch cancels the open vote, so nothing from it is ever published', function () {
     $mod = busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
+
     busBus()->kill($mod);
+    busBus()->restore(busBroadcaster());
+    $this->travel(5)->minutes();
+    $this->artisan('bus:resolve')->assertSuccessful();
+
+    expect(BusWindow::sole()->status)->toBe(WindowStatus::Cancelled)
+        ->and(BusPublication::count())->toBe(0);
+});
+
+test('a window that closes while killed by another process publishes nothing', function () {
+    busStart();
+    busSay(User::factory()->create(), '!do say Write the README');
+    BusControl::whereKey(BusControl::GLOBAL)->update(['killed_at' => now()]);
 
     expect(busCloseWindow())->toBeNull()
         ->and(BusWindow::sole()->status)->toBe(WindowStatus::Killed);
@@ -424,14 +445,14 @@ test('a window that closes while the bus is killed publishes nothing', function 
 
 test('the kill switch is read fresh on every publish, never cached', function () {
     busStart(Mode::Anarchy);
-    busSay(User::factory()->create(), '!do task First action');
+    busSay(User::factory()->create(), '!do say First action');
 
     // Thrown by another process: straight into the database, past ControlBus.
     BusControl::whereKey(BusControl::GLOBAL)->update(['killed_at' => now()]);
-    busSay(User::factory()->create(), '!do task Second action');
+    busSay(User::factory()->create(), '!do say Second action');
 
     BusControl::whereKey(BusControl::GLOBAL)->update(['killed_at' => null]);
-    busSay(User::factory()->create(), '!do task Third action');
+    busSay(User::factory()->create(), '!do say Third action');
 
     expect(BusPublication::orderBy('id')->pluck('argument')->all())->toBe(['First action', 'Third action']);
 });
@@ -441,7 +462,7 @@ test('a pause thrown by another process is read fresh too', function () {
 
     BusControl::whereKey('orkestera')->update(['paused_at' => now()]);
 
-    expect(busSay(User::factory()->create(), '!do task An action')->status)->toBe(ChatCommandStatus::Rejected)
+    expect(busSay(User::factory()->create(), '!do say An action')->status)->toBe(ChatCommandStatus::Rejected)
         ->and(BusPublication::count())->toBe(0);
 });
 
@@ -449,7 +470,7 @@ test('BUS_ENABLED=false is a deploy-time kill switch', function () {
     busStart(Mode::Anarchy);
     config(['bus.enabled' => false]);
 
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
 
     expect(BusBallot::sole()->status)->toBe(BallotStatus::Killed)
         ->and(BusPublication::count())->toBe(0);
@@ -459,7 +480,7 @@ test('a queued broadcast checks the switches again when it is sent', function ()
     config(['broadcasting.default' => 'reverb']);
     Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class]);
     $mod = busStart(Mode::Anarchy);
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
     $event = new BusActionPublished('orkestera', BusPublication::sole()->id);
 
     expect($event->broadcastWhen())->toBeTrue()
@@ -480,12 +501,12 @@ test('a queued broadcast checks the switches again when it is sent', function ()
 
 test('vetoing an option drops its votes and stops anyone backing it again', function () {
     $mod = busStart();
-    busSay(User::factory()->create(), '!do task Bad idea');
+    busSay(User::factory()->create(), '!do say Bad idea');
     busSay(User::factory()->create(), '!do #1');
-    busSay(User::factory()->create(), '!do task Good idea');
+    busSay(User::factory()->create(), '!do say Good idea');
 
-    $vetoed = busBus()->vetoOption($mod, BusWindow::sole(), 'task:bad idea');
-    $again = busSay(User::factory()->create(), '!do task BAD IDEA');
+    $vetoed = busBus()->vetoOption($mod, BusWindow::sole(), 'say:bad idea');
+    $again = busSay(User::factory()->create(), '!do say BAD IDEA');
 
     expect($vetoed)->toBe(2)
         ->and($again->reply)->toContain('vetoed')
@@ -496,7 +517,7 @@ test('vetoing an option drops its votes and stops anyone backing it again', func
 test('vetoing a published action marks it and tells adapters to undo it', function () {
     Event::fake([BusActionVetoed::class]);
     $mod = busStart(Mode::Anarchy);
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
     $publication = BusPublication::sole();
 
     busBus()->vetoPublication($mod, $publication);
@@ -518,7 +539,7 @@ test('viewers cannot control the bus', function () {
         fn () => busBus()->setMode($viewer, 'orkestera', Mode::Anarchy),
         fn () => busBus()->pause($viewer, 'orkestera'),
         fn () => busBus()->kill($viewer),
-        fn () => busBus()->vetoOption($viewer, $window, 'task:x'),
+        fn () => busBus()->vetoOption($viewer, $window, 'say:x'),
     ] as $action) {
         expect($action)->toThrow(AuthorizationException::class);
     }
@@ -526,16 +547,16 @@ test('viewers cannot control the bus', function () {
 
 test('changing the mode or the game cancels the open vote', function () {
     $mod = busStart();
-    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do say Write the README');
 
     busBus()->setMode($mod, 'orkestera', Mode::WeightedRandom);
     expect(BusWindow::sole()->status)->toBe(WindowStatus::Cancelled);
 
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay(User::factory()->create(), '!do say Fix the tests');
     busBus()->setActiveGame($mod, null);
 
     expect(BusWindow::orderBy('id')->pluck('status')->all())->toBe([WindowStatus::Cancelled, WindowStatus::Cancelled])
-        ->and(busSay(User::factory()->create(), '!do task Anything')->reply)->toContain('No chat game');
+        ->and(busSay(User::factory()->create(), '!do say Anything')->reply)->toContain('No chat game');
 });
 
 test('every control change is announced on the game channel, even while killed', function () {
@@ -553,11 +574,11 @@ test('bus:kill is the operator\'s switch, without a moderator account', function
     busStart(Mode::Anarchy);
 
     $this->artisan('bus:kill')->assertSuccessful();
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
     expect(BusPublication::count())->toBe(0);
 
     $this->artisan('bus:kill', ['--off' => true])->assertSuccessful();
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
     expect(BusPublication::count())->toBe(1);
 });
 
@@ -565,7 +586,7 @@ test('bus:kill is the operator\'s switch, without a moderator account', function
 
 test('a published action goes to bus.{game} as bus.action, on the broadcasts queue, with no user data', function () {
     busStart(Mode::Anarchy);
-    busSay(User::factory()->create(['name' => 'Secret Name']), '!do task An action');
+    busSay(User::factory()->create(['name' => 'Secret Name']), '!do say An action');
     $event = new BusActionPublished('orkestera', BusPublication::sole()->id);
 
     expect($event->broadcastAs())->toBe('bus.action')
@@ -580,7 +601,7 @@ test('with broadcasting off (production until Reverb), nothing is queued for Rev
     $token = BusAdapterToken::issue('orkestera');
     busStart(Mode::Anarchy);
 
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
 
     Queue::assertNotPushed(BroadcastEvent::class);
     $this->withToken($token)->getJson('/bus/orkestera/actions')->assertJsonPath('actions.0.argument', 'An action');
@@ -591,7 +612,7 @@ test('with Reverb configured, a published action queues its broadcast on the bro
     Queue::fake();
     busStart(Mode::Anarchy);
 
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
 
     Queue::assertPushedOn('broadcasts', BroadcastEvent::class, fn (BroadcastEvent $job) => $job->event instanceof BusActionPublished);
 });
@@ -599,8 +620,8 @@ test('with Reverb configured, a published action queues its broadcast on the bro
 test('adapters can poll for actions with their token', function () {
     $token = BusAdapterToken::issue('orkestera');
     $mod = busStart(Mode::Anarchy);
-    busSay(User::factory()->create(), '!do task First action');
-    busSay(User::factory()->create(), '!do task Second action');
+    busSay(User::factory()->create(), '!do say First action');
+    busSay(User::factory()->create(), '!do say Second action');
     $first = BusPublication::orderBy('id')->first();
     busBus()->vetoPublication($mod, $first);
 
@@ -612,7 +633,12 @@ test('adapters can poll for actions with their token', function () {
         ->and($response->json())->toMatchArray(['game' => 'orkestera', 'running' => true, 'killed' => false, 'paused' => false, 'mode' => 'anarchy']);
     expect($response->headers->get('Cache-Control'))->toContain('no-store');
 
-    $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->assertJsonCount(2, 'actions');
+    // From the start: the vetoed action is left out of `actions`, listed in
+    // `vetoed`, and the cursor still moves past it.
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')
+        ->assertJsonCount(1, 'actions')
+        ->assertJsonPath('actions.0.argument', 'Second action')
+        ->assertJsonPath('cursor', $first->id + 1);
 });
 
 test('polling needs the game\'s token', function () {
@@ -626,7 +652,7 @@ test('polling needs the game\'s token', function () {
 test('while the bus is killed, polling returns no actions', function () {
     $token = BusAdapterToken::issue('orkestera');
     $mod = busStart(Mode::Anarchy);
-    busSay(User::factory()->create(), '!do task An action');
+    busSay(User::factory()->create(), '!do say An action');
     busBus()->kill($mod);
 
     $this->withToken($token)->getJson('/bus/orkestera/actions')
@@ -660,8 +686,8 @@ test('a moderator runs the bus from the page, and a viewer calling its actions g
         ->and(BusControl::find('orkestera')->paused_at)->not->toBeNull();
 
     busPage()->call('resume', 'orkestera')->call('setMode', 'orkestera', 'anarchy');
-    busSay(User::factory()->create(), '!do task An action');
-    busPage()->assertSee('task An action')->call('vetoPublication', BusPublication::sole()->id)->set('reason', 'raid')->call('kill');
+    busSay(User::factory()->create(), '!do say An action');
+    busPage()->assertSee('say An action')->call('vetoPublication', BusPublication::sole()->id)->set('reason', 'raid')->call('kill');
 
     expect(BusPublication::sole()->vetoed_at)->not->toBeNull()
         ->and(BusControl::find(BusControl::GLOBAL)->killed_at)->not->toBeNull();
@@ -686,12 +712,326 @@ test('the page shows the open vote with its options, and vetoes one', function (
     $mod = busStart();
     $sub = User::factory()->create();
     busSubscribe($sub);
-    busSay($sub, '!do task Write the README');
-    busSay(User::factory()->create(), '!do task Fix the tests');
+    busSay($sub, '!do say Write the README');
+    busSay(User::factory()->create(), '!do say Fix the tests');
     $this->actingAs($mod);
 
-    busPage()->assertSee('#1')->assertSee('task Write the README')->assertSee('sub')
-        ->call('vetoOption', BusWindow::sole()->id, 'task:fix the tests');
+    busPage()->assertSee('#1')->assertSee('say Write the README')->assertSee('sub')
+        ->call('vetoOption', BusWindow::sole()->id, 'say:fix the tests');
 
-    expect(BusBallot::where('action_key', 'task:fix the tests')->sole()->status)->toBe(BallotStatus::Vetoed);
+    expect(BusBallot::where('action_key', 'say:fix the tests')->sole()->status)->toBe(BallotStatus::Vetoed);
+});
+
+// --- Review round 1 (#123): the kill switch cancels ---------------------------
+
+test('Andras A123-1: an action withheld by the kill switch is not delivered to polling adapters after restore', function () {
+    Event::fake([BusActionVetoed::class]);
+    $mod = busStart(Mode::Anarchy);
+    $token = BusAdapterToken::issue('orkestera');
+
+    busSay(User::factory()->create(), '!do say Delete the production database');   // published, not polled yet
+    busBus()->kill($mod, 'bad action');
+    busBus()->restore(busBroadcaster());
+
+    $response = $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->assertOk();
+    $publication = BusPublication::sole();
+
+    expect($response->json('actions'))->toBeEmpty()
+        ->and($response->json('vetoed'))->toBe([$publication->id])
+        ->and($publication->veto_reason)->toBe('kill');
+    Event::assertDispatched(BusActionVetoed::class, fn (BusActionVetoed $e) => $e->publicationId === $publication->id);
+});
+
+test('the kill voids what adapters may still run: undelivered or recently delivered, not long-done actions', function () {
+    Event::fake([BusActionVetoed::class]);
+    config(['bus.kill_undo_seconds' => 300]);
+    $mod = busStart(Mode::Anarchy);
+    $token = BusAdapterToken::issue('orkestera');
+
+    busSay(User::factory()->create(), '!do say Long since done');
+    $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->assertJsonCount(1, 'actions');   // delivered
+    $this->travel(10)->minutes();
+
+    busSay(User::factory()->create(), '!do say Just delivered');
+    $cursor = $this->withToken($token)->getJson('/bus/orkestera/actions?after=1')->json('cursor');
+    busSay(User::factory()->create(), '!do say Never delivered');
+
+    busBus()->kill($mod);
+
+    expect(BusPublication::orderBy('id')->get()->map(fn ($p) => [$p->argument, $p->veto_reason])->all())->toBe([
+        ['Long since done', null],
+        ['Just delivered', 'kill'],
+        ['Never delivered', 'kill'],
+    ]);
+    Event::assertDispatchedTimes(BusActionVetoed::class, 2);
+
+    busBus()->restore(busBroadcaster());
+    expect($this->withToken($token)->getJson('/bus/orkestera/actions?after='.$cursor)->json('actions'))->toBeEmpty();
+});
+
+test('a Reverb send marks the action delivered', function () {
+    busStart(Mode::Anarchy);
+    busSay(User::factory()->create(), '!do say An action');
+    $publication = BusPublication::sole();
+    expect($publication->delivered_at)->toBeNull();
+
+    (new BusActionPublished('orkestera', $publication->id))->broadcastWith();
+
+    expect($publication->fresh()->delivered_at)->not->toBeNull();
+});
+
+test('publishing holds the kill switch row FOR SHARE and the kill takes it FOR UPDATE, so they serialize', function () {
+    busStart(Mode::Anarchy);
+    $pgsql = DB::getDriverName() === 'pgsql';
+    $globalRow = fn (array $q) => str_starts_with($q['query'], 'select * from "bus_controls" where "bus_controls"."scope" = ?') && $q['bindings'] === ['*'];
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    busSay(User::factory()->create(), '!do say An action');
+    $publish = collect(DB::getQueryLog());
+
+    DB::flushQueryLog();
+    busBus()->kill(busModerator());
+    $kill = collect(DB::getQueryLog());
+
+    // The shared read comes before the publication is written.
+    $shared = $publish->search(fn ($q) => $globalRow($q) && (! $pgsql || str_ends_with($q['query'], 'for share')));
+    $insert = $publish->search(fn ($q) => str_starts_with($q['query'], 'insert into "bus_publications"'));
+    expect($shared)->not->toBeFalse()->and($shared)->toBeLessThan($insert);
+
+    if ($pgsql) {
+        expect($kill->contains(fn ($q) => $globalRow($q) && str_ends_with($q['query'], 'for update')))->toBeTrue();
+    }
+});
+
+test('the kill switch cancels approvals still waiting', function () {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    busCloseWindow();
+
+    busBus()->kill($mod);
+
+    expect(BusApproval::sole()->status)->toBe(ApprovalStatus::Cancelled)
+        ->and(BusWindow::sole()->status)->toBe(WindowStatus::Cancelled)
+        ->and(fn () => busBus()->approve($mod, BusApproval::sole()))->toThrow(InvalidArgumentException::class);
+});
+
+test('Andras A123-3: kill and restore from the CLI leave an audit record', function () {
+    $this->artisan('bus:kill')->assertSuccessful();
+    $this->artisan('bus:kill', ['--off' => true])->assertSuccessful();
+
+    $records = ModerationAction::whereIn('action', ['bus.killed', 'bus.restored'])->orderBy('id')->get();
+    expect($records->pluck('action')->all())->toBe(['bus.killed', 'bus.restored'])
+        ->and($records->pluck('moderator_id')->all())->toBe([null, null])
+        ->and($records[0]->details)->toMatchArray(['via' => 'cli', 'reason' => 'bus:kill'])
+        ->and($records[1]->details)->toBe(['via' => 'cli']);
+});
+
+// --- Review round 1 (#123): free text needs a moderator ------------------------
+
+test('a free-text winner waits for a moderator, and only approval publishes it', function () {
+    Event::fake([BusActionPublished::class]);
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    busSay(User::factory()->create(), '!do #1');
+
+    $approval = busCloseWindow();
+
+    expect($approval)->toBeInstanceOf(BusApproval::class)
+        ->and($approval->only(['verb', 'argument', 'votes', 'total_votes']))->toBe(['verb' => 'task', 'argument' => 'Write the README', 'votes' => 2, 'total_votes' => 2])
+        ->and(BusWindow::sole()->status)->toBe(WindowStatus::AwaitingApproval)
+        ->and(BusPublication::count())->toBe(0);
+    Event::assertNotDispatched(BusActionPublished::class);
+
+    $publication = busBus()->approve($mod, $approval);
+
+    expect($publication->argument)->toBe('Write the README')
+        ->and($approval->fresh()->only(['status', 'publication_id', 'decided_by_id']))->toBe(['status' => ApprovalStatus::Approved, 'publication_id' => $publication->id, 'decided_by_id' => $mod->id])
+        ->and(BusWindow::sole()->status)->toBe(WindowStatus::Resolved)
+        ->and(ModerationAction::where('action', 'bus.approved')->count())->toBe(1);
+    Event::assertDispatched(BusActionPublished::class, fn (BusActionPublished $e) => $e->publicationId === $publication->id);
+});
+
+test('an approved action takes its place in the cursor order when it is approved, so polling never skips it', function () {
+    $token = BusAdapterToken::issue('orkestera');
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $approval = busCloseWindow();
+
+    // Meanwhile an adapter polls and moves its cursor on.
+    busBus()->setMode($mod, 'orkestera', Mode::Anarchy);
+    busSay(User::factory()->create(), '!do say Something else');
+    $cursor = $this->withToken($token)->getJson('/bus/orkestera/actions?after=0')->json('cursor');
+
+    busBus()->approve($mod, $approval);
+
+    expect($this->withToken($token)->getJson('/bus/orkestera/actions?after='.$cursor)->json('actions.*.argument'))->toBe(['Write the README']);
+});
+
+test('a rejected free-text winner is never published, and its backers count as vetoed', function () {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Delete the repo');
+    $approval = busCloseWindow();
+
+    busBus()->reject($mod, $approval, 'nope');
+
+    expect($approval->fresh()->status)->toBe(ApprovalStatus::Rejected)
+        ->and(BusWindow::sole()->status)->toBe(WindowStatus::Rejected)
+        ->and(BusBallot::sole()->status)->toBe(BallotStatus::Vetoed)
+        ->and(BusPublication::count())->toBe(0)
+        ->and(ModerationAction::where('action', 'bus.rejected')->sole()->details)->toMatchArray(['reason' => 'nope'])
+        ->and(fn () => busBus()->approve($mod, $approval->fresh()))->toThrow(InvalidArgumentException::class);
+});
+
+test('an approval nobody decides times out to rejected', function () {
+    config(['bus.approval_timeout_seconds' => 60]);
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $approval = busCloseWindow();
+
+    $this->travel(61)->seconds();
+    expect(fn () => busBus()->approve($mod, $approval))->toThrow(InvalidArgumentException::class, 'timed out');
+
+    expect($approval->fresh()->only(['status', 'reason']))->toBe(['status' => ApprovalStatus::Rejected, 'reason' => 'timed out'])
+        ->and(BusPublication::count())->toBe(0);
+});
+
+test('bus:resolve rejects approvals that time out', function () {
+    config(['bus.approval_timeout_seconds' => 60]);
+    busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $approval = busCloseWindow();
+
+    $this->travel(61)->seconds();
+    $this->artisan('bus:resolve')->assertSuccessful();
+
+    expect($approval->fresh()->status)->toBe(ApprovalStatus::Rejected)
+        ->and(BusWindow::sole()->status)->toBe(WindowStatus::Rejected);
+});
+
+test('approving while paused or killed publishes nothing', function () {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $approval = busCloseWindow();
+
+    busBus()->pause($mod, 'orkestera');
+    expect(fn () => busBus()->approve($mod, $approval))->toThrow(InvalidArgumentException::class, 'paused');
+
+    expect($approval->fresh()->status)->toBe(ApprovalStatus::Pending)
+        ->and(BusPublication::count())->toBe(0);
+});
+
+test('in anarchy each free-text action waits for approval on its own', function () {
+    $mod = busStart(Mode::Anarchy);
+    $result = busSay(User::factory()->create(), '!do task Write the README');
+
+    expect($result->status)->toBe(ChatCommandStatus::Done)
+        ->and(BusBallot::sole()->status)->toBe(BallotStatus::PendingApproval)
+        ->and(BusPublication::count())->toBe(0);
+
+    busBus()->approve($mod, BusApproval::sole());
+
+    expect(BusBallot::sole()->status)->toBe(BallotStatus::Published)
+        ->and(BusPublication::sole()->mode)->toBe(Mode::Anarchy);
+});
+
+test('fixed verbs keep auto-publishing', function () {
+    config(['bus.games.orkestera.verbs.lane' => ['argument' => 'choice', 'options' => ['left', 'right']]]);
+    busStart();
+    busSay(User::factory()->create(), '!do lane left');
+
+    expect(busCloseWindow())->toBeInstanceOf(BusPublication::class)
+        ->and(BusApproval::count())->toBe(0);
+});
+
+test('viewers cannot approve or reject', function () {
+    busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $approval = busCloseWindow();
+    $viewer = User::factory()->create();
+
+    expect(fn () => busBus()->approve($viewer, $approval))->toThrow(AuthorizationException::class)
+        ->and(fn () => busBus()->reject($viewer, $approval))->toThrow(AuthorizationException::class);
+});
+
+test('moderators approve and reject from /bus', function () {
+    config(['bus.approval_timeout_seconds' => 3600]);
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $first = busCloseWindow();
+    busSay(User::factory()->create(), '!do task Delete the repo');
+    $second = busCloseWindow();
+    $this->actingAs($mod);
+
+    busPage()->assertSee('Waiting for approval')->assertSee('task Write the README')
+        ->call('approve', $first->id)
+        ->call('reject', $second->id);
+
+    expect($first->fresh()->status)->toBe(ApprovalStatus::Approved)
+        ->and($second->fresh()->status)->toBe(ApprovalStatus::Rejected);
+
+    $this->actingAs(User::factory()->create());
+    busPage()->call('approve', $first->id)->assertForbidden();
+});
+
+test('an approval the page cannot publish shows why', function () {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Write the README');
+    $approval = busCloseWindow();
+    busBus()->pause($mod, 'orkestera');
+    $this->actingAs($mod);
+
+    busPage()->call('approve', $approval->id)->assertHasErrors('approval');
+});
+
+// --- Review round 1 (#123): a veto cannot be dodged ----------------------------
+
+test('Andras A123-2: a vetoed option cannot come back with a trailing full stop', function () {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Delete the repo');
+    $window = BusWindow::open()->firstOrFail();
+    busBus()->vetoOption($mod, $window, 'task:delete the repo');
+
+    busSay(User::factory()->create(), '!do task Delete the repo.');
+
+    expect($window->ballots()->where('status', BallotStatus::Counted)->count())->toBe(0);
+});
+
+test('retyping a vetoed option any of these ways still matches it', function (string $retyped) {
+    $mod = busStart();
+    busSay(User::factory()->create(), '!do task Delete the repo');
+    busBus()->vetoOption($mod, BusWindow::sole(), 'task:delete the repo');
+
+    $result = busSay(User::factory()->create(), '!do task '.$retyped);
+
+    expect($result->reply)->toContain('vetoed')
+        ->and(BusBallot::where('status', BallotStatus::Counted)->count())->toBe(0);
+})->with([
+    'punctuation' => 'Delete the repo!!!',
+    'dash and spacing' => 'delete   the—repo',
+    'Cyrillic look-alikes' => "D\u{0435}l\u{0435}te the r\u{0435}po",
+    'full-width letters' => 'Ｄｅｌｅｔｅ the repo',
+    'accents' => 'Délète the repo',
+    'zero-width space' => "Del\u{200B}ete the repo",
+]);
+
+test('normalising keeps genuinely different actions apart', function () {
+    expect(Action::normalise('Write the README'))->toBe('write the readme')
+        ->and(Action::normalise('Write the README twice'))->not->toBe(Action::normalise('Write the README'))
+        ->and(Action::normalise('Fix bug 12'))->not->toBe(Action::normalise('Fix bug 13'));
+});
+
+test('backers of a vetoed option sit out the rest of the window', function () {
+    $mod = busStart();
+    $backer = User::factory()->create();
+    busSay($backer, '!do task Delete the repo');
+    busSay(User::factory()->create(), '!do task Write the README');
+    busBus()->vetoOption($mod, BusWindow::sole(), 'task:delete the repo');
+
+    $again = busSay($backer, '!do task Remove every file');
+    $other = busSay(User::factory()->create(), '!do #2');
+
+    expect($again->reply)->toContain('sit out')
+        ->and($other->status)->toBe(ChatCommandStatus::Done)
+        ->and(BusBallot::where('user_id', $backer->id)->where('status', BallotStatus::Counted)->count())->toBe(0);
 });

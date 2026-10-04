@@ -72,6 +72,12 @@ class BusActionPublished implements ShouldBroadcast, ShouldDispatchAfterCommit
      */
     public function broadcastWith(): array
     {
-        return BusPublication::findOrFail($this->publicationId)->payload();
+        // Called by the queued job, once broadcastOn() has allowed the send:
+        // from here the kill switch must treat it as delivered.
+        $publication = BusPublication::findOrFail($this->publicationId);
+        $publication->delivered_at ??= now();
+        $publication->save();
+
+        return $publication->payload();
     }
 }

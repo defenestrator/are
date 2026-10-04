@@ -15,9 +15,10 @@ use Illuminate\Http\Request;
  * Reverb). Authenticated with the game's bearer token from `bus:token`.
  *
  * Returns actions published after the cursor, oldest first, at most 50 at a
- * time; the ids of actions vetoed in the last hour, so an adapter can undo
+ * time, leaving out vetoed ones (including everything the kill switch
+ * voided); the ids of actions vetoed in the last hour, so an adapter can undo
  * one it already ran; and the bus state. While the kill switch is on it
- * returns no actions at all.
+ * returns no actions at all. Returned actions are marked delivered.
  */
 class BusActionsController extends Controller
 {
@@ -35,11 +36,19 @@ class BusActionsController extends Controller
         $after = max(0, (int) $request->query('after', '0'));
         $state = BusState::read($game);
 
-        $actions = $state->killed ? collect() : BusPublication::where('game', $game->key)
+        $page = $state->killed ? collect() : BusPublication::where('game', $game->key)
             ->where('id', '>', $after)
             ->orderBy('id')
             ->limit(self::PAGE)
             ->get();
+
+        // The cursor moves past vetoed actions too, so they are never retried.
+        $cursor = $page->last()->id ?? $after;
+        $actions = $page->whereNull('vetoed_at')->values();
+
+        if ($actions->isNotEmpty()) {
+            BusPublication::whereKey($actions->pluck('id'))->whereNull('delivered_at')->update(['delivered_at' => now()]);
+        }
 
         $vetoed = BusPublication::where('game', $game->key)
             ->where('vetoed_at', '>=', now()->subHour())
@@ -52,7 +61,7 @@ class BusActionsController extends Controller
             'killed' => $state->killed,
             'paused' => $state->paused,
             'mode' => $state->mode->value,
-            'cursor' => $actions->last()->id ?? $after,
+            'cursor' => $cursor,
             'actions' => $actions->map(fn (BusPublication $p) => $p->payload())->values(),
             'vetoed' => $vetoed,
         ])->header('Cache-Control', 'no-store, private');

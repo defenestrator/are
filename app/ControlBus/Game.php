@@ -79,6 +79,17 @@ final readonly class Game
     }
 
     /**
+     * Whether actions with this verb wait for a moderator before they are
+     * published. Free text always does unless the verb opts out.
+     */
+    public function requiresApproval(string $verb): bool
+    {
+        $spec = $this->verbs[$verb] ?? [];
+
+        return (bool) ($spec['approval'] ?? (($spec['argument'] ?? 'none') === 'text'));
+    }
+
+    /**
      * Parse "verb [argument]" into an action.
      *
      * @throws InvalidArgumentException with a message fit for chat

@@ -76,12 +76,45 @@ return new class extends Migration
             $table->unsignedInteger('votes');
             $table->unsignedInteger('total_votes');
             $table->string('flair', 32)->nullable();
+            // First handed to an adapter (a poll or the Reverb send). The kill
+            // switch voids everything undelivered, and anything delivered in
+            // the last bus.kill_undo_seconds, so adapters can undo it.
+            $table->timestamp('delivered_at')->nullable();
             $table->timestamp('vetoed_at')->nullable();
             $table->foreignId('vetoed_by_id')->nullable()->constrained('users')->nullOnDelete();
+            // 'moderator' or 'kill'.
+            $table->string('veto_reason', 32)->nullable();
             $table->timestamps();
 
             $table->index(['game', 'id']);
             $table->index(['game', 'vetoed_at']);
+            $table->index(['vetoed_at', 'delivered_at']);
+        });
+
+        // Free-text winners (Orkestera's task) wait here for a moderator. Only
+        // an approval publishes one, so it gets its publication id, and a
+        // place in adapters' cursor order, at that moment.
+        Schema::create('bus_approvals', function (Blueprint $table) {
+            $table->id();
+            $table->string('game', 64);
+            $table->string('mode', 32);
+            $table->foreignId('window_id')->nullable()->constrained('bus_windows')->nullOnDelete();
+            $table->foreignId('ballot_id')->nullable()->constrained('bus_ballots')->nullOnDelete();
+            $table->string('verb', 64);
+            $table->string('argument', 500)->nullable();
+            $table->string('action_key', 600);
+            $table->unsignedInteger('votes');
+            $table->unsignedInteger('total_votes');
+            $table->string('flair', 32)->nullable();
+            $table->string('status', 32)->default('pending');
+            $table->timestamp('expires_at');
+            $table->foreignId('decided_by_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('decided_at')->nullable();
+            $table->string('reason', 255)->nullable();
+            $table->foreignId('publication_id')->nullable()->constrained('bus_publications')->nullOnDelete();
+            $table->timestamps();
+
+            $table->index(['status', 'expires_at']);
         });
 
         Schema::create('bus_adapter_tokens', function (Blueprint $table) {
@@ -95,6 +128,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('bus_adapter_tokens');
+        Schema::dropIfExists('bus_approvals');
         Schema::dropIfExists('bus_publications');
         Schema::dropIfExists('bus_ballots');
         Schema::dropIfExists('bus_windows');
