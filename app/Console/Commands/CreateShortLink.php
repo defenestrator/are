@@ -51,6 +51,17 @@ class CreateShortLink extends Command
             return self::FAILURE;
         }
 
+        $existing = ShortLink::where('tuple_hash', ShortLink::tupleHash(
+            $input['destination'], $input['source'], $input['medium'], $input['campaign'], $input['content'],
+        ))->first();
+
+        if ($input['code'] && $existing) {
+            // One tuple, one code, so click counts never split across two links.
+            $this->error("A link for this destination and UTM already exists: {$existing->url()}");
+
+            return self::FAILURE;
+        }
+
         $link = $input['code']
             ? ShortLink::create([
                 'code' => $input['code'],

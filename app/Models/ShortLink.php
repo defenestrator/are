@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Database\Factories\ShortLinkFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -26,6 +27,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $code
  * @property string $destination
+ * @property string $tuple_hash
  * @property string $utm_source
  * @property string $utm_medium
  * @property string $utm_campaign
@@ -34,7 +36,7 @@ use Illuminate\Support\Str;
  */
 class ShortLink extends Model
 {
-    /** @use HasFactory<\Database\Factories\ShortLinkFactory> */
+    /** @use HasFactory<ShortLinkFactory> */
     use HasFactory;
 
     /** Session key holding the last-clicked link's attribution. */
@@ -62,9 +64,27 @@ class ShortLink extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        // tuple_hash backs the unique index that makes one destination + UTM
+        // tuple map to exactly one code. destination is too long for a
+        // composite unique index on MySQL, so the index is on its hash.
+        static::saving(function (ShortLink $link) {
+            $link->tuple_hash = static::tupleHash(
+                $link->destination,
+                $link->utm_source,
+                $link->utm_medium,
+                $link->utm_campaign,
+                $link->utm_content,
+            );
+        });
+    }
+
     /**
      * Find or create the short link for this destination and UTM tuple, so
      * callers can ask for a link on every render without minting duplicates.
+     * Concurrent first calls are safe: the loser of the insert race hits the
+     * unique index on tuple_hash and firstOrCreate returns the winner's row.
      */
     public static function for(
         string $destination,
@@ -73,16 +93,30 @@ class ShortLink extends Model
         string $campaign,
         ?string $content = null,
     ): self {
+        $content = $content === '' ? null : $content;
+
         return static::firstOrCreate(
-            [
+            ['tuple_hash' => static::tupleHash($destination, $source, $medium, $campaign, $content)],
+            fn () => [
+                'code' => static::generateCode(),
                 'destination' => $destination,
                 'utm_source' => $source,
                 'utm_medium' => $medium,
                 'utm_campaign' => $campaign,
                 'utm_content' => $content,
             ],
-            ['code' => static::generateCode()],
         );
+    }
+
+    /** SHA-256 of the destination and UTM tuple; unique across short_links. */
+    public static function tupleHash(
+        string $destination,
+        string $source,
+        string $medium,
+        string $campaign,
+        ?string $content = null,
+    ): string {
+        return hash('sha256', (string) json_encode([$destination, $source, $medium, $campaign, $content === '' ? null : $content]));
     }
 
     /**

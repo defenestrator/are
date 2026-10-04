@@ -3,13 +3,16 @@
 use App\Models\Lead;
 use App\Models\ShortLink;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Volt\Volt;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 beforeEach(function () {
     RateLimiter::clear('lead-form:'.sha1('127.0.0.1'));
 });
 
-function fillLeadForm(): \Livewire\Features\SupportTesting\Testable
+function fillLeadForm(): Testable
 {
     return Volt::test('lead-form')
         ->set('name', 'Ada Lovelace')
@@ -99,4 +102,32 @@ test('enquiries are rate-limited per IP address', function () {
     fillLeadForm()->call('submit')->assertHasErrors('form')->assertSet('submitted', false);
 
     expect(Lead::count())->toBe(5);
+});
+
+describe('client IP behind a proxy (the rate-limit key)', function () {
+    beforeEach(function () {
+        // Symfony keeps trusted proxies in static state; start each test clean.
+        SymfonyRequest::setTrustedProxies([], -1);
+        Route::get('/_test/ip', fn () => request()->ip());
+    });
+
+    afterEach(fn () => SymfonyRequest::setTrustedProxies([], -1));
+
+    test('X-Forwarded-For is ignored unless TRUSTED_PROXIES names the proxy, so clients cannot spoof their IP', function () {
+        config(['trustedproxy.proxies' => null]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.1'])
+            ->withHeader('X-Forwarded-For', '203.0.113.7')
+            ->get('/_test/ip')
+            ->assertSeeText('10.0.0.1');
+    });
+
+    test('a configured trusted proxy passes the real client IP through', function () {
+        config(['trustedproxy.proxies' => '10.0.0.0/8, 192.168.1.1']);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.1'])
+            ->withHeader('X-Forwarded-For', '203.0.113.7')
+            ->get('/_test/ip')
+            ->assertSeeText('203.0.113.7');
+    });
 });
