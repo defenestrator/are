@@ -10,11 +10,14 @@ use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Models\UserTwitchSubscription;
+use App\Moderation;
 use App\TwitchSubscription;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\FacebookProvider;
+use Laravel\Socialite\Two\InvalidStateException;
 use Laravel\Socialite\Two\TwitchProvider;
 use Laravel\Socialite\Two\User as SocialiteUser;
 use Livewire\Volt\Volt;
@@ -54,7 +57,7 @@ function voteAs(User $user, Question $question): void
 {
     test()->actingAs($user);
     Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
-        ->call('upvote', $question->id);
+        ->call('upvote');
 }
 
 // Sign-in
@@ -114,7 +117,7 @@ test('signing in with a linked account reaches the same user', function () {
 
 test('a failed provider callback does not sign anyone in', function () {
     $provider = Mockery::mock(FacebookProvider::class);
-    $provider->shouldReceive('user')->andThrow(new \Laravel\Socialite\Two\InvalidStateException);
+    $provider->shouldReceive('user')->andThrow(new InvalidStateException);
     Socialite::shouldReceive('driver')->with('facebook')->andReturn($provider);
 
     $this->get('/auth/facebook/callback')->assertRedirect('/?failed_facebook_login=1');
@@ -218,7 +221,7 @@ test('a user cannot unlink someone else\'s identity', function () {
 
     $this->actingAs($user);
     expect(fn () => Volt::test('settings.linked-accounts')->call('unlink', $other->identityFor(IdentityProvider::Facebook)->id))
-        ->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        ->toThrow(ModelNotFoundException::class);
 
     expect($other->identities()->count())->toBe(2);
 });
@@ -326,7 +329,7 @@ test('a local ban follows the user to every linked identity', function () {
     $user = User::factory()->twitch('42')->facebook('fb-7')->create();
     $mod = User::factory()->twitch('77')->create();
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => '77']);
-    \App\Moderation::ban($mod, $user, null, 'spam');
+    Moderation::ban($mod, $user, null, 'spam');
     fakeProviderAccount('facebook', providerAccount('fb-7'));
 
     expect(Identities::findUser(IdentityProvider::Facebook, 'fb-7')->isLocallyBanned())->toBeTrue();

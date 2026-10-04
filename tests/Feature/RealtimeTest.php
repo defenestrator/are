@@ -154,12 +154,12 @@ test('upvoting and downvoting dispatch VoteCast with the new total and no voter'
     DB::table('question_votes')->insert(['question_id' => $question->id, 'user_id' => User::factory()->create()->id, 'count' => 1]);
     $this->actingAs(User::factory()->create());
 
-    card($question, 1)->call('upvote', $question->id)
+    card($question, 1)->call('upvote')
         ->assertSet('voteCount', 2)->assertSet('voteVersion', 1)
         ->assertSeeHtml('data-vote-version="1"');
     Event::assertDispatched(VoteCast::class, fn (VoteCast $e) => $e->questionId === $question->id && $e->votes === 2 && $e->version === 1);
 
-    card($question->refresh(), 2)->call('downvote', $question->id)->assertSet('voteCount', 0)->assertSet('voteVersion', 2);
+    card($question->refresh(), 2)->call('downvote')->assertSet('voteCount', 0)->assertSet('voteVersion', 2);
     Event::assertDispatched(VoteCast::class, fn (VoteCast $e) => $e->votes === 0 && $e->version === 2);
 
     expect((new VoteCast($question->id, 0, 2))->broadcastWith())->not->toHaveKey('user_id');
@@ -188,7 +188,7 @@ test('a vote that is refused dispatches nothing', function () {
     $question = Question::factory()->create(['archived_at' => now()]);
     $this->actingAs(User::factory()->create());
 
-    card($question)->call('upvote', $question->id);
+    card($question)->call('upvote');
 
     Event::assertNotDispatched(VoteCast::class);
 });
@@ -288,7 +288,7 @@ test('a remounted card shows the viewer\'s own vote as it is now, not as it was 
     $this->actingAs($viewer = User::factory()->create());
     $page = votePage();
     // A primary (accent) upvote button marks the viewer's own upvote.
-    $upvoted = fn (string $html) => preg_match('/<button[^>]*bg-\[var\(--color-accent\)\][^>]*wire:click="upvote\('.$question->id.'\)"/', $html) === 1;
+    $upvoted = fn (string $html) => preg_match('/<button(?=[^>]*bg-\[var\(--color-accent\)\])(?=[^>]*aria-label="Upvote #'.$question->id.'")/', $html) === 1;
     expect($upvoted($page->html()))->toBeFalse();
 
     // The viewer votes from chat or another tab, then the page polls.

@@ -138,7 +138,7 @@ test('votes on archived questions are ignored', function () {
 
     $this->actingAs($user);
     Volt::test('question-card', ['question' => $question, 'voteCount' => 0, 'userVotes' => []])
-        ->call('upvote', $question->id);
+        ->call('upvote');
 
     expect($question->voteCount())->toBe(0);
 });
@@ -153,12 +153,54 @@ test('active votes work and retries do not duplicate a viewers vote', function (
     }
 
     $card = Volt::test('question-card', $props);
-    $card->call('upvote', $question->id)->call('upvote', $question->id);
+    $card->call('upvote')->call('upvote');
     expect($question->voteCount())->toBe(1);
-    $card->call('downvote', $question->id)->call('downvote', $question->id);
+    $card->call('downvote')->call('downvote');
     expect($question->voteCount())->toBe(-1)
         ->and(\DB::table('question_votes')->where('question_id', $question->id)->count())->toBe(1);
 })->with(['top suggestions' => true, 'new ideas' => false]);
+
+// --- A card votes only on its own question (#114) ----------------------------
+
+test('a crafted vote call naming another question still votes only on the card\'s own question', function (string $action, int $expected) {
+    [$own, $other] = Question::factory()->count(2)->create();
+    $this->actingAs(User::factory()->create());
+
+    // What a tampered wire:click="upvote(<other id>)" sends: an extra argument.
+    Volt::test('question-card', ['question' => $own, 'voteCount' => 0])
+        ->call($action, $other->id)
+        ->assertSet('voteCount', $expected);
+
+    expect($own->voteCount())->toBe($expected)
+        ->and($other->voteCount())->toBe(0)
+        ->and(DB::table('question_votes')->where('question_id', $other->id)->exists())->toBeFalse();
+})->with(['upvote' => ['upvote', 1], 'downvote' => ['downvote', -1]]);
+
+test('a crafted update swapping the card\'s question for another is rejected or ignored', function () {
+    [$own, $other] = Question::factory()->count(2)->create();
+    $this->actingAs(User::factory()->create());
+    $card = Volt::test('question-card', ['question' => $own, 'voteCount' => 0]);
+
+    // Livewire guards model properties: their id cannot be set from the
+    // browser, and a bare id in place of the model does not replace it.
+    expect(fn () => $card->set('question.id', $other->id))->toThrow(Exception::class, "Can't set model properties directly");
+    $card->set('question', $other->id);
+    expect($card->get('question')->is($own))->toBeTrue();
+
+    $card->call('upvote');
+    expect($own->voteCount())->toBe(1)->and($other->voteCount())->toBe(0);
+});
+
+test('the card\'s vote buttons send no question id', function () {
+    $question = Question::factory()->create();
+    $this->actingAs(User::factory()->create());
+
+    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
+        ->assertSeeHtml('wire:click="upvote"')
+        ->assertSeeHtml('wire:click="downvote"')
+        ->assertDontSeeHtml('upvote('.$question->id.')')
+        ->assertDontSeeHtml('downvote('.$question->id.')');
+});
 
 test('authors can delete their own question but not someone else\'s', function () {
     $author = User::factory()->create();

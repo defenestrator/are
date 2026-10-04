@@ -36,37 +36,35 @@ new class extends Component {
         $this->showIdentities = $canModerate;
     }
 
-    public function upvote(Question $question)
+    // Votes act on this card's own question and take no id from the browser
+    // (#114). $question is a model property, so Livewire will not let the
+    // browser change which question it is.
+    public function upvote(): void
     {
-        $this->vote($question, 1);
+        $this->vote(1);
     }
 
-    public function downvote(Question $question)
+    public function downvote(): void
     {
-        $this->vote($question, -1);
+        $this->vote(-1);
     }
 
     // The same rules as !vote in chat.
-    private function vote(Question $question, int $direction): void
+    private function vote(int $direction): void
     {
         if (! Auth::check()) {
             return;
         }
 
         try {
-            $result = QuestionQueue::vote(Auth::user(), $question, $direction);
+            $result = QuestionQueue::vote(Auth::user(), $this->question, $direction);
         } catch (QuestionRejected) {
             return;
         }
 
-        $this->userVotes[$question->id] = $direction;
-
-        if ($question->is($this->question)) {
-            $this->voteCount = $result['votes'];
-            $this->voteVersion = $result['version'];
-        } else {
-            $this->voteCount = $this->question->voteCount();
-        }
+        $this->userVotes[$this->question->id] = $direction;
+        $this->voteCount = $result['votes'];
+        $this->voteVersion = $result['version'];
     }
 
     public function deleteQuestion()
@@ -94,7 +92,7 @@ new class extends Component {
 
                     <div class="flex items-center gap-2">
                         <div>
-                            <flux:button wire:click="upvote({{ $question->id }})"
+                            <flux:button wire:click="upvote" aria-label="Upvote #{{ $question->id }}"
                                 variant="{{ ($userVotes[$question->id] ?? 0) > 0 ? 'primary' : 'ghost' }}" size="sm"
                                 class="flex items-center">
                                 <flux:icon.hand-thumb-up name="hand-thumb-up" variant="outline"
@@ -103,7 +101,7 @@ new class extends Component {
                         </div>
 
                         <div>
-                            <flux:button wire:click="downvote({{ $question->id }})"
+                            <flux:button wire:click="downvote" aria-label="Downvote #{{ $question->id }}"
                                 variant="{{ ($userVotes[$question->id] ?? 0) < 0 ? 'primary' : 'ghost' }}"
                                 size="sm" class="flex items-center">
                                 <flux:icon.hand-thumb-down name="hand-thumb-down" variant="outline"
