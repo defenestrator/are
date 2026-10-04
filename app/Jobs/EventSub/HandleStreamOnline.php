@@ -2,6 +2,7 @@
 
 namespace App\Jobs\EventSub;
 
+use App\Jobs\SampleTwitchViewers;
 use App\Models\StreamSession;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -34,5 +35,9 @@ class HandleStreamOnline extends EventSubJob
                 ],
             );
         });
+
+        // Start sampling viewers (#12). Helix lists a stream a little after
+        // it goes live, so the first sample waits; the scheduler takes the rest.
+        SampleTwitchViewers::dispatch()->delay(now()->addSeconds(30));
     }
 }

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Analytics\AttributionReport;
 use App\Analytics\DateRange;
+use App\Analytics\StreamMetrics;
 use App\Notifications\Channels\WebhookChannel;
 use App\Notifications\WeeklyAttributionSummary;
 use Carbon\CarbonImmutable;
@@ -77,7 +78,7 @@ class PostWeeklyAttributionSummary implements ShouldQueue
         try {
             (new AnonymousNotifiable)
                 ->route(WebhookChannel::class, $url)
-                ->notifyNow(new WeeklyAttributionSummary(AttributionReport::for($range)));
+                ->notifyNow(new WeeklyAttributionSummary(AttributionReport::for($range), StreamMetrics::forRange($range)));
         } catch (Throwable $e) {
             DB::table('attribution_summaries')->where('iso_week', $this->isoWeek())->whereNull('posted_at')->delete();
 

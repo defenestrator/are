@@ -4,13 +4,15 @@ namespace App\Notifications;
 
 use App\Analytics\AttributionReport;
 use App\Analytics\AttributionRow;
+use App\Analytics\StreamMetrics;
 use App\Notifications\Channels\WebhookChannel;
 use Illuminate\Notifications\Notification;
 
 /**
  * Last week's attribution as one Slack or Discord message (#12): totals,
  * the top stream, clicks, enquiries and conversion by channel and by
- * stream, and a link to /admin/attribution.
+ * stream, each Twitch stream's audience (average and peak viewers, unique
+ * chatters, approximate participation), and a link to /admin/attribution.
  *
  * It carries only aggregates from AttributionReport: channel and stream
  * names and counts. No lead's name, email, company or message.
@@ -23,7 +25,13 @@ class WeeklyAttributionSummary extends Notification
     /** Streams listed by name; the rest are summed into one line, to stay inside Discord's limit. */
     public const MAX_STREAMS = 10;
 
-    public function __construct(public AttributionReport $report) {}
+    /** Twitch streams listed in the audience section. */
+    public const MAX_TWITCH_STREAMS = 7;
+
+    /**
+     * @param  list<StreamMetrics>  $twitchStreams  sessions that started in the report's range
+     */
+    public function __construct(public AttributionReport $report, public array $twitchStreams = []) {}
 
     /**
      * @return array<int, string>
@@ -52,10 +60,32 @@ class WeeklyAttributionSummary extends Notification
 
         if ($report->isEmpty()) {
             $lines[] = 'No short-link clicks and no enquiries that week.';
-            $lines[] = 'Full report: '.$link;
-
-            return implode("\n", $lines);
+        } else {
+            array_push($lines, ...$this->attributionLines());
         }
+
+        if ($this->twitchStreams !== []) {
+            array_push($lines, '', ...$this->twitchLines());
+        }
+
+        // A blank line before the link, except in the two-line quiet week.
+        if (count($lines) > 2) {
+            $lines[] = '';
+        }
+        $lines[] = 'Full report: '.$link;
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Totals, top stream, by channel and by stream.
+     *
+     * @return list<string>
+     */
+    private function attributionLines(): array
+    {
+        $report = $this->report;
+        $lines = [];
 
         $lines[] = 'Total: '.self::counts($report->totals());
 
@@ -87,10 +117,33 @@ class WeeklyAttributionSummary extends Notification
             ));
         }
 
-        $lines[] = '';
-        $lines[] = 'Full report: '.$link;
+        return $lines;
+    }
 
-        return implode("\n", $lines);
+    /**
+     * Audience per Twitch stream, next to that stream's clicks and enquiries.
+     *
+     * @return list<string>
+     */
+    private function twitchLines(): array
+    {
+        $lines = ['Twitch streams (participation ≈ unique chatters ÷ average viewers, an approximation):'];
+
+        foreach (array_slice($this->twitchStreams, 0, self::MAX_TWITCH_STREAMS) as $metrics) {
+            $attributed = $this->report->forStream($metrics->stream());
+            $lines[] = '• '.$metrics->stream().': '
+                .($metrics->averageViewers === null ? 'no viewer samples' : 'avg '.$metrics->averageLabel().' viewers, peak '.$metrics->peakLabel())
+                .', '.$metrics->uniqueChatters.' unique '.($metrics->uniqueChatters === 1 ? 'chatter' : 'chatters')
+                .', '.$metrics->participationLabel().' participation'
+                .', '.self::counts($attributed);
+        }
+
+        $more = count($this->twitchStreams) - self::MAX_TWITCH_STREAMS;
+        if ($more > 0) {
+            $lines[] = '• and '.$more.' more on the full report';
+        }
+
+        return $lines;
     }
 
     /** "twitch / 2026-10-01-stream-123", or "no short link" for direct enquiries. */

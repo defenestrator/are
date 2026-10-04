@@ -6,6 +6,7 @@ use Database\Factories\StreamSessionFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -16,6 +17,10 @@ use Illuminate\Support\Carbon;
  * @property string $type
  * @property Carbon $started_at
  * @property Carbon|null $ended_at
+ * @property float|string|null $viewer_samples_avg_viewer_count with withAvg()
+ * @property int|null $viewer_samples_max_viewer_count with withMax()
+ * @property int|null $viewer_samples_count with withCount()
+ * @property int|null $chatters_count with withCount()
  */
 class StreamSession extends Model
 {
@@ -68,5 +73,41 @@ class StreamSession extends Model
     public function utmCampaign(): string
     {
         return $this->started_at->format('Y-m-d').'-stream-'.$this->twitch_stream_id;
+    }
+
+    /**
+     * @return HasMany<StreamViewerSample, $this>
+     */
+    public function viewerSamples(): HasMany
+    {
+        return $this->hasMany(StreamViewerSample::class);
+    }
+
+    /**
+     * @return HasMany<StreamChatter, $this>
+     */
+    public function chatters(): HasMany
+    {
+        return $this->hasMany(StreamChatter::class);
+    }
+
+    /**
+     * A keyed hash of a Twitch user id, for counting unique chatters without
+     * storing who they are. Keyed with APP_KEY, because Twitch ids are
+     * sequential numbers and a plain hash of one is trivially reversed.
+     */
+    public static function chatterHash(string $twitchUserId): string
+    {
+        return hash_hmac('sha256', 'twitch-chatter:'.$twitchUserId, (string) config('app.key'));
+    }
+
+    /** Count a chatter once per session. Returns whether they were new. */
+    public function recordChatter(string $twitchUserId, ?\DateTimeInterface $at = null): bool
+    {
+        return StreamChatter::query()->insertOrIgnore([
+            'stream_session_id' => $this->id,
+            'chatter_hash' => static::chatterHash($twitchUserId),
+            'first_seen_at' => $at ?? now(),
+        ]) === 1;
     }
 }

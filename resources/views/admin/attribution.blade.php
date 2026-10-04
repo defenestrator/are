@@ -1,5 +1,6 @@
 @php
     /** @var \App\Analytics\AttributionReport $report */
+    /** @var list<\App\Analytics\StreamMetrics> $streams */
     $range = $report->range;
     $query = $range->preset
         ? ['preset' => $range->preset]
@@ -65,6 +66,53 @@
                 @include('admin.partials.attribution-table', ['rows' => $report->streams, 'withStream' => true, 'totals' => $totals])
             </section>
         @endif
+
+        <section class="space-y-3">
+            <flux:heading size="lg">Twitch streams</flux:heading>
+            <flux:text class="text-sm">
+                Streams that started in this range. <strong>Viewers</strong> are concurrent viewers from Twitch, sampled every few
+                minutes while live. <strong>Unique chatters</strong> counts each person who chatted once (not the broadcaster).
+                <strong>Participation</strong> is unique chatters ÷ average viewers: an approximation that reads high, because
+                more people watch than the average at any moment. Use it to compare streams. Clicks and enquiries are this
+                stream's short links on every channel.
+            </flux:text>
+
+            @if ($streams === [])
+                <flux:text class="text-sm text-zinc-500">No Twitch streams started in this range.</flux:text>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-zinc-500 border-b border-zinc-200 dark:border-zinc-700">
+                            <tr>
+                                <th scope="col" class="py-2 pe-4 font-medium">Stream</th>
+                                <th scope="col" class="py-2 pe-4 font-medium">Started</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Avg viewers</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Peak viewers</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Unique chatters</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Participation (approx.)</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Short-link clicks</th>
+                                <th scope="col" class="py-2 font-medium text-right">Enquiries</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                            @foreach ($streams as $metrics)
+                                @php($attributed = $report->forStream($metrics->stream()))
+                                <tr>
+                                    <td class="py-2 pe-4 font-mono">{{ $metrics->stream() }}</td>
+                                    <td class="py-2 pe-4 tabular-nums whitespace-nowrap">{{ $metrics->session->started_at->format('D j M H:i') }}{{ $metrics->session->ended_at === null ? ' (live)' : '' }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ $metrics->averageLabel() }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ $metrics->peakLabel() }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($metrics->uniqueChatters) }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ $metrics->participationLabel() }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($attributed->clicks) }}</td>
+                                    <td class="py-2 text-right tabular-nums">{{ number_format($attributed->leads) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </section>
 
         @if ($report->undatedClicks > 0)
             <flux:text class="text-sm text-zinc-500">

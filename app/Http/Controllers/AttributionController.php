@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Analytics\AttributionReport;
 use App\Analytics\AttributionRow;
+use App\Analytics\StreamMetrics;
 use App\Http\Requests\AttributionRangeRequest;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -17,7 +18,12 @@ class AttributionController extends Controller
 {
     public function index(AttributionRangeRequest $request): View
     {
-        return view('admin.attribution', ['report' => AttributionReport::for($request->range())]);
+        $range = $request->range();
+
+        return view('admin.attribution', [
+            'report' => AttributionReport::for($range),
+            'streams' => StreamMetrics::forRange($range),
+        ]);
     }
 
     /** The per-stream table and its total as CSV. Counts only, no PII. */

@@ -3,6 +3,7 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
 
@@ -53,6 +54,10 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
+
+        // No test may reach a real API (AGENTS.md). A request no Http::fake
+        // matches throws instead of leaving the machine.
+        Http::preventStrayRequests();
 
         config([
             'services.twitch.client_id' => 'client-id',

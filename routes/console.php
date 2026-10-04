@@ -1,8 +1,10 @@
 <?php
 
 use App\Jobs\PostWeeklyAttributionSummary;
+use App\Jobs\SampleTwitchViewers;
 use App\Models\ChatCommandRun;
 use App\Models\LinkCode;
+use App\Models\StreamSession;
 use App\Models\YouTubeLiveChat;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -57,3 +59,11 @@ Schedule::call(fn () => YouTubeLiveChat::resumeStalled())
     ->everyMinute()
     ->name('youtube-chat-watchdog')
     ->withoutOverlapping();
+
+// Concurrent viewers of live Twitch streams (#12), every three minutes while
+// any stream session is open. stream.online takes the first sample; this
+// tick is the watchdog, so sampling cannot silently stop mid-stream, and it
+// stops by itself once stream.offline closes the session.
+Schedule::job(new SampleTwitchViewers)
+    ->everyThreeMinutes()
+    ->when(fn () => StreamSession::live()->exists());

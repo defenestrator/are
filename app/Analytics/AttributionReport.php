@@ -95,6 +95,22 @@ final class AttributionReport
         );
     }
 
+    /**
+     * One stream's clicks and enquiries summed across channels: a simulcast's
+     * YouTube chat gets the Twitch stream's campaign, so both count.
+     */
+    public function forStream(string $stream): AttributionRow
+    {
+        $rows = array_filter($this->streams, fn (AttributionRow $row) => $row->channel !== null && $row->stream === $stream);
+
+        return new AttributionRow(
+            null,
+            $stream,
+            array_sum(array_map(fn (AttributionRow $row) => $row->clicks, $rows)),
+            array_sum(array_map(fn (AttributionRow $row) => $row->leads, $rows)),
+        );
+    }
+
     public function isEmpty(): bool
     {
         return $this->streams === [];

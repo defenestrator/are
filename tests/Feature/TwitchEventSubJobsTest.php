@@ -14,6 +14,7 @@ use App\Jobs\EventSub\HandleChannelSubscriptionEnd;
 use App\Jobs\EventSub\HandleChatMessage;
 use App\Jobs\EventSub\HandleStreamOffline;
 use App\Jobs\EventSub\HandleStreamOnline;
+use App\Jobs\SampleTwitchViewers;
 use App\Models\ChannelPointRedemption;
 use App\Models\StreamSession;
 use App\Twitch;
@@ -25,6 +26,13 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+
+beforeEach(function () {
+    // stream.online queues a viewer sample (#12), which calls Helix; these
+    // tests are about sessions, so only that job is faked. Every other job
+    // still runs synchronously. TwitchStreamMetricsTest covers sampling.
+    Queue::fake([SampleTwitchViewers::class]);
+});
 
 /**
  * POST a signed EventSub notification, exactly as Twitch would.
