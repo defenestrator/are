@@ -76,14 +76,7 @@ class LeadSubmitted extends Notification implements ShouldBeEncrypted, ShouldQue
      */
     public function toWebhook(object $notifiable, string $url): array
     {
-        $text = 'New EDOS Professional Services enquiry ('.$this->attributionSummary().'). Read it at '.route('leads.index');
-
-        // Discord webhooks take "content"; Slack incoming webhooks take "text".
-        $host = (string) parse_url($url, PHP_URL_HOST);
-        $isDiscord = in_array($host, ['discord.com', 'discordapp.com'], true)
-            || str_ends_with($host, '.discord.com');
-
-        return $isDiscord ? ['content' => $text] : ['text' => $text];
+        return WebhookChannel::body($url, 'New EDOS Professional Services enquiry ('.$this->attributionSummary().'). Read it at '.route('leads.index'));
     }
 
     /** "twitch / stream / 2026-10-04-orkestera / overlay", or "no short link". */

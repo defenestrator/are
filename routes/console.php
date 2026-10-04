@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\PostWeeklyAttributionSummary;
 use App\Models\ChatCommandRun;
 use App\Models\LinkCode;
 use Illuminate\Foundation\Inspiring;
@@ -21,3 +22,31 @@ Schedule::command('horizon:snapshot')->everyFiveMinutes()
 
 // Chat commands claim each message id once; a week of claims is ample.
 Schedule::command('model:prune', ['--model' => [ChatCommandRun::class, LinkCode::class]])->daily();
+
+// Last week's attribution to Slack or Discord (#12): Mondays 09:00 app time
+// by default. The job claims its ISO week, so it never double-posts.
+Schedule::job(new PostWeeklyAttributionSummary)
+    ->weeklyOn((int) config('are.weekly_summary.day'), (string) config('are.weekly_summary.time'))
+    ->timezone((string) config('app.timezone'))
+    ->when(fn () => PostWeeklyAttributionSummary::webhookUrl() !== null);
+
+Artisan::command('attribution:weekly-summary {--week= : A Y-m-d date in the week to post; defaults to last week}', function () {
+    if (PostWeeklyAttributionSummary::webhookUrl() === null) {
+        $this->error('No webhook: set ARE_WEEKLY_SUMMARY_WEBHOOK_URL or ARE_LEADS_WEBHOOK_URL.');
+
+        return 1;
+    }
+
+    $week = $this->option('week') ?: null;
+    if ($week !== null && ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $week)) {
+        $this->error('--week must be a date like 2026-09-28.');
+
+        return 1;
+    }
+
+    $job = new PostWeeklyAttributionSummary($week);
+    dispatch($job);
+    $this->info("Queued the summary for {$job->isoWeek()}. A week that was already posted is not posted again.");
+
+    return 0;
+})->purpose('Queue the weekly attribution summary for Slack or Discord');

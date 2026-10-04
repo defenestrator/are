@@ -93,6 +93,24 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Weekly attribution summary (#12)
+    |--------------------------------------------------------------------------
+    |
+    | Every week on `day` (0 = Sunday ... 6 = Saturday) at `time`, in the app
+    | timezone, the previous ISO week's attribution (aggregates only) is posted
+    | to `webhook_url`, a Slack or Discord incoming webhook. It defaults to the
+    | lead webhook. With no webhook, nothing is posted.
+    |
+    */
+
+    'weekly_summary' => [
+        'webhook_url' => env('ARE_WEEKLY_SUMMARY_WEBHOOK_URL') ?: env('ARE_LEADS_WEBHOOK_URL'),
+        'day' => is_numeric(env('ARE_WEEKLY_SUMMARY_DAY')) ? (int) env('ARE_WEEKLY_SUMMARY_DAY') : 1,
+        'time' => env('ARE_WEEKLY_SUMMARY_TIME') ?: '09:00',
+    ],
+
     'chat_links' => [
         'cooldown_seconds' => (int) (env('ARE_CHAT_LINK_COOLDOWN_SECONDS') ?: 30),
 
