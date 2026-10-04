@@ -11,22 +11,34 @@
 // - QuestionSubmitted: refresh once, after a random delay so every viewer does
 //   not hit the server in the same instant. Events inside that window share
 //   the one refresh.
+//
+// Tests: resources/js/tests/live-queue.test.js (npm run test:js).
 
-const REFRESH_MIN_MS = 500;
-const REFRESH_JITTER_MS = 2500;
+export const REFRESH_MIN_MS = 500;
+export const REFRESH_JITTER_MS = 2500;
 const EVENTS = ['VoteCast', 'QuestionSubmitted', 'QuestionArchived'];
 
-document.addEventListener('alpine:init', () => {
-    window.Alpine.data('liveQueue', () => ({
+/**
+ * The Alpine component. `echo`, `random` and the timer functions are
+ * injectable so the logic can be tested without a browser.
+ */
+export function liveQueue({
+    echo = () => globalThis.window?.Echo,
+    random = Math.random,
+    setTimer = (fn, ms) => setTimeout(fn, ms),
+    clearTimer = (id) => clearTimeout(id),
+} = {}) {
+    return {
         channel: null,
         refreshTimer: null,
 
         init() {
-            if (!window.Echo) {
+            const client = echo();
+            if (!client) {
                 return;
             }
 
-            this.channel = window.Echo.channel('questions')
+            this.channel = client.channel('questions')
                 .listen('VoteCast', (event) => this.voteCast(event))
                 .listen('QuestionSubmitted', () => this.refreshSoon())
                 .listen('QuestionArchived', (event) => this.archived(event));
@@ -34,7 +46,8 @@ document.addEventListener('alpine:init', () => {
 
         destroy() {
             EVENTS.forEach((name) => this.channel?.stopListening(name));
-            clearTimeout(this.refreshTimer);
+            clearTimer(this.refreshTimer);
+            this.refreshTimer = null;
         },
 
         voteCast({ question_id, votes, version }) {
@@ -77,7 +90,7 @@ document.addEventListener('alpine:init', () => {
             return Number(li.querySelector('[data-vote-count]')?.textContent ?? 0);
         },
 
-        // Stable sort, so tied questions keep the order the server gave them.
+        // Stable sort, so tied questions keep their current order on the page.
         resortTop() {
             const list = this.$refs.top;
             if (!list) {
@@ -97,10 +110,16 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
-            this.refreshTimer = setTimeout(() => {
+            this.refreshTimer = setTimer(() => {
                 this.refreshTimer = null;
                 this.$wire.$refresh();
-            }, REFRESH_MIN_MS + Math.random() * REFRESH_JITTER_MS);
+            }, REFRESH_MIN_MS + random() * REFRESH_JITTER_MS);
         },
-    }));
-});
+    };
+}
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('alpine:init', () => {
+        window.Alpine.data('liveQueue', () => liveQueue());
+    });
+}
