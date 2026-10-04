@@ -12,4 +12,7 @@ Artisan::command('inspire', function () {
 Schedule::command('twitch:sync-moderation')->hourly()->withoutOverlapping();
 
 // Feeds the Horizon metrics dashboard (job and queue wait times, throughput).
-Schedule::command('horizon:snapshot')->everyFiveMinutes();
+// Horizon only runs once the queue is on Redis; until then the snapshot would
+// just fail to reach Redis every five minutes.
+Schedule::command('horizon:snapshot')->everyFiveMinutes()
+    ->when(fn () => config('queue.default') === 'redis');

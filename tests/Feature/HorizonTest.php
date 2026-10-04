@@ -4,6 +4,7 @@ use App\Models\TwitchModerator;
 use App\Models\User;
 use Illuminate\Console\Scheduling\Event as ScheduledEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Redis\Connector;
 use Illuminate\Support\Facades\Event;
 use Laravel\Horizon\Contracts\HorizonCommandQueue;
 use Laravel\Horizon\ProvisioningPlan;
@@ -49,6 +50,21 @@ test('horizon:snapshot is scheduled every five minutes', function () {
         ->and($snapshot->expression)->toBe('*/5 * * * *');
 });
 
+test('horizon:snapshot only runs once the queue is on Redis', function (string $queue, bool $runs) {
+    config(['queue.default' => $queue]);
+    $this->travelTo(now()->setTime(12, 5));
+
+    $snapshot = collect(app(Schedule::class)->dueEvents(app()))
+        ->first(fn (ScheduledEvent $event) => str_contains((string) $event->command, 'horizon:snapshot'));
+
+    expect($snapshot)->not->toBeNull()
+        ->and($snapshot->filtersPass(app()))->toBe($runs);
+})->with([
+    'database queue (production before Redis)' => ['database', false],
+    'sync queue' => ['sync', false],
+    'redis queue' => ['redis', true],
+]);
+
 test('every environment runs a broadcasts supervisor that never scales to zero', function (string $environment) {
     $supervisor = array_replace(
         config('horizon.defaults.supervisor-broadcasts'),
@@ -82,3 +98,42 @@ test('Horizon starts both supervisors whatever APP_ENV is', function (string $en
 
     expect($queues)->toEqualCanonicalizing(['broadcasts', 'default']);
 })->with(['production', 'local', 'staging']);
+
+/**
+ * Make every Redis connection attempt fail, as on production before
+ * REDIS_PASSWORD is set (NOAUTH) or while Redis is down.
+ */
+function redisIsUnreachable(): void
+{
+    app()->forgetInstance('redis');
+    app('redis')->setDriver('unreachable');
+    app('redis')->extend('unreachable', fn () => new class implements Connector
+    {
+        public function connect(array $config, array $options)
+        {
+            throw new RuntimeException('Redis is unreachable.');
+        }
+
+        public function connectToCluster(array $config, array $clusterOptions, array $options)
+        {
+            throw new RuntimeException('Redis is unreachable.');
+        }
+    });
+}
+
+test('non-broadcasters get a clean 403 from Horizon while Redis is unreachable', function (string $path) {
+    redisIsUnreachable();
+    $mod = User::factory()->create();
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $mod->twitch_id]);
+
+    $this->get($path)->assertForbidden();
+    $this->actingAs(User::factory()->create())->get($path)->assertForbidden();
+    $this->actingAs($mod)->get($path)->assertForbidden();
+})->with(['/horizon', '/horizon/api/stats', '/horizon/api/jobs/failed']);
+
+test('the Horizon page itself loads for a broadcaster while Redis is unreachable', function () {
+    // Only its API calls need Redis; those return 500 until REDIS_PASSWORD is set.
+    redisIsUnreachable();
+
+    $this->actingAs(User::factory()->twitch('1000')->create())->get('/horizon')->assertOk();
+});
