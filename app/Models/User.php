@@ -55,17 +55,10 @@ class User extends Authenticatable
      * Users whose name contains $term literally (% and _ match themselves),
      * ignoring case.
      *
-     * Case: PostgreSQL's LIKE is case-sensitive, so pgsql uses ILIKE. SQLite's
-     * LIKE ignores case for ASCII letters, and MySQL's follows the column
-     * collation, which is case-insensitive by default (utf8mb4_unicode_ci).
-     *
-     * Escaping: the explicit ESCAPE is required because SQLite has no default
-     * LIKE escape character (MySQL and PostgreSQL default to backslash). The
-     * escape character is ! rather than a backslash because a backslash inside
-     * the ESCAPE literal needs different quoting on MySQL ('\\') than on SQLite
-     * and PostgreSQL ('\'). ESCAPE '!' overrides the default the same way on
-     * all three. Laravel's whereLike() picks ILIKE on pgsql but cannot add an
-     * ESCAPE clause, hence the raw clause.
+     * PostgreSQL uses ILIKE for case-insensitive matching; MySQL follows the
+     * column collation. An explicit ESCAPE '!' keeps %, _ and ! literal and
+     * avoids database-specific backslash quoting. Laravel's whereLike() cannot
+     * add an ESCAPE clause, hence the raw clause.
      *
      * @param  Builder<User>  $query
      */

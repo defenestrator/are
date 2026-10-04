@@ -426,11 +426,10 @@ test('name search ignores case', function () {
         ->and(User::whereNameContains('xx_troll_xx')->pluck('name')->all())->toBe(['xX_TROLL_Xx']);
 });
 
-test('name search compiles to a case-insensitive, !-escaped match on every driver', function (string $connection, string $sql) {
+test('name search compiles to a case-insensitive, !-escaped match on configured drivers', function (string $connection, string $sql) {
     // toSql() only needs the grammar, so no server is contacted.
     expect(User::on($connection)->whereNameContains('a_b')->toSql())->toContain($sql);
 })->with([
     'pgsql uses ILIKE' => ['pgsql', '"users"."name" ilike ? escape \'!\''],
     'mysql uses LIKE (case-insensitive collation)' => ['mysql', '`users`.`name` like ? escape \'!\''],
-    'sqlite uses LIKE' => ['sqlite', '"users"."name" like ? escape \'!\''],
 ]);

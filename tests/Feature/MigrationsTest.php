@@ -2,7 +2,7 @@
 
 use Illuminate\Support\Facades\Schema;
 
-// RefreshDatabase has already run every migration on the in-memory SQLite
+// RefreshDatabase has already run every migration on the PostgreSQL test
 // database (the equivalent of migrate:fresh), so this starts fully migrated.
 test('every migration rolls back to an empty schema and applies again', function () {
     $this->artisan('migrate:reset')->assertSuccessful();

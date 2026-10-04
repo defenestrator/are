@@ -33,8 +33,8 @@ process names machinery ARE does not have yet, do this instead.
 - **Framework docs and conventions.** [AGENTS.md](AGENTS.md) describes the
   Laravel conventions this repo follows and the framework docs vendored under
   `docs/vendor/`. Read those before searching the web.
-- **Tests and the gate.** ARE's suite is Pest on in-memory SQLite, with no
-  MongoDB. Run `./vendor/bin/pest` and `./vendor/bin/phpstan analyse`, and
+- **Tests and the gate.** ARE's application suite is Pest on a dedicated PostgreSQL 14 database
+  (`are_test`), with no MongoDB. Run `./vendor/bin/pest` and `./vendor/bin/phpstan analyse`, and
   report the real counts in the PR. The fork carries Orkestera's rulesets:
   `ci-gate` is the single required check, and PRs merge through a rebase
   merge queue.

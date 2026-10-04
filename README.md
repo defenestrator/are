@@ -27,14 +27,48 @@ This project has no affiliation with, nor is it endorsed by Laravel, or anyone e
 ## Running locally, for fools and legends only
 
 ```sh
-cp .env.example .env        # then fill in the TWITCH_* values
-composer install && npm install
+# Requires PostgreSQL 14 and PHP's pdo_pgsql extension.
+# Create the are database and its are_app owner before migrating.
+cp .env.example .env        # fill in DB_PASSWORD and TWITCH_* values
+composer install && npm ci
 php artisan key:generate
 php artisan reverb:install  # fills in the REVERB_* keys for live updates
-touch database/database.sqlite && php artisan migrate
+php artisan migrate
 composer run dev            # server, queue worker, Reverb, logs and Vite
 ./vendor/bin/pest           # tests
 ```
+
+## Database and tests
+
+PostgreSQL is the application database in development, tests and production.
+Runtime configuration has no SQLite connection or fallback, and setup never
+creates a database file. Sessions, cache or queues on the `database` driver use PostgreSQL.
+For a local installation, a PostgreSQL administrator can create the owner and
+application database with:
+
+```sh
+sudo -u postgres createuser --pwprompt are_app
+sudo -u postgres createdb --owner=are_app are
+```
+
+The default test configuration uses a **separate, disposable** `are_test`
+database with owner `are`, password `are`, host `127.0.0.1` and port `5432`.
+Create it before running `./vendor/bin/pest`; tests migrate and reset its schema.
+Do not point tests at the development or production database. Override `DB_HOST`,
+`DB_PORT`, `DB_USERNAME` and `DB_PASSWORD` in the shell for a different test server.
+
+```sh
+sudo -u postgres createuser --pwprompt are
+sudo -u postgres createdb --owner=are are_test
+./vendor/bin/pest
+./vendor/bin/phpstan analyse
+```
+
+The production data transfer was verified on 2026-10-04: every legacy user,
+question, vote, subscription and topic exists in PostgreSQL with matching IDs
+and content. The one-time `db:copy` command has been retired. Keep the old
+database file and pre-cutover backup outside the runtime until the operator's
+normal backup retention period expires; no setup or deployment step deletes it.
 
 ## Realtime (Reverb)
 
