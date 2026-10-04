@@ -4,17 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\ShortLink;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 class ShortLinkRedirectController extends Controller
 {
     /**
-     * GET /go/{code}: count the click, remember its UTM params for lead
-     * attribution, and 302 to the tagged destination. Unknown codes 404
-     * through route model binding.
+     * GET (and HEAD) /go/{code}: record the click if it is a person's, and
+     * 302 to the tagged destination either way. Unknown codes 404 through
+     * route model binding. Throttled by the "short-links" limiter.
      */
-    public function __invoke(ShortLink $shortLink): RedirectResponse
+    public function __invoke(Request $request, ShortLink $shortLink): RedirectResponse
     {
-        $shortLink->recordClick();
+        $shortLink->recordClick($request);
 
         return redirect()->away($shortLink->destinationUrl(), 302);
     }

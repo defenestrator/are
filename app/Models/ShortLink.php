@@ -6,6 +6,9 @@ use Database\Factories\ShortLinkFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 /**
@@ -44,6 +47,24 @@ class ShortLink extends Model
     public const SESSION_KEY = 'lead_attribution';
 
     public const UTM_FIELDS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'];
+
+    /** Session key prefix holding when this session's click on a link was last counted. */
+    public const SEEN_SESSION_KEY = 'short_link_seen';
+
+    /** A repeat click from the same session within this window is not a new click. */
+    public const DEDUPE_MINUTES = 30;
+
+    /** Counted clicks per link and IP address per DEDUPE_MINUTES, for clients without a session. */
+    public const MAX_COUNTED_PER_IP = 5;
+
+    /**
+     * Link unfurlers, crawlers and scripted clients. They are redirected but
+     * never counted. iMessage previews identify as facebookexternalhit and
+     * Twitterbot, so they are covered here. The tokens name the preview
+     * fetchers rather than the apps, so in-app browsers (LinkedInApp,
+     * "Twitter for iPhone", FBAN) still count as people.
+     */
+    public const BOT_USER_AGENTS = '/bot\b|bot\/|crawl|spider|slurp|facebookexternalhit|facebot|discordbot|slackbot|slack-imgproxy|twitterbot|linkedinbot|whatsapp\/|telegrambot|skypeuripreview|bingpreview|google-pagerenderer|embedly|iframely|pinterest|vkshare|mastodon|bluesky|cardyb|bitlybot|headless|lighthouse|python-requests|python-urllib|aiohttp|httpx|curl\/|wget|go-http-client|okhttp|axios|node-fetch|undici|java\/|libwww|scrapy|httpclient|guzzlehttp/i';
 
     protected $fillable = [
         'code',
@@ -170,16 +191,71 @@ class ShortLink extends Model
     }
 
     /**
-     * Record a click: count it atomically, store a dated row for
-     * attribution, and remember its UTM params in the session (last click
-     * wins).
+     * Record a visit to /go/{code}. This is the one place that decides whether a
+     * hit counts, and it keeps the `clicks` counter and the dated
+     * `short_link_clicks` rows in step: both are written or neither is.
+     *
+     * - HEAD requests, prefetches, and link-preview or bot user agents are not
+     *   clicks: they record nothing and leave the session alone.
+     * - A person's click always refreshes their attribution (last click wins),
+     *   but the same session clicking the same link again within
+     *   DEDUPE_MINUTES is the same click, not a new one.
+     * - At most MAX_COUNTED_PER_IP clicks per link and IP address count per
+     *   DEDUPE_MINUTES, which catches clients that drop the session cookie.
+     *
+     * Returns whether the click was counted. The caller redirects either way.
      */
-    public function recordClick(): void
+    public function recordClick(?Request $request = null): bool
     {
-        $this->increment('clicks');
-        $this->clickEvents()->create(['clicked_at' => now()]);
+        $request ??= request();
+
+        if (! static::isHumanClick($request)) {
+            return false;
+        }
 
         session()->put(self::SESSION_KEY, [...$this->utm(), 'short_link_id' => $this->id]);
+
+        $seenKey = self::SEEN_SESSION_KEY.'.'.$this->id;
+        $lastCounted = session($seenKey);
+
+        if (is_int($lastCounted) && $lastCounted > now()->subMinutes(self::DEDUPE_MINUTES)->getTimestamp()) {
+            return false;
+        }
+
+        $ipKey = 'short-link-click:'.$this->id.':'.sha1((string) $request->ip());
+
+        if (RateLimiter::tooManyAttempts($ipKey, self::MAX_COUNTED_PER_IP)) {
+            return false;
+        }
+
+        RateLimiter::hit($ipKey, self::DEDUPE_MINUTES * 60);
+        session()->put($seenKey, now()->getTimestamp());
+
+        DB::transaction(function () {
+            $this->increment('clicks');
+            $this->clickEvents()->create(['clicked_at' => now()]);
+        });
+
+        return true;
+    }
+
+    /** Whether this request is a person following the link, not a preview, prefetch or bot. */
+    public static function isHumanClick(Request $request): bool
+    {
+        if (! $request->isMethod('GET')) {
+            return false;
+        }
+
+        foreach (['Purpose', 'Sec-Purpose', 'X-Purpose', 'X-Moz'] as $header) {
+            if (str_contains(strtolower((string) $request->header($header)), 'prefetch')
+                || str_contains(strtolower((string) $request->header($header)), 'preview')) {
+                return false;
+            }
+        }
+
+        $agent = trim((string) $request->userAgent());
+
+        return $agent !== '' && preg_match(self::BOT_USER_AGENTS, $agent) !== 1;
     }
 
     /**
