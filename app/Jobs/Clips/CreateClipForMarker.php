@@ -26,8 +26,10 @@ use Throwable;
  *
  * Each step is saved before the next, and the job releases itself back onto
  * the queue between polls, so a retry carries on from where the last attempt
- * stopped: it never creates a second clip once one clip id is stored. The
- * files are not downloaded here; that is a later slice.
+ * stopped: it never creates a second clip once one clip id is stored. If an
+ * attempt was sent but no id came back, the retry first looks in Get Clips
+ * for the clip that attempt made, and reuses it. When the clip is ready,
+ * FetchClipFile downloads the files.
  */
 class CreateClipForMarker implements ShouldQueue
 {
@@ -47,6 +49,12 @@ class CreateClipForMarker implements ShouldQueue
 
     /** Used when the mod's note fails AutoMod as a clip title. */
     public const FALLBACK_TITLE = 'EDOS live clip';
+
+    /** A retry reuses a clip made up to this long before the last attempt. */
+    public const REUSE_WINDOW_SECONDS = 60;
+
+    /** Seconds of slack when matching an earlier clip's start in the VOD. */
+    public const REUSE_OFFSET_TOLERANCE = 2;
 
     /** Helix's limit is not documented; the Twitch clip editor allows 100. */
     public const TITLE_MAX = 100;
@@ -122,6 +130,40 @@ class CreateClipForMarker implements ShouldQueue
         $duration = min(self::DURATION_SECONDS, $vodOffset);
         $title = $this->title($marker);
 
+        // A retry after an attempt that may have reached Twitch (a timeout, a
+        // 5xx, a worker that died) looks for that attempt's clip first, so it
+        // does not make a second one.
+        if ($marker->clip_attempted_at !== null) {
+            $lookup = $helix->clipsSince($marker->broadcaster_id, $marker->clip_attempted_at->copy()->subSeconds(self::REUSE_WINDOW_SECONDS));
+
+            if ($lookup->status() === 429) {
+                $this->release(ClipHelix::retryAfter($lookup));
+
+                return;
+            }
+            if ($lookup->serverError()) {
+                $lookup->throw();
+            }
+
+            $earlier = $lookup->successful() ? $this->earlierClip($marker, (array) $lookup->json('data'), $vodOffset - $duration, [$title, self::FALLBACK_TITLE]) : null;
+            if ($earlier !== null) {
+                $marker->update([
+                    'clip_id' => (string) $earlier['id'],
+                    'clip_edit_url' => isset($earlier['url']) ? (string) $earlier['url'] : null,
+                    'clip_requested_at' => now(),
+                    'status' => StreamMarkerStatus::ClipProcessing,
+                    'error' => null,
+                ]);
+                $this->release(self::POLL_SECONDS);
+
+                return;
+            }
+        }
+
+        // Recorded before the request goes out: if this attempt dies after
+        // Twitch made the clip, the next one knows to look for it.
+        $marker->update(['clip_attempted_at' => now()]);
+
         $response = $helix->createClipFromVod($marker->broadcaster_id, (string) $marker->vod_id, $vodOffset, $duration, $title);
 
         if ($response->status() === 400 && Str::contains(ClipHelix::message($response), 'AutoMod', true) && $title !== self::FALLBACK_TITLE) {
@@ -170,9 +212,7 @@ class CreateClipForMarker implements ShouldQueue
             return;
         }
 
-        $row = collect((array) $downloads->json('data'))->firstWhere('clip_id', $marker->clip_id) ?? $downloads->json('data.0');
-        $landscape = is_array($row) && is_string($row['landscape_download_url'] ?? null) ? $row['landscape_download_url'] : null;
-        $portrait = is_array($row) && is_string($row['portrait_download_url'] ?? null) ? $row['portrait_download_url'] : null;
+        ['landscape' => $landscape, 'portrait' => $portrait] = ClipHelix::downloadUrls($downloads, (string) $marker->clip_id);
 
         if ($landscape === null && $portrait === null) {
             $this->pollAgainOrFail($marker, 'The clip exists but Twitch gave no download URL for it.');
@@ -184,9 +224,53 @@ class CreateClipForMarker implements ShouldQueue
             'landscape_download_url' => $landscape,
             'portrait_download_url' => $portrait,
             'download_urls_expire_at' => self::expiry(array_filter([$landscape, $portrait])),
+            'clip_duration_seconds' => is_numeric($response->json('data.0.duration')) ? (float) $response->json('data.0.duration') : null,
             'status' => StreamMarkerStatus::ClipReady,
             'error' => null,
         ]);
+
+        // Fetch the files now: the download URLs are temporary.
+        FetchClipFile::dispatch($marker->id);
+    }
+
+    /**
+     * A clip in Get Clips that an earlier attempt for this marker made: the
+     * broadcaster created it (ARE clips with their token) from this VOD at
+     * this offset. Get Clips leaves vod_offset null for minutes after a live
+     * clip, so a clip without one matches on the title instead. A clip that
+     * another marker already owns never matches.
+     *
+     * @param  array<int, mixed>  $clips
+     * @param  list<string>  $titles
+     * @return array<string, mixed>|null
+     */
+    private function earlierClip(StreamMarker $marker, array $clips, int $start, array $titles): ?array
+    {
+        $taken = StreamMarker::whereNotNull('clip_id')->where('broadcaster_id', $marker->broadcaster_id)->pluck('clip_id')->all();
+
+        foreach ($clips as $clip) {
+            if (! is_array($clip) || empty($clip['id']) || in_array((string) $clip['id'], $taken, true)) {
+                continue;
+            }
+            if ((string) ($clip['creator_id'] ?? '') !== $marker->broadcaster_id) {
+                continue;
+            }
+            $videoId = (string) ($clip['video_id'] ?? '');
+            if ($videoId !== '' && $videoId !== $marker->vod_id) {
+                continue;
+            }
+
+            $offset = $clip['vod_offset'] ?? null;
+            $matches = is_numeric($offset)
+                ? abs((int) $offset - $start) <= self::REUSE_OFFSET_TOLERANCE
+                : in_array((string) ($clip['title'] ?? ''), $titles, true);
+
+            if ($matches) {
+                return $clip;
+            }
+        }
+
+        return null;
     }
 
     /**

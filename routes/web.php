@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\AttributionController;
+use App\Http\Controllers\ClipFileController;
 use App\Http\Controllers\ShortLinkRedirectController;
 use App\Http\Controllers\StreamSafePackController;
+use App\Models\StreamMarker;
 use App\Models\Track;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Session\Middleware\StartSession;
@@ -42,6 +44,11 @@ Route::get('moderation', function () {
 Route::view('clips', 'clips')
     ->middleware(['auth', 'not-banned', 'can:moderate'])
     ->name('clips.index');
+Route::get('clips/{marker}/{variant}.mp4', ClipFileController::class)
+    ->whereNumber('marker')
+    ->whereIn('variant', StreamMarker::VARIANTS)
+    ->middleware(['auth', 'not-banned', 'can:moderate'])
+    ->name('clips.file');
 
 Route::get('/visualizer', function () {
     return view('visualizer');

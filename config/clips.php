@@ -28,4 +28,27 @@ return [
 
     'download_url_ttl_seconds' => (int) env('CLIPS_DOWNLOAD_URL_TTL_SECONDS', 1800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Slice 2: fetching clip files (#11)
+    |--------------------------------------------------------------------------
+    |
+    | disk: where FetchClipFile stores the MP4s. It must be private: files
+    | reach mods only through the moderate-gated clips.file route, and their
+    | paths are never shown. "local" is storage/app/private.
+    |
+    | max_file_bytes: refuse anything larger. A 60 s 1080p60 clip is tens of MB.
+    |
+    | download_hosts: the only hosts a clip file is fetched from, so a bad URL
+    | from upstream cannot point the server at anything else. Matched exactly
+    | or as a parent domain.
+    |
+    */
+
+    'disk' => env('CLIPS_DISK', 'local'),
+
+    'max_file_bytes' => (int) env('CLIPS_MAX_FILE_BYTES', 300 * 1024 * 1024),
+
+    'download_hosts' => array_values(array_filter(array_map('trim', explode(',', (string) env('CLIPS_DOWNLOAD_HOSTS', 'twitchcdn.net,twitch.tv,jtvnw.net'))))),
+
 ];

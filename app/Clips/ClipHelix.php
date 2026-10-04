@@ -7,6 +7,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
@@ -78,6 +79,19 @@ class ClipHelix
         return $this->request($broadcasterId)->get('/clips', ['id' => $clipId]);
     }
 
+    /**
+     * GET /clips?broadcaster_id=...&started_at=... : the channel's clips made
+     * since $since, up to 100. Used to find a clip an earlier attempt made.
+     */
+    public function clipsSince(string $broadcasterId, Carbon $since): Response
+    {
+        return $this->request($broadcasterId)->get('/clips', [
+            'broadcaster_id' => $broadcasterId,
+            'started_at' => $since->copy()->utc()->format('Y-m-d\TH:i:s\Z'),
+            'first' => 100,
+        ]);
+    }
+
     /** GET /clips/downloads. Either URL may be null. */
     public function getClipDownload(string $broadcasterId, string $clipId): Response
     {
@@ -86,6 +100,22 @@ class ClipHelix
             'editor_id' => $broadcasterId,
             'clip_id' => $clipId,
         ]);
+    }
+
+    /**
+     * The two download URLs for a clip from a Get Clips Download response.
+     * Either may be null.
+     *
+     * @return array{landscape: string|null, portrait: string|null}
+     */
+    public static function downloadUrls(Response $response, string $clipId): array
+    {
+        $row = collect((array) $response->json('data'))->firstWhere('clip_id', $clipId) ?? $response->json('data.0');
+
+        return [
+            'landscape' => is_array($row) && is_string($row['landscape_download_url'] ?? null) ? $row['landscape_download_url'] : null,
+            'portrait' => is_array($row) && is_string($row['portrait_download_url'] ?? null) ? $row['portrait_download_url'] : null,
+        ];
     }
 
     /** Twitch's own error message from a Helix error body, if it gave one. */

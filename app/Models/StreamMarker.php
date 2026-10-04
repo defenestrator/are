@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Clips\ClipReviewStatus;
 use App\Clips\StreamMarkerStatus;
 use Database\Factories\StreamMarkerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -28,6 +30,19 @@ use Illuminate\Support\Carbon;
  * @property string|null $landscape_download_url
  * @property string|null $portrait_download_url
  * @property Carbon|null $download_urls_expire_at
+ * @property Carbon|null $clip_attempted_at
+ * @property float|null $clip_duration_seconds
+ * @property string|null $landscape_file_path
+ * @property string|null $portrait_file_path
+ * @property int|null $file_bytes
+ * @property Carbon|null $fetched_at
+ * @property string|null $fetch_error
+ * @property ClipReviewStatus $review_status
+ * @property string|null $title
+ * @property float|null $trim_start_seconds
+ * @property float|null $trim_end_seconds
+ * @property int|null $reviewed_by_user_id
+ * @property Carbon|null $reviewed_at
  * @property Carbon|null $created_at
  */
 class StreamMarker extends Model
@@ -51,7 +66,23 @@ class StreamMarker extends Model
         'landscape_download_url',
         'portrait_download_url',
         'download_urls_expire_at',
+        'clip_attempted_at',
+        'clip_duration_seconds',
+        'landscape_file_path',
+        'portrait_file_path',
+        'file_bytes',
+        'fetched_at',
+        'fetch_error',
+        'review_status',
+        'title',
+        'trim_start_seconds',
+        'trim_end_seconds',
+        'reviewed_by_user_id',
+        'reviewed_at',
     ];
+
+    /** File variants Get Clips Download offers. */
+    public const VARIANTS = ['landscape', 'portrait'];
 
     protected function casts(): array
     {
@@ -60,6 +91,14 @@ class StreamMarker extends Model
             'position_seconds' => 'integer',
             'clip_requested_at' => 'datetime',
             'download_urls_expire_at' => 'datetime',
+            'clip_attempted_at' => 'datetime',
+            'clip_duration_seconds' => 'float',
+            'file_bytes' => 'integer',
+            'fetched_at' => 'datetime',
+            'review_status' => ClipReviewStatus::class,
+            'trim_start_seconds' => 'float',
+            'trim_end_seconds' => 'float',
+            'reviewed_at' => 'datetime',
         ];
     }
 
@@ -77,6 +116,50 @@ class StreamMarker extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by_user_id');
+    }
+
+    /**
+     * @return HasMany<ClipDecision, $this>
+     */
+    public function decisions(): HasMany
+    {
+        return $this->hasMany(ClipDecision::class);
+    }
+
+    /**
+     * The clip's length in seconds: what Get Clips reported, or what was
+     * asked for (60 s, or less for a marker in the stream's first minute).
+     */
+    public function clipDuration(): float
+    {
+        return $this->clip_duration_seconds ?? (float) min(60, (int) $this->position_seconds + 15);
+    }
+
+    /** The stored file's path for a variant, or null. Never send this to a browser. */
+    public function filePath(string $variant): ?string
+    {
+        return match ($variant) {
+            'landscape' => $this->landscape_file_path,
+            'portrait' => $this->portrait_file_path,
+            default => null,
+        };
+    }
+
+    public function downloadUrl(string $variant): ?string
+    {
+        return match ($variant) {
+            'landscape' => $this->landscape_download_url,
+            'portrait' => $this->portrait_download_url,
+            default => null,
+        };
     }
 
     public function downloadUrlsExpired(): bool

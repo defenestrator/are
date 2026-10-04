@@ -7,6 +7,7 @@ use App\Clips\ClipHelix;
 use App\Clips\StreamMarkerStatus;
 use App\IdentityProvider;
 use App\Jobs\Clips\CreateClipForMarker;
+use App\Jobs\Clips\FetchClipFile;
 use App\Jobs\EventSub\HandleChatMessage;
 use App\Jobs\PostChatReply;
 use App\Models\BroadcasterToken;
@@ -29,8 +30,10 @@ use Livewire\Volt\FragmentAlias;
 
 // Replies to chat (#89) are queued; keep them off Helix so each test sees only
 // the clip pipeline's own calls. The reply itself is asserted where it matters.
+// FetchClipFile has its own tests (ClipApprovalTest). No test may reach the network.
 beforeEach(function () {
-    Queue::fake([PostChatReply::class]);
+    Queue::fake([PostChatReply::class, FetchClipFile::class]);
+    Http::preventStrayRequests();
 });
 
 function clipBroadcasterToken(string $id = '1000', ?array $scopes = null): BroadcasterToken
@@ -406,6 +409,9 @@ test('the clip job cuts the minute ending 15 s after the marker from the live VO
         ->and($marker->landscape_download_url)->toBe('https://production.assets.clips.twitchcdn.net/landscape.mp4')
         ->and($marker->portrait_download_url)->toBeNull()
         ->and($marker->download_urls_expire_at->getTimestamp())->toBe(now()->addSeconds(config('clips.download_url_ttl_seconds'))->getTimestamp());
+
+    // The URLs are temporary, so the files are fetched straight away.
+    Queue::assertPushed(FetchClipFile::class, fn (FetchClipFile $job) => $job->markerId === $marker->id);
 });
 
 test('a marker in the first minute of the stream gets a shorter clip, since vod_offset must cover the duration', function () {
@@ -625,16 +631,14 @@ test('a moderator sees markers and their clip status, newest first', function ()
     $mod = clipModerator();
     StreamMarker::factory()->markerFailed('Twitch would not add a marker: the channel must be live')->create(['description' => 'older one', 'created_at' => now()->subHour()]);
     StreamMarker::factory()->ready()->create(['description' => 'the big drop', 'position_seconds' => 3725, 'created_by_user_id' => $mod->id]);
-    StreamMarker::factory()->ready()->create(['description' => 'stale links', 'download_urls_expire_at' => now()->subMinute()]);
+    StreamMarker::factory()->ready()->create(['description' => 'not fetched yet']);
 
-    $this->actingAs($mod)->get('/clips')
+    $this->actingAs($mod)->get('/clips?show=all')
         ->assertOk()
-        ->assertSeeInOrder(['stale links', 'the big drop', 'older one'])
+        ->assertSeeInOrder(['not fetched yet', 'the big drop', 'older one'])
         ->assertSee('1:02:05')
         ->assertSee('Clip ready')
-        ->assertSee('Landscape MP4')
-        ->assertSee('https://production.assets.clips.twitchcdn.net/landscape.mp4')
-        ->assertSee('Download links expired')
+        ->assertSee('Downloading the file')
         ->assertSee('Marker failed')
         ->assertSee('the channel must be live');
 });
