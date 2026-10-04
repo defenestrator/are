@@ -2,7 +2,7 @@
 //
 // No imports and no globals, so node:test can exercise it with fakes
 // (resources/js/tests/visualizer-audio.test.js). The settings come from
-// #visualizer-config, rendered by App\View\Components\visualizer.
+// #visualizer-config, rendered by App\View\Components\Visualizer.
 
 export const LOG_PREFIX = '[ARE visualizer]';
 
