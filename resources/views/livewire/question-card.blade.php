@@ -129,7 +129,7 @@ new class extends Component {
                 @endif
 
                 <div class="flex items-center pt-2 gap-2 p-3">
-                    <img src="{{ $question->user->twitch_avatar_url }}" size="xs" class="w-10 rounded-full" />
+                    <flux:avatar circle :src="$question->user->avatar_url" :initials="$question->user->initials()" :alt="$question->user->name" />
                     <div class="flex-row" variant="strong">
                         {{ $question->user->name }}
                         @if ($showIdentities)

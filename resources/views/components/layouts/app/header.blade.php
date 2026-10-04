@@ -39,7 +39,7 @@
             <flux:dropdown position="top" align="end">
                 <flux:profile
                     class="cursor-pointer"
-                    :avatar="auth()->user()->twitch_avatar_url"
+                    :avatar="auth()->user()->avatar_url"
                     :initials="auth()->user()->initials()"
                 />
 
@@ -51,7 +51,11 @@
                                     <span
                                         class="flex h-full w-full items-center justify-center rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white"
                                     >
-                                        <img src="{{ auth()->user()->twitch_avatar_url }}" />
+                                        @if (auth()->user()->avatar_url)
+                                            <img src="{{ auth()->user()->avatar_url }}" alt="" />
+                                        @else
+                                            {{ auth()->user()->initials() }}
+                                        @endif
                                     </span>
                                 </span>
 

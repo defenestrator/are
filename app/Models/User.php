@@ -119,6 +119,22 @@ class User extends Authenticatable
     }
 
     /**
+     * The picture to show for this person: the first avatar among their
+     * identities, oldest first, so it comes from the account they first
+     * signed in with (the one that names them) when that account has one.
+     * Null when none has a picture; views fall back to initials.
+     *
+     * @return Attribute<mixed, never>
+     */
+    protected function avatarUrl(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->identities
+            ->sortBy('id')
+            ->map(fn (Identity $identity) => $identity->avatar_url)
+            ->first(fn (?string $url) => filled($url)));
+    }
+
+    /**
      * @return Attribute<mixed, never>
      */
     protected function facebookId(): Attribute

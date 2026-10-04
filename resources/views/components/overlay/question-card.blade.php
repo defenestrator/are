@@ -4,7 +4,7 @@
     size; the interactive card on /vote keeps its vote and delete buttons.
 
     Expects a question from Question::getSortedQuestions() or
-    getRecentQuestions(), which select `votes` and eager-load `user`.
+    getRecentQuestions(), which select `votes` and eager-load `user.identities`.
 --}}
 @props([
     'question',
@@ -14,7 +14,7 @@
 
 @php
     $name = $question->user?->name ?? 'Someone';
-    $avatar = $question->user?->twitch_avatar_url;
+    $avatar = $question->user?->avatar_url;
 @endphp
 
 <article {{ $attributes->class([
