@@ -121,10 +121,14 @@ class Identities
         }
 
         try {
-            $identity = $user->identities()->create($attributes + [
+            // Its own transaction, which is a savepoint when a caller already
+            // has one open (LinkCode::confirm does). On PostgreSQL a failed
+            // insert aborts the whole transaction, so without the savepoint
+            // the query below would fail with SQLSTATE[25P02] (#103).
+            $identity = DB::transaction(fn () => $user->identities()->create($attributes + [
                 'provider' => $provider,
                 'provider_user_id' => $providerUserId,
-            ]);
+            ]));
         } catch (UniqueConstraintViolationException) {
             // Someone else, or this user in another tab, linked it meanwhile.
             throw Identity::for($provider, $providerUserId)->where('user_id', $user->id)->exists()
