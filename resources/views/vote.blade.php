@@ -12,7 +12,6 @@ use Livewire\Attributes\Computed;
 
 new class extends Component {
     public $question = "";
-    public $userVotes = [];
 
     /**
      * A topic change is rare and alters the submit form, so it re-renders the
@@ -35,8 +34,17 @@ new class extends Component {
         return Question::cachedQueue();
     }
 
-    public function mount() {
-        $this->userVotes = auth()->user()->votes()->get()
+    /**
+     * The viewer's own votes, read on every render: a card whose total changed
+     * is remounted (its key carries vote_version), and must show their vote as
+     * it is now, not as it was when the page loaded.
+     *
+     * @return array<int, int>
+     */
+    #[Computed]
+    public function userVotes(): array
+    {
+        return auth()->user()->votes()->get()
             ->mapWithKeys(fn($vote) => [$vote->question_id => $vote->count])
             ->toArray();
     }
@@ -113,7 +121,7 @@ new class extends Component {
                 <ul x-ref="top">
                     @foreach ($top as $question)
                         <li wire:key="hot-li-{{ $question->id }}" data-question-id="{{ $question->id }}">
-                            <livewire:question-card @question-deleted="$refresh" :user-votes="$userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'hot-'.$question->id" />
+                            <livewire:question-card @question-deleted="$refresh" :user-votes="$this->userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'hot-'.$question->id.'-v'.$question->vote_version" />
                         </li>
                     @endforeach
                 </ul>
@@ -124,7 +132,7 @@ new class extends Component {
                 <ul>
                     @foreach ($recent as $question)
                         <li wire:key="recent-li-{{ $question->id }}" data-question-id="{{ $question->id }}">
-                            <livewire:question-card @question-deleted="$refresh" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'recent-'.$question->id" />
+                            <livewire:question-card @question-deleted="$refresh" :user-votes="$this->userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'recent-'.$question->id.'-v'.$question->vote_version" />
                         </li>
                     @endforeach
                 </ul>

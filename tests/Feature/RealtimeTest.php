@@ -195,6 +195,60 @@ test('the vote page has no polling and listens on one questions channel in the b
         ->assertDontSee("questions.{$question->id}");
 });
 
+// Until production has Reverb (BROADCAST_CONNECTION=log, no keys), the build
+// has no Echo and live-queue.js polls with $refresh instead.
+test('without Reverb the vote page still renders the client hook that falls back to polling', function () {
+    config(['broadcasting.default' => 'log', 'reverb.apps.apps.0.key' => null]);
+    $question = Question::factory()->create();
+
+    $this->actingAs(User::factory()->create())
+        ->get('/vote')
+        ->assertOk()
+        ->assertSeeHtml('x-data="liveQueue"')
+        ->assertSeeHtml('data-vote-count="'.$question->id.'"')
+        ->assertDontSee('wire:poll', false);
+});
+
+test('a fallback poll shows new totals: cards are keyed by vote_version, so changed ones remount', function () {
+    $question = Question::factory()->create();
+    $this->actingAs($viewer = User::factory()->create());
+    $page = votePage()->assertSeeHtml('data-vote-count="'.$question->id.'" data-vote-version="0"');
+
+    // Another viewer votes, with no socket to tell this page.
+    $question->recordVote(User::factory()->create(), 1);
+
+    $page->call('$refresh')
+        ->assertSeeHtml('data-vote-count="'.$question->id.'" data-vote-version="1"');
+});
+
+test('a fallback poll with nothing changed reuses the cached queue and remounts no card', function () {
+    Question::factory()->count(3)->create();
+    $this->actingAs(User::factory()->create());
+    $page = votePage();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $page->call('$refresh');
+    $queries = collect(DB::getQueryLog())->pluck('query');
+
+    expect($queries->filter(fn (string $q) => str_contains($q, 'sum(question_votes.count)')))->toHaveCount(0)
+        ->and($page->html())->not->toContain('data-vote-version');
+});
+
+test('a remounted card shows the viewer\'s own vote as it is now, not as it was at page load', function () {
+    $question = Question::factory()->create();
+    $this->actingAs($viewer = User::factory()->create());
+    $page = votePage();
+    // A primary (accent) upvote button marks the viewer's own upvote.
+    $upvoted = fn (string $html) => preg_match('/<button[^>]*bg-\[var\(--color-accent\)\][^>]*wire:click="upvote\('.$question->id.'\)"/', $html) === 1;
+    expect($upvoted($page->html()))->toBeFalse();
+
+    // The viewer votes from chat or another tab, then the page polls.
+    $question->recordVote($viewer, 1);
+
+    expect($upvoted($page->call('$refresh')->html()))->toBeTrue();
+});
+
 test('a vote costs other viewers no server request: no Livewire component listens for VoteCast (#33)', function () {
     $question = Question::factory()->create();
     $this->actingAs(User::factory()->create());

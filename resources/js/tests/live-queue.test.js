@@ -1,7 +1,7 @@
 // Run with: npm run test:js (node --test, no dependencies).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {REFRESH_JITTER_MS, REFRESH_MIN_MS, liveQueue} from '../live-queue.js';
+import {POLL_JITTER_MS, POLL_MIN_MS, REFRESH_JITTER_MS, REFRESH_MIN_MS, liveQueue} from '../live-queue.js';
 
 // Just enough DOM for live-queue.js: attribute selectors, children, append()
 // that moves nodes, remove() and lastElementChild.
@@ -70,13 +70,19 @@ function card(id, votes, version = 0) {
     return new El('li', {questionId: id}).add(new El('p', {voteCount: id, voteVersion: version}, String(votes)));
 }
 
-/** A vote page with Top and New lists, and a controllable clock. */
-function page(top, recent = []) {
+/**
+ * A vote page with Top and New lists, a controllable clock and a fake Echo.
+ * `status` is the socket's state at start (Echo's connectionStatus()), or
+ * `null` for a build without Echo. `setStatus()` simulates the connector's
+ * state changes.
+ */
+function page(top, recent = [], {status = 'connected'} = {}) {
     const topList = new El('ul').add(...top.map(([id, votes, version]) => card(id, votes, version)));
     const recentList = new El('ul').add(...recent.map(([id, votes, version]) => card(id, votes, version)));
     const root = new El('div').add(topList, recentList);
 
-    const timers = [];
+    let timers = [];
+    let nextId = 0;
     const refreshes = [];
     const listeners = {};
     const stopped = [];
@@ -85,13 +91,26 @@ function page(top, recent = []) {
         stopListening(name) { stopped.push(name); return channel; },
     };
     const subscribed = [];
-    const echo = {channel(name) { subscribed.push(name); return channel; }};
+    let current = status;
+    let watcher = null;
+    const echo = {
+        channel(name) { subscribed.push(name); return channel; },
+        connectionStatus: () => current,
+        connector: {
+            onConnectionChange(callback) {
+                watcher = callback;
+
+                return () => { watcher = null; };
+            },
+        },
+    };
+    const setStatus = (next) => { current = next; watcher?.(next); };
 
     const component = liveQueue({
-        echo: () => echo,
+        echo: () => (status === null ? undefined : echo),
         random: () => 0.5,
-        setTimer: (fn, ms) => { timers.push({fn, ms}); return timers.length; },
-        clearTimer: () => {},
+        setTimer: (fn, ms) => { const id = ++nextId; timers.push({id, fn, ms}); return id; },
+        clearTimer: (id) => { timers = timers.filter((t) => t.id !== id); },
     });
     Object.assign(component, {$root: root, $refs: {top: topList}, $wire: {$refresh: () => refreshes.push(1)}});
     component.init();
@@ -99,9 +118,12 @@ function page(top, recent = []) {
     const order = () => topList.children.map((li) => Number(li.dataset.questionId));
     const shown = (id) => root.querySelectorAll(`[data-vote-count="${id}"]`).map((el) => [el.textContent, Number(el.dataset.voteVersion)]);
     const fire = (name, payload) => listeners[name](payload);
-    const runTimers = () => timers.splice(0).forEach((t) => t.fn());
+    // Runs the timers due now; any they schedule wait for the next call.
+    const runTimers = () => { const due = timers; timers = []; due.forEach((t) => t.fn()); };
+    const pending = () => timers;
+    const watching = () => watcher !== null;
 
-    return {component, root, timers, refreshes, subscribed, stopped, order, shown, fire, runTimers};
+    return {component, root, refreshes, subscribed, stopped, order, shown, fire, runTimers, pending, setStatus, watching};
 }
 
 test('subscribes once to the questions channel and stops listening on destroy', () => {
@@ -112,11 +134,11 @@ test('subscribes once to the questions channel and stops listening on destroy', 
     assert.deepEqual(p.stopped.sort(), ['QuestionArchived', 'QuestionSubmitted', 'VoteCast']);
 });
 
-test('does nothing without Echo (no Reverb key in the build)', () => {
-    const component = liveQueue({echo: () => undefined});
+test('without Echo (no Reverb key in the build) it subscribes to nothing', () => {
+    const p = page([], [], {status: null});
 
-    assert.doesNotThrow(() => component.init());
-    assert.equal(component.channel, null);
+    assert.deepEqual(p.subscribed, []);
+    assert.equal(p.component.channel, null);
 });
 
 test('VoteCast writes the total and version into every card for that question, with no request', () => {
@@ -126,7 +148,7 @@ test('VoteCast writes the total and version into every card for that question, w
 
     assert.deepEqual(p.shown(2), [['4', 1], ['4', 1]]);
     assert.deepEqual(p.shown(1), [['5', 3], ['5', 3]]);
-    assert.equal(p.timers.length, 0);
+    assert.equal(p.pending().length, 0);
     assert.equal(p.refreshes.length, 0);
 });
 
@@ -158,10 +180,10 @@ test('a question outside Top that out-votes the last entry triggers one jittered
     const p = page([[1, 5], [2, 3]], [[9, 2]]);
 
     p.fire('VoteCast', {question_id: 9, votes: 3, version: 1});
-    assert.equal(p.timers.length, 0, 'a tie with the last entry does not refresh');
+    assert.equal(p.pending().length, 0, 'a tie with the last entry does not refresh');
 
     p.fire('VoteCast', {question_id: 9, votes: 4, version: 2});
-    assert.equal(p.timers.length, 1);
+    assert.equal(p.pending().length, 1);
 
     p.runTimers();
     assert.equal(p.refreshes.length, 1);
@@ -175,7 +197,7 @@ test('QuestionArchived removes those cards from both lists without a request', (
     assert.deepEqual(p.order(), [1]);
     assert.deepEqual(p.shown(2), []);
     assert.deepEqual(p.shown(3), []);
-    assert.equal(p.timers.length, 0);
+    assert.equal(p.pending().length, 0);
 });
 
 test('archiving the whole queue (ids: null) refreshes instead', () => {
@@ -192,8 +214,8 @@ test('new questions share one refresh after a random 0.5–3 s delay', () => {
 
     p.fire('QuestionSubmitted', {id: 7});
     p.fire('QuestionSubmitted', {id: 8});
-    assert.equal(p.timers.length, 1);
-    assert.equal(p.timers[0].ms, REFRESH_MIN_MS + 0.5 * REFRESH_JITTER_MS);
+    assert.equal(p.pending().length, 1);
+    assert.equal(p.pending()[0].ms, REFRESH_MIN_MS + 0.5 * REFRESH_JITTER_MS);
 
     p.runTimers();
     p.fire('QuestionSubmitted', {id: 9});
@@ -212,4 +234,86 @@ test('the delay spans 0.5 s to 3 s', () => {
 
     assert.equal(delays[0], 500);
     assert.ok(delays[1] < 3000 && delays[1] > 2999);
+});
+
+// --- Fallback polling while the socket is not connected ---------------------
+
+const POLL_MS = POLL_MIN_MS + 0.5 * POLL_JITTER_MS;
+
+test('without Echo (no Reverb key in the build) it polls every 5–10 s, like wire:poll did', () => {
+    const p = page([[1, 5]], [], {status: null});
+
+    assert.equal(p.pending().length, 1);
+    assert.equal(p.pending()[0].ms, POLL_MS);
+
+    p.runTimers();
+    p.runTimers();
+    assert.equal(p.refreshes.length, 2, 'each poll refreshes and schedules the next');
+    assert.equal(p.pending().length, 1);
+});
+
+test('the poll delay spans 5 s to 10 s', () => {
+    const delays = [0, 0.999999].map((r) => {
+        let ms;
+        liveQueue({echo: () => undefined, random: () => r, setTimer: (fn, delay) => { ms = delay; return 1; }}).init();
+
+        return ms;
+    });
+
+    assert.equal(delays[0], 5000);
+    assert.ok(delays[1] < 10000 && delays[1] > 9999);
+});
+
+test('with the socket connected it does not poll', () => {
+    const p = page([[1, 5]]);
+
+    assert.ok(p.watching());
+    assert.equal(p.pending().length, 0);
+    p.runTimers();
+    assert.equal(p.refreshes.length, 0);
+});
+
+test('it polls while the socket is still connecting, and stops once it connects', () => {
+    const p = page([[1, 5]], [], {status: 'connecting'});
+    assert.equal(p.pending().length, 1);
+
+    p.setStatus('connected');
+    assert.equal(p.pending().length, 0);
+    p.runTimers();
+    assert.equal(p.refreshes.length, 0, 'a first connection has nothing to catch up on');
+});
+
+test('a dropped socket polls until it reconnects, then refreshes once to catch up', () => {
+    const p = page([[1, 5]]);
+
+    p.setStatus('disconnected');
+    assert.equal(p.pending().length, 1);
+    p.runTimers();
+    assert.equal(p.refreshes.length, 1);
+
+    p.setStatus('connected');
+    assert.equal(p.pending().length, 1, 'only the catch-up refresh is scheduled');
+    assert.equal(p.pending()[0].ms, REFRESH_MIN_MS + 0.5 * REFRESH_JITTER_MS);
+    p.runTimers();
+    assert.equal(p.refreshes.length, 2);
+
+    p.runTimers();
+    assert.equal(p.refreshes.length, 2, 'polling has stopped');
+});
+
+test('a failed socket keeps polling, and repeated status changes never stack polls', () => {
+    const p = page([[1, 5]]);
+
+    p.setStatus('failed');
+    p.setStatus('disconnected');
+    p.setStatus('connecting');
+    assert.equal(p.pending().length, 1);
+});
+
+test('destroy stops polling and watching the connection', () => {
+    const p = page([[1, 5]], [], {status: 'disconnected'});
+
+    p.component.destroy();
+    assert.equal(p.pending().length, 0);
+    assert.equal(p.watching(), false);
 });
