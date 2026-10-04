@@ -49,6 +49,5 @@ composer run dev            # or: php artisan serve + npm run dev
 | `twitch:sync-moderation` | Pulls bans and moderators for every connected channel |
 | `twitch:eventsub-subscribe` | Creates the EventSub webhook subscriptions |
 | `twitch:generate-event-sub-key` | Writes `TWITCH_HELIX_EVENTSUB_SECRET` to `.env` |
-| `twitch:transcode-stream` | Captures local macOS audio to HLS (macOS only) |
 
 Moderators of any served channel get the same admin powers as the broadcaster. Anyone banned or timed out on a served channel can't log in, submit or vote until the ban lifts.
