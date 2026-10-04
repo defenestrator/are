@@ -69,6 +69,34 @@ The `cta` lower-third rotates between the Orkestera and EDOS Professional Servic
 - **OBS stores them** in its scene collection JSON on the streaming machine.
 - **Pages never pass them on.** Responses send `Referrer-Policy: no-referrer`, so a token never leaves in a `Referer` header, and `Cache-Control: no-store` keeps it out of caches.
 
+### Visualizer audio in OBS
+
+The visualizer reacts to a **capture device**, chosen with `?audio=`:
+
+| `?audio=` | Listens to |
+|---|---|
+| *(absent)* | Nothing on `/overlay/visualizer`; the mesh only drifts. On `/visualizer`, the bundled demo track, started by a click. |
+| `default` | The system's default input device. |
+| `<label>` | The input whose label matches, e.g. `?audio=BlackHole%202ch`. An exact label wins, then a device ID, then the first label containing the text, ignoring case. |
+| `file` | The bundled demo track. It's silent on the overlay, so it can't reach the stream mix. |
+| `none` | Nothing. |
+
+Add `?gain=` (0.1 to 10, default 1) if the mesh barely moves or is always at full stretch. The captured audio is only measured, never played back, so it can't feed back into the stream.
+
+**Getting show audio to the visualizer.** A browser source can't read OBS's mixer. OBS's "Control audio via OBS" option routes the page's *output* into the mixer; it gives the page no input. So the show audio has to reach the page as an input device:
+
+1. Install a virtual audio device: [BlackHole](https://github.com/ExistentialAudio/BlackHole) on macOS or [VB-CABLE](https://vb-audio.com/Cable/) on Windows.
+2. In OBS, go to **Settings → Audio → Advanced → Monitoring Device** and choose the virtual device. In **Edit → Advanced Audio Properties**, set the sources the visualizer should follow (music, mic) to **Monitor and Output**. OBS describes monitoring as "playing the audio of the source back through your monitoring device, configured in Settings" ([Audio Mixer guide](https://obsproject.com/kb/audio-mixer-guide)). Alternatively, send an audio interface's loopback channel to that device, or point `?audio=` straight at the interface.
+3. **Launch OBS with `--enable-media-stream`.** Without it, `getUserMedia` is refused and the visualizer logs `audio denied`. On Windows, add it to the shortcut target (`"…\obs64.exe" --enable-media-stream`). On macOS, run `open -a OBS --args --enable-media-stream`; OBS documents `open -a "OBS" --args` as the way to pass launch parameters on macOS ([Launch Parameters](https://obsproject.com/kb/launch-parameters)). The flag lets **every** browser source use your microphone and camera, so only add browser sources you trust. On macOS, OBS also needs **System Settings → Privacy & Security → Microphone**; the flag only skips the browser's prompt, not the operating system's.
+4. Add the visualizer source with `&audio=BlackHole` (or your device's label) appended to the URL from `php artisan overlay:token visualizer`. Leave **Control audio via OBS** off: the page plays nothing.
+5. Check OBS's log (**Help → Log Files → View Current Log**). It records browser-source console messages, and the visualizer logs a line such as `[ARE visualizer] audio live: Listening to "BlackHole 2ch"`. If it says `no-device`, it lists the labels it can see and retries every 5 seconds. That helps when OBS starts before the virtual device. `denied` means the flag in step 3 is missing. `unsupported` means the page isn't on HTTPS.
+
+Why step 3 is needed, from the source at obs-browser [a162443](https://github.com/obsproject/obs-browser/tree/a1624431ae60cd89560d3d12c8143b1b926b410a):
+- OBS's Chromium already allows audio without a click: `browser-app.cpp:164` sets `autoplay-policy=no-user-gesture-required`.
+- obs-browser registers no `CefPermissionHandler` (`browser-client.hpp:28-36`). CEF's default for a media request is to deny it unless "the `--enable-media-stream` command-line switch is used to grant all permissions" ([CEF `CefPermissionHandler`](https://cef-builds.spotifycdn.com/docs/122.1/classCefPermissionHandler.html)).
+- OBS's own launch-parameter documentation doesn't list this switch. It's a Chromium/CEF switch that browser sources honour, and it's widely used for exactly this ([obs-studio#6329](https://github.com/obsproject/obs-studio/issues/6329), [OBS forum](https://obsproject.com/forum/threads/cant-get-mediastream-permissions-in-browser-source.143858/)).
+- I tested the switch's behaviour in headless Chrome with fake capture devices. I haven't yet tested it in OBS on the streaming machine. Report back if a platform needs something different.
+
 ## Forge deployment and PostgreSQL
 
 Create the database and its owning login before deploying. For bright-viper:

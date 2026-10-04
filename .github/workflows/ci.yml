@@ -122,12 +122,27 @@ jobs:
           echo "Migrations applied on Postgres: $applied"
           test "$applied" -gt 0
 
+  # Unit tests for browser modules that have no dependencies (node:test), so
+  # no npm install is needed. Currently the visualizer's audio source logic.
+  js:
+    name: JavaScript unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: node --test
+        run: npm run test:js
+
   # The single required status check (ruleset protecc-main). Add every job
   # that must pass to `needs`; the ruleset never has to change.
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [tests, tests-pgsql]
+    needs: [tests, tests-pgsql, js]
     runs-on: ubuntu-latest
     steps:
       - name: Require every needed job to have succeeded

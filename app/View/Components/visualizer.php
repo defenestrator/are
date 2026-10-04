@@ -2,23 +2,24 @@
 
 namespace App\View\Components;
 
+use App\Support\VisualizerAudio;
 use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\View\Component;
 
 class visualizer extends Component
 {
-    /**
-     * Create a new component instance.
-     */
-    public function __construct()
-    {
-        //
-    }
+    public VisualizerAudio $audio;
 
     /**
-     * Get the view / contents that represent the component.
+     * @param  bool  $overlay  Rendered as the OBS overlay: no click-to-play,
+     *                         no audible demo track, and a time-based camera orbit.
      */
+    public function __construct(public bool $overlay = false)
+    {
+        $this->audio = VisualizerAudio::fromRequest(request(), $overlay);
+    }
+
     public function render(): View|Closure|string
     {
         return view('components.visualizer');

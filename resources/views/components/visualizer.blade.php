@@ -1,3 +1,14 @@
+{{--
+    Shaders and audio settings for resources/js/visualizer.js, which reads
+    #visualizer-config. See App\Support\VisualizerAudio for the ?audio= and
+    ?gain= parameters. Blade escapes the device label, which comes from the URL.
+--}}
+<div id="visualizer-config" hidden
+     data-audio-mode="{{ $audio->mode }}"
+     data-audio-device="{{ $audio->device }}"
+     data-audio-gain="{{ $audio->gain }}"
+     data-audio-audible="{{ $audio->audible ? 'true' : 'false' }}"
+     data-motion="{{ $overlay ? 'orbit' : 'mouse' }}"></div>
 <script id="vertexshader" type="vertex">
     uniform float u_time;
 

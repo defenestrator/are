@@ -4,6 +4,7 @@ import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer';
 import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass';
 import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass';
+import {LOG_PREFIX, averageFrequency, keepCapturing, openFile, readConfig, scaledLevel} from './visualizer-audio';
         
 // On /overlay/visualizer, clear to transparent so OBS composites the sphere
 // over the scene. The standalone /visualizer page keeps its black background.
@@ -79,22 +80,47 @@ const mesh = new THREE.Mesh(geo, mat);
 scene.add(mesh);
 mesh.material.wireframe = true;
 
-const listener = new THREE.AudioListener();
-camera.add(listener);
+// What to listen to comes from #visualizer-config (see App\Support\VisualizerAudio).
+const config = readConfig(document.getElementById('visualizer-config'));
+const audioContext = new AudioContext();
+let analyser = null;
+let levels = new Uint8Array(0);
 
-const sound = new THREE.Audio(listener);
-const audioLoader = new THREE.AudioLoader();
-audioLoader.load('/A-Measure-of-My-Love-2025-10-02.mp3', function(buffer) {
-    sound.setBuffer(buffer);
-    sound.loop = true;
-    sound.setVolume(1);	
-    window.addEventListener('click', function() {
-        sound.play();
-        
-    });
-});
+function useAnalyser(next) {
+    analyser = next;
+    levels = new Uint8Array(next ? next.frequencyBinCount : 0);
+}
 
-const analyser = new THREE.AudioAnalyser(sound, 32);
+// Readable in OBS's log, which records browser-source console messages.
+function reportAudio(status, detail) {
+    document.documentElement.dataset.audio = status;
+    (status === 'live' ? console.info : console.warn)(`${LOG_PREFIX} audio ${status}: ${detail}`);
+}
+
+// OBS's browser sources allow audio without a user gesture. Ordinary
+// browsers may keep the context suspended until the first click or key.
+audioContext.resume().catch(() => {});
+['click', 'keydown'].forEach((type) => window.addEventListener(type, () => audioContext.resume(), {once: true}));
+
+if (config.mode === 'device') {
+    keepCapturing(audioContext, config.device, navigator.mediaDevices, {onAnalyser: useAnalyser, onStatus: reportAudio});
+} else if (config.mode === 'file') {
+    openFile(audioContext, '/A-Measure-of-My-Love-2025-10-02.mp3', config.audible, fetch).then(({analyser: fileAnalyser, source}) => {
+        useAnalyser(fileAnalyser);
+
+        if (config.audible) {
+            // /visualizer: the old click-to-play demo, audible.
+            window.addEventListener('click', () => audioContext.resume().then(() => source.start()), {once: true});
+            reportAudio('waiting', 'Click to play the bundled track.');
+        } else {
+            // Overlay: analysed silently, so it never reaches the stream mix.
+            source.start();
+            reportAudio('live', 'Analysing the bundled track silently.');
+        }
+    }).catch((error) => reportAudio('error', `Could not load the bundled track: ${error}`));
+} else {
+    reportAudio('none', 'No audio source. Add ?audio=default or ?audio=<device label>.');
+}
 
 const gui = new GUI();
 
@@ -144,8 +170,15 @@ bloomFolder.domElement.style.display = 'none';
 const clock = new THREE.Clock();
 function animate() {
     const elapsed = clock.getElapsedTime() * 0.3; // Slo
-    camera.position.x += (mouseX - camera.position.x) * .05;
-    camera.position.y += (-mouseY - camera.position.y) * 0.5;
+    if (config.motion === 'orbit') {
+        // Nobody moves a mouse over an OBS source: drift slowly instead.
+        const t = clock.getElapsedTime();
+        camera.position.x = Math.sin(t * 0.12) * 3;
+        camera.position.y = -2 + Math.sin(t * 0.08) * 1.5;
+    } else {
+        camera.position.x += (mouseX - camera.position.x) * .05;
+        camera.position.y += (-mouseY - camera.position.y) * 0.5;
+    }
     camera.lookAt(scene.position);
 
     // Smooth color animations: values between 0.2 and 1.0 over time
@@ -159,7 +192,7 @@ function animate() {
     bloomPass.radius    = 0.5 * (0.1 + 0.5 * Math.sin(elapsed + 6.0));
 
     uniforms.u_time.value = clock.getElapsedTime();
-    uniforms.u_frequency.value = analyser.getAverageFrequency();
+    uniforms.u_frequency.value = scaledLevel(averageFrequency(analyser, levels), config.gain);
 
 
     // UnrealBloomPass spreads the sphere's alpha across the whole frame, which
