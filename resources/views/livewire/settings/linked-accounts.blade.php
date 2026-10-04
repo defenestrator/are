@@ -3,11 +3,32 @@
 use App\Exceptions\IdentityLinkException;
 use App\Identities;
 use App\IdentityProvider;
+use App\Models\LinkCode;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 new class extends Component {
+    /** The code just issued, in display form. Shown once; only its HMAC is stored. */
+    #[Locked]
+    public ?string $linkCode = null;
+
+    #[Locked]
+    public ?string $linkCodeExpiresAt = null;
+
+    public function issueLinkCode(): void
+    {
+        $user = Auth::user();
+
+        // Persistent middleware already signs banned users out; this keeps the
+        // rule even where it does not run. Linking itself refuses them too.
+        abort_if($user->isBanned(), 403);
+
+        $this->linkCode = LinkCode::issueFor($user);
+        $this->linkCodeExpiresAt = now()->addMinutes(LinkCode::MINUTES)->toIso8601String();
+    }
+
     public function unlink(int $identityId): void
     {
         $user = Auth::user();
@@ -49,6 +70,22 @@ new class extends Component {
             fn (IdentityProvider $provider) => ! $linked->contains($provider),
         ));
     }
+
+    /**
+     * Providers not yet linked that link by typing a code into their chat.
+     *
+     * @return list<IdentityProvider>
+     */
+    #[Computed]
+    public function chatLinkable(): array
+    {
+        $linked = $this->identities->map(fn ($identity) => $identity->provider);
+
+        return array_values(array_filter(
+            IdentityProvider::cases(),
+            fn (IdentityProvider $provider) => $provider->linksThroughChat() && ! $linked->contains($provider),
+        ));
+    }
 }; ?>
 
 <section class="mt-10 space-y-4">
@@ -84,6 +121,24 @@ new class extends Component {
             </li>
         @endforeach
     </ul>
+
+    @foreach ($this->chatLinkable as $provider)
+        <div class="space-y-2" wire:key="chat-link-{{ $provider->value }}">
+            @if ($linkCode)
+                <flux:text>
+                    {{ __('Type this in :provider chat within :minutes minutes:', ['provider' => $provider->label(), 'minutes' => \App\Models\LinkCode::MINUTES]) }}
+                </flux:text>
+                <p class="font-mono text-2xl tracking-widest select-all" data-link-code>!link {{ $linkCode }}</p>
+                <flux:text class="text-sm text-zinc-500">
+                    {{ __('It works once, from the account you want to link. Refresh this page after typing it.') }}
+                </flux:text>
+            @else
+                <flux:button size="sm" wire:click="issueLinkCode">
+                    {{ __('Link :provider', ['provider' => $provider->label()]) }}
+                </flux:button>
+            @endif
+        </div>
+    @endforeach
 
     @if ($this->linkable)
         <div class="flex flex-wrap gap-2">

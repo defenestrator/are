@@ -30,6 +30,11 @@ class IdentityLinkException extends RuntimeException
         return new self('That account is not linked to you.');
     }
 
+    public static function accountBanned(IdentityProvider $provider): self
+    {
+        return new self("That {$provider->label()} account is banned here, so it cannot be linked.");
+    }
+
     public static function bannedLink(): self
     {
         return new self('You cannot link accounts while you are banned or timed out.');

@@ -33,6 +33,17 @@ enum IdentityProvider: string
     }
 
     /**
+     * Whether Settings offers linking this provider with a one-time code typed
+     * into its chat (`!link CODE`). YouTube links this way because Google
+     * sign-in for viewers is capped until the app is verified (spike #23).
+     * Twitch chat accepts codes too, but Twitch also has a sign-in button.
+     */
+    public function linksThroughChat(): bool
+    {
+        return $this === self::YouTube;
+    }
+
+    /**
      * Providers offered on the sign-in and linked-accounts screens.
      *
      * @return list<self>

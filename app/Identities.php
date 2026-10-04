@@ -85,13 +85,25 @@ class Identities
      */
     public static function link(User $user, IdentityProvider $provider, ProviderAccount $account): Identity
     {
+        return self::linkAccount($user, $provider, (string) $account->getId(), self::attributes($provider, $account));
+    }
+
+    /**
+     * Link a platform account known only by its id and profile, such as a
+     * chat account proving itself with `!link CODE`. Same rules as link().
+     *
+     * @param  array<string, mixed>  $attributes  Profile and token fields for the identity
+     *
+     * @throws IdentityLinkException
+     */
+    public static function linkAccount(User $user, IdentityProvider $provider, string $providerUserId, array $attributes = []): Identity
+    {
         // An account linked while banned would not be in the ban's copy, and
         // would walk free if the user then deleted their account.
         if ($user->isBanned()) {
             throw IdentityLinkException::bannedLink();
         }
 
-        $providerUserId = (string) $account->getId();
         $existing = Identity::for($provider, $providerUserId)->first();
 
         if ($existing !== null && $existing->user_id !== $user->id) {
@@ -99,7 +111,7 @@ class Identities
         }
 
         if ($existing !== null) {
-            $existing->update(self::attributes($provider, $account));
+            $existing->update($attributes);
 
             return $existing;
         }
@@ -109,7 +121,7 @@ class Identities
         }
 
         try {
-            $identity = $user->identities()->create(self::attributes($provider, $account) + [
+            $identity = $user->identities()->create($attributes + [
                 'provider' => $provider,
                 'provider_user_id' => $providerUserId,
             ]);

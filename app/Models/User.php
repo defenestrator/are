@@ -92,6 +92,16 @@ class User extends Authenticatable
     }
 
     /**
+     * One-time codes for linking a chat account with `!link CODE`.
+     *
+     * @return HasMany<LinkCode, $this>
+     */
+    public function linkCodes(): HasMany
+    {
+        return $this->hasMany(LinkCode::class);
+    }
+
+    /**
      * This user's account on $provider, if linked. Reads the loaded relation,
      * so eager-load `identities` when listing users.
      */

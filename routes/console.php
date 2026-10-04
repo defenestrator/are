@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ChatCommandRun;
+use App\Models\LinkCode;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -19,4 +20,4 @@ Schedule::command('horizon:snapshot')->everyFiveMinutes()
     ->when(fn () => config('queue.default') === 'redis');
 
 // Chat commands claim each message id once; a week of claims is ample.
-Schedule::command('model:prune', ['--model' => [ChatCommandRun::class]])->daily();
+Schedule::command('model:prune', ['--model' => [ChatCommandRun::class, LinkCode::class]])->daily();
