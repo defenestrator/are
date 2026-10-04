@@ -26,6 +26,19 @@ class YouTubeApi
     /** Needed by liveChatMessages.insert; youtube.readonly is not enough. */
     public const POST_SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 
+    /**
+     * Asked for alongside POST_SCOPE for YouTube Analytics (#12), which reads
+     * reports.query with these stored tokens (ids=channel==MINE). reports.query
+     * has required youtube.readonly since 2018, and whether force-ssl covers
+     * it is unverified, so both are requested explicitly.
+     *
+     * @var list<string>
+     */
+    public const ANALYTICS_SCOPES = [
+        'https://www.googleapis.com/auth/youtube.readonly',
+        'https://www.googleapis.com/auth/yt-analytics.readonly',
+    ];
+
     /** YouTube refuses chat messages longer than this. */
     public const MAX_MESSAGE_LENGTH = 200;
 

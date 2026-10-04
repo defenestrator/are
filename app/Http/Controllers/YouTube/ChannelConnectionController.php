@@ -14,8 +14,10 @@ use Laravel\Socialite\Two\User as OAuthUser;
 
 /**
  * A broadcaster connects a YouTube channel they own, granting youtube.force-ssl
- * so ARE can post chat replies there (#110). Offline access with forced
- * consent, so Google always returns a refresh token.
+ * so ARE can post chat replies there (#110), plus youtube.readonly and
+ * yt-analytics.readonly for YouTube Analytics (#12), which reads with the
+ * same stored token. Offline access with forced consent, so Google always
+ * returns a refresh token.
  *
  * The channel is whatever channel the granting Google account owns
  * (channels.list?mine=true). It must be one of YOUTUBE_CHANNEL_IDS when that
@@ -28,7 +30,7 @@ class ChannelConnectionController extends Controller
         abort_unless($request->user()->isBroadcaster(), 403);
 
         return $this->provider()
-            ->setScopes(['openid', YouTubeApi::POST_SCOPE])
+            ->setScopes(['openid', YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES])
             ->with(['access_type' => 'offline', 'prompt' => 'consent'])
             ->redirect();
     }
@@ -69,7 +71,12 @@ class ChannelConnectionController extends Controller
             'connected_by' => $request->user()->id,
         ]);
 
-        return redirect('/vote')->with('status', "YouTube channel {$channelId} connected for chat replies.");
+        // Google lets the owner untick scopes. Replies need only POST_SCOPE, so
+        // a partial grant is kept, but say what analytics will be missing.
+        $missing = array_values(array_diff(YouTubeApi::ANALYTICS_SCOPES, $account->approvedScopes));
+        $note = $missing === [] ? '' : ' Analytics will not work until you connect again and allow: '.implode(', ', $missing).'.';
+
+        return redirect('/vote')->with('status', "YouTube channel {$channelId} connected for chat replies.{$note}");
     }
 
     private function failed(string $message): RedirectResponse

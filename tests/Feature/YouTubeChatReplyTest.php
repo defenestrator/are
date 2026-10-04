@@ -264,12 +264,12 @@ test('connecting asks Google for youtube.force-ssl with offline access and force
     expect($location)->toStartWith('https://accounts.google.com/o/oauth2/auth')
         ->toContain('client_id=google-client-id')
         ->toContain('redirect_uri=https://are.test/youtube/broadcaster/callback')
-        ->toContain('scope=openid '.YouTubeApi::POST_SCOPE)
+        ->toContain('scope=openid '.YouTubeApi::POST_SCOPE.' https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly')
         ->toContain('access_type=offline')
         ->toContain('prompt=consent');
 });
 
-function fakeGoogleGrant(array $scopes = ['openid', YouTubeApi::POST_SCOPE], ?string $refreshToken = 'granted-refresh'): void
+function fakeGoogleGrant(array $scopes = ['openid', YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES], ?string $refreshToken = 'granted-refresh'): void
 {
     $account = (new OAuthUser)->setRaw(['sub' => 'google-sub'])->map(['id' => 'google-sub'])
         ->setToken('ya29.granted')
@@ -317,6 +317,28 @@ test('the callback refuses a channel this app does not serve, a grant without po
 
     expect(YouTubeChannelToken::count())->toBe(0);
 })->with(['foreign channel', 'no posting scope', 'no refresh token']);
+
+test('the stored token carries the analytics scopes for #12', function () {
+    fakeGoogleGrant();
+    Http::fake(myChannelResponse());
+
+    $this->actingAs(User::factory()->twitch('1000')->create())->get('/youtube/broadcaster/callback')
+        ->assertSessionHas('status', 'YouTube channel '.YT_CHANNEL.' connected for chat replies.');
+
+    expect(YouTubeChannelToken::sole()->scopes)->toContain(...YouTubeApi::ANALYTICS_SCOPES);
+});
+
+test('a grant without the analytics scopes still connects replies, and says what analytics lacks', function () {
+    fakeGoogleGrant(['openid', YouTubeApi::POST_SCOPE]);
+    Http::fake(myChannelResponse());
+
+    $this->actingAs(User::factory()->twitch('1000')->create())->get('/youtube/broadcaster/callback')
+        ->assertSessionHas('status', fn (string $status) => str_contains($status, 'Analytics will not work')
+            && str_contains($status, 'yt-analytics.readonly')
+            && str_contains($status, 'youtube.readonly'));
+
+    expect(YouTubeChannelToken::sole()->canPost())->toBeTrue();
+});
 
 test('reconnecting replaces the channel\'s token', function () {
     connectYouTube();
