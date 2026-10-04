@@ -68,3 +68,51 @@ The `cta` lower-third rotates between the Orkestera and EDOS Professional Servic
 - **Sentry never receives them.** `App\Support\SentryScrubber`, set as `before_send`, `before_send_transaction` and `before_breadcrumb` in `config/sentry.php`, replaces every `token=` value with `[Filtered]`. Sentry would otherwise attach the full URL and query string to every event, whatever `SENTRY_SEND_DEFAULT_PII` says.
 - **OBS stores them** in its scene collection JSON on the streaming machine.
 - **Pages never pass them on.** Responses send `Referrer-Policy: no-referrer`, so a token never leaves in a `Referer` header, and `Cache-Control: no-store` keeps it out of caches.
+
+## Forge deployment and PostgreSQL
+
+Create the database and its owning login before deploying. For bright-viper:
+
+```dotenv
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=are
+DB_USERNAME=are_app
+# Set DB_PASSWORD separately in Forge's Environment editor.
+```
+
+Use this Forge deploy script (Forge supplies the PHP, Composer and FPM variables):
+
+```bash
+set -euo pipefail
+cd /home/forge/appliedresearchequity.com
+git pull --ff-only origin "$FORGE_SITE_BRANCH"
+bash scripts/forge-deploy.sh
+```
+
+The checked-in script installs locked dependencies with `npm ci`, clears the old
+configuration file, runs migrations **before** clearing the database cache, then
+rebuilds caches, restarts queue workers and reloads PHP-FPM. The FPM reload is
+required when `opcache.validate_timestamps=0`; CLI migrations alone do not refresh
+the web process's cached PHP classes. A failing step stops deployment.
+
+The forward repair migration fills missing `sessions`, `cache`, `cache_locks`,
+`jobs`, `job_batches` and `failed_jobs` tables even when their original migrations
+are already recorded. It checks each table independently and leaves existing
+tables and rows intact. It does not repair arbitrary missing columns or rebuild
+the application's migration ledger. Its rollback deliberately retains these
+shared tables, so reverting code cannot destroy sessions or queued work.
+
+For an initial database, or recovery from a deploy that stopped before migrations:
+
+```bash
+php8.3 artisan config:clear
+php8.3 artisan migrate --force
+php8.3 artisan cache:clear
+```
+
+Do not run `migrate:fresh` or `migrate:reset` in production. Creating the schema
+does not transfer users, questions or votes from a previous database. The tests
+cover the full migration chain, runtime-table repairs and voting on SQLite and
+PostgreSQL 14, including a clean-database deployment preparation and retry.

@@ -139,6 +139,23 @@ test('votes on archived questions are ignored', function () {
     expect($question->voteCount())->toBe(0);
 });
 
+test('active votes work and retries do not duplicate a viewers vote', function (bool $includeUserVotes) {
+    $user = User::factory()->create();
+    $question = Question::factory()->create();
+    $this->actingAs($user);
+    $props = ['question' => $question, 'voteCount' => 0];
+    if ($includeUserVotes) {
+        $props['userVotes'] = [];
+    }
+
+    $card = Volt::test('question-card', $props);
+    $card->call('upvote', $question->id)->call('upvote', $question->id);
+    expect($question->voteCount())->toBe(1);
+    $card->call('downvote', $question->id)->call('downvote', $question->id);
+    expect($question->voteCount())->toBe(-1)
+        ->and(\DB::table('question_votes')->where('question_id', $question->id)->count())->toBe(1);
+})->with(['top suggestions' => true, 'new ideas' => false]);
+
 test('authors can delete their own question but not someone else\'s', function () {
     $author = User::factory()->create();
     $other = User::factory()->create();
