@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use Database\Factories\LeadFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * A Professional Services enquiry from the /about form. consented_at records
@@ -16,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $email
  * @property string|null $company
  * @property string $message
- * @property \Illuminate\Support\Carbon $consented_at
+ * @property Carbon $consented_at
  * @property int|null $short_link_id
  * @property string|null $utm_source
  * @property string|null $utm_medium
@@ -25,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Lead extends Model
 {
-    /** @use HasFactory<\Database\Factories\LeadFactory> */
+    /** @use HasFactory<LeadFactory> */
     use HasFactory;
 
     protected $fillable = [
