@@ -38,6 +38,11 @@ Route::get('moderation', function () {
     ->middleware(['auth', 'not-banned', 'can:moderate'])
     ->name('moderation');
 
+// Clip markers (#11): mods and broadcasters, the seed of the approval queue.
+Route::view('clips', 'clips')
+    ->middleware(['auth', 'not-banned', 'can:moderate'])
+    ->name('clips.index');
+
 Route::get('/visualizer', function () {
     return view('visualizer');
 })->name('visualizer');

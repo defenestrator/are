@@ -24,6 +24,9 @@
                     <flux:navbar.item icon="queue-list" href="{{ route('music.requests') }}" :current="request()->routeIs('music.requests')" wire:navigate>
                         {{ __('Requests') }}
                     </flux:navbar.item>
+                    <flux:navbar.item icon="film" href="{{ route('clips.index') }}" :current="request()->routeIs('clips.index')" wire:navigate>
+                        {{ __('Clips') }}
+                    </flux:navbar.item>
                 @endcan
                 {{-- Leads and attribution share one broadcaster-only rule: LeadPolicy::viewAny. --}}
                 @can('viewAny', App\Models\Lead::class)
@@ -109,6 +112,9 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="queue-list" href="{{ route('music.requests') }}" wire:navigate>
                             {{ __('Requests') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="film" href="{{ route('clips.index') }}" wire:navigate>
+                            {{ __('Clips') }}
                         </flux:navlist.item>
                     @endcan
                     @can('viewAny', App\Models\Lead::class)

@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Chat\ChatCommandRegistry;
+use App\Chat\Commands\ClipMarker;
 use App\Chat\Commands\EdosLink;
 use App\Chat\Commands\LinkAccount;
 use App\Chat\Commands\OrkesteraLink;
@@ -26,6 +27,7 @@ class ChatCommandServiceProvider extends ServiceProvider
             EdosLink::class,
             LinkAccount::class,
             RequestSong::class,
+            ClipMarker::class,
         ], 'chat.commands');
 
         $this->app->singleton(ChatCommandRegistry::class, fn ($app) => new ChatCommandRegistry($app->tagged('chat.commands')));

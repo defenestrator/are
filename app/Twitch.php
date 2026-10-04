@@ -37,7 +37,8 @@ class Twitch
      * Scopes a broadcaster grants when connecting their channel to this app.
      * - moderation:read        list bans and moderators; channel.moderator.* EventSub
      * - channel:moderate       channel.ban / channel.unban EventSub
-     * - channel:manage:broadcast  set the stream title
+     * - channel:manage:broadcast  set the stream title; create stream markers (!clip)
+     * - channel:manage:clips  Create Clip From VOD and Get Clips Download (!clip, #11)
      * - user:read:chat, user:bot, channel:bot  channel.chat.message, read as the broadcaster
      * - user:write:chat         Send Chat Message with the broadcaster's user token
      *   (https://dev.twitch.tv/docs/api/reference/#send-chat-message), for command replies (#89)
@@ -54,6 +55,7 @@ class Twitch
         'moderation:read',
         'channel:moderate',
         'channel:manage:broadcast',
+        'channel:manage:clips',
         'user:read:chat',
         'user:bot',
         'channel:bot',
