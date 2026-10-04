@@ -49,6 +49,24 @@ On Forge, once:
 
 A queue worker must cover the `broadcasts` queue. Horizon (#20) is the plan; until it ships, a plain Forge queue worker needs `--queue=broadcasts,default`.
 
+## Chat Control Bus (`/bus`)
+
+Chat drives games with `!do`. The first game is Chat Plays Orkestera: `!do task Write the README` proposes a task, and `!do #2` backs option 2 of the open vote. The bus only emits the winning task; dispatching it to Orkestera is a separate adapter.
+
+- **Modes**, per game and switchable live on `/bus`:
+  - *democracy*: each window, the option with the most people behind it wins; a tie goes to the first proposed.
+  - *weighted random*: one option is drawn, with odds equal to its share of people.
+  - *anarchy*: every action runs at once, rate-limited per person.
+- **Windows** last the game's `window_seconds` plus the chat lag of the slowest platform in `BUS_PLATFORMS`. A delayed job closes each window, and `bus:resolve` runs every 10 s on the scheduler as a backstop.
+- **One person, one vote.** Ballots belong to users, so someone linked on several platforms has one vote per window, and a new vote replaces their last. Subscribers get cosmetic flair only (`flair: "subscriber"` on an action they proposed), never extra weight.
+- **Moderators**, on `/bus`, choose the running game, switch modes, pause a game, veto an option in the open vote or an action already sent, and throw the **kill switch**. Any moderator can throw it; only a broadcaster can reset it. Operators can use `php artisan bus:kill` (and `--off`). The kill switch, pauses and vetoes are read from the database on every publish, and again when the queued broadcast is sent; nothing caches them.
+- **Audit log:** every chat action is a row in `bus_ballots` (counted, replaced, vetoed, rate-limited, refused while paused or killed, invalid), every action sent is a row in `bus_publications`, and every moderator control is in the moderation audit log.
+
+**Game adapters** get actions either way:
+
+- **Reverb:** subscribe to the public channel `bus.{game}` and listen for `bus.action` (an action to run), `bus.veto` (undo action `id`) and `bus.state` (paused, killed, mode, running). Payloads carry no user data.
+- **Polling**, until production has Reverb or for adapters that cannot hold a socket: `GET /bus/{game}/actions?after={cursor}` with `Authorization: Bearer <token>`. Issue the token with `php artisan bus:token {game}`. The response holds up to 50 actions after the cursor, the next `cursor`, the ids `vetoed` in the last hour, and the bus state. While the kill switch is on it returns no actions.
+
 ## Twitch setup
 
 1. In the Twitch developer console, register **both** callback URLs: `TWITCH_REDIRECT_URL` (viewer login) and `TWITCH_BROADCASTER_REDIRECT_URL` (channel connection).

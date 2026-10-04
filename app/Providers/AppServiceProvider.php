@@ -37,6 +37,10 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('moderateChannel', fn (User $user, string $broadcasterId) => ($user->isBroadcasterOf($broadcasterId) || $user->isModeratorOf($broadcasterId))
             && ! $user->isBanned());
 
+        // Any moderator can throw the Chat Control Bus kill switch; only a
+        // broadcaster can reset it.
+        Gate::define('restoreBus', fn (User $user) => $user->isBroadcaster() && ! $user->isBanned());
+
         // Livewire actions arrive at /livewire/update, which runs only its
         // persistent middleware. Re-apply the ban check to every action on a
         // page whose route had `not-banned`, so a page opened before a ban
@@ -55,6 +59,10 @@ class AppServiceProvider extends ServiceProvider
         // /go/{code} is public. Viewers click a link once or twice, so this only
         // stops loops; which hits count as clicks is ShortLink::recordClick's job.
         RateLimiter::for('short-links', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
+
+        // Game adapters polling the Chat Control Bus: once a second is plenty.
+        RateLimiter::for('bus-adapter', fn (Request $request) => Limit::perMinute(120)
+            ->by($request->ip().'|'.(string) $request->route('game')));
 
         // Every OBS overlay load is one exchange, and "Refresh browser when scene
         // becomes active" makes fast scene switching reload sources often, so each

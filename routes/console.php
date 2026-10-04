@@ -24,6 +24,10 @@ Schedule::command('twitch:sync-moderation')->hourly()->withoutOverlapping();
 Schedule::command('horizon:snapshot')->everyFiveMinutes()
     ->when(fn () => config('queue.default') === 'redis');
 
+// Chat Control Bus: each window has a delayed ResolveBusWindow job; this
+// catches any window it missed (a lost job, or a worker that was down).
+Schedule::command('bus:resolve')->everyTenSeconds()->withoutOverlapping();
+
 // Chat commands claim each message id once; a week of claims is ample.
 Schedule::command('model:prune', ['--model' => [ChatCommandRun::class, LinkCode::class]])->daily();
 

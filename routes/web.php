@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AttributionController;
+use App\Http\Controllers\BusActionsController;
 use App\Http\Controllers\ClipFileController;
 use App\Http\Controllers\ShortLinkRedirectController;
 use App\Http\Controllers\StreamSafePackController;
@@ -49,6 +50,18 @@ Route::get('clips/{marker}/{variant}.mp4', ClipFileController::class)
     ->whereIn('variant', StreamMarker::VARIANTS)
     ->middleware(['auth', 'not-banned', 'can:moderate'])
     ->name('clips.file');
+
+// Chat Control Bus (#9): moderators run it at /bus; game adapters poll
+// /bus/{game}/actions with a token from `bus:token` when Reverb is not there.
+Route::get('bus', function () {
+    return view('bus');
+})
+    ->middleware(['auth', 'not-banned', 'can:moderate'])
+    ->name('bus');
+Route::get('bus/{game}/actions', BusActionsController::class)
+    ->where('game', '[a-z0-9_-]{1,64}')
+    ->middleware('throttle:bus-adapter')
+    ->name('bus.actions');
 
 Route::get('/visualizer', function () {
     return view('visualizer');
