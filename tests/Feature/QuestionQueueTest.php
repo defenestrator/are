@@ -1,13 +1,17 @@
 <?php
 
+use App\Events\QuestionSubmitted;
+use App\Exceptions\QuestionRejected;
 use App\Models\Question;
 use App\Models\Topic;
 use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Models\UserTwitchSubscription;
+use App\QuestionQueue;
 use App\TwitchSubscription;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Once;
 use Livewire\Volt\Volt;
 
@@ -217,3 +221,66 @@ test('the vote page runs the same queries for one card as for a full queue', fun
     expect($full->filter(fn (string $sql) => str_contains($sql, 'twitch_moderators'))->count())->toBeLessThan(5)
         ->and($full->count())->toBe($one->count());
 })->with(['viewer' => false, 'moderator' => true]);
+
+// #81: two submissions at once could both pass the subscriber cap. A true race
+// cannot run in one process, so pin the order instead: the user row is locked,
+// inside the same transaction, before the open questions are counted.
+test('a submission locks the user row before counting their open questions', function () {
+    $user = User::factory()->create();
+    subscribe($user, TwitchSubscription::Tier1);
+    Topic::set('Kale');
+    Question::factory()->count(2)->for($user)->create();
+
+    DB::enableQueryLog();
+    QuestionQueue::submit($user, 'one more about kale');
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+
+    $lock = $queries->search(fn (string $sql) => preg_match('/from ["`]?users["`]? where ["`]?users["`]?\.["`]?id["`]? = \?/i', $sql) === 1);
+    $count = $queries->search(fn (string $sql) => str_contains(strtolower($sql), 'count(*)') && str_contains($sql, 'questions'));
+    $insert = $queries->search(fn (string $sql) => str_starts_with(strtolower($sql), 'insert into') && str_contains($sql, 'questions'));
+
+    expect($lock)->toBeInt()
+        ->and($count)->toBeInt()
+        ->and($insert)->toBeInt()
+        ->and($lock)->toBeLessThan($count)
+        ->and($count)->toBeLessThan($insert);
+
+    // SQLite has no row locks (it locks the whole database for writes), so its
+    // grammar drops FOR UPDATE. Production runs PostgreSQL, where it must be there.
+    if (DB::connection()->getDriverName() === 'pgsql') {
+        expect(strtolower($queries[$lock]))->toContain('for update');
+    }
+});
+
+test('the cap still holds once the lock is in place', function () {
+    $user = User::factory()->create();
+    subscribe($user, TwitchSubscription::Tier1);
+    Topic::set('Kale');
+    Question::factory()->count(5)->for($user)->create();
+
+    QuestionQueue::submit($user, 'the sixth one');
+
+    expect(fn () => QuestionQueue::submit($user, 'the seventh one'))->toThrow(QuestionRejected::class)
+        ->and($user->questions()->active()->count())->toBe(6);
+});
+
+test('QuestionSubmitted is broadcast once, after the locked transaction commits, and not for a rejected submission', function () {
+    $user = User::factory()->create();
+    subscribe($user, TwitchSubscription::Tier1);
+    Topic::set('Kale');
+    Question::factory()->count(5)->for($user)->create();
+
+    // RefreshDatabase wraps each test in a transaction, so "committed" means
+    // back at the level the caller was at before submit() opened its own.
+    $callerLevel = DB::transactionLevel();
+    $dispatchedAt = [];
+    Event::listen(QuestionSubmitted::class, function (QuestionSubmitted $e) use (&$dispatchedAt) {
+        $dispatchedAt[$e->questionId] = DB::transactionLevel();
+    });
+
+    $question = QuestionQueue::submit($user, 'the sixth one');
+    expect(fn () => QuestionQueue::submit($user, 'the seventh one'))->toThrow(QuestionRejected::class);
+
+    expect($dispatchedAt)->toBe([$question->id => $callerLevel]);
+});

@@ -6,6 +6,7 @@ use App\Events\QuestionSubmitted;
 use App\Exceptions\QuestionRejected;
 use App\Models\Question;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -50,16 +51,29 @@ class QuestionQueue
             throw QuestionRejected::invalid($validator->errors()->first('question'));
         }
 
-        if ($user->isBanned()) {
-            throw QuestionRejected::banned();
-        }
+        // Counting open questions and then inserting is not atomic, so two
+        // submissions at once (two !q, or chat and the web) could both pass the
+        // cap. Lock the user's row first: a second submission by the same
+        // person waits here until the first has inserted and committed, and
+        // then counts it. Other users are not blocked.
+        $question = DB::transaction(function () use ($user, $text) {
+            User::whereKey($user->id)->lockForUpdate()->first();
 
-        if (! $user->canSubmitQuestion()) {
-            throw QuestionRejected::limitReached();
-        }
+            if ($user->isBanned()) {
+                throw QuestionRejected::banned();
+            }
 
-        $question = $user->questions()->create(['question' => $text]);
+            if (! $user->canSubmitQuestion()) {
+                throw QuestionRejected::limitReached();
+            }
 
+            return $user->questions()->create(['question' => $text]);
+        });
+
+        // After the commit, outside the transaction, so viewers are never told
+        // about a question that a rollback took back. The event is also
+        // ShouldDispatchAfterCommit, which covers callers that wrap submit()
+        // in a transaction of their own.
         QuestionSubmitted::dispatch($question->id);
 
         return $question;
