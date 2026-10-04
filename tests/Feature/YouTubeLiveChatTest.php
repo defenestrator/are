@@ -270,7 +270,8 @@ test('a response with offlineAt runs its messages, then ends the chat', function
     expect(Question::count())->toBe(1)
         ->and($chat->fresh()->status)->toBe(YouTubeLiveChat::ENDED)
         ->and($chat->fresh()->end_reason)->toBe('offline');
-    Queue::assertNothingPushed();
+    // The new question's QuestionSubmitted broadcast is queued; no next poll is.
+    Queue::assertNotPushed(PollYouTubeLiveChat::class);
 });
 
 test('quotaExceeded waits for the quota to reset at midnight Pacific Time', function () {
