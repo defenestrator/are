@@ -80,4 +80,31 @@ return [
         'webhook_url' => env('ARE_LEADS_WEBHOOK_URL'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | !orkestera and !edos chat commands (#27)
+    |--------------------------------------------------------------------------
+    |
+    | Each replies with `reply`, where :url becomes a tracked short link to
+    | `destination` (a /path or an http(s) URL). The link is tagged with the
+    | chat platform (utm_source) and the current stream (utm_campaign), so it
+    | stays the same for the whole stream. Each command answers at most once
+    | per `cooldown_seconds` in each channel, however many people ask.
+    |
+    */
+
+    'chat_links' => [
+        'cooldown_seconds' => (int) (env('ARE_CHAT_LINK_COOLDOWN_SECONDS') ?: 30),
+
+        'orkestera' => [
+            'destination' => env('ARE_CHAT_ORKESTERA_URL') ?: '/about#orkestera',
+            'reply' => 'Orkestera is the agentic workflow suite EDOS builds: :url',
+        ],
+
+        'edos' => [
+            'destination' => env('ARE_CHAT_EDOS_URL') ?: '/about#work-with-us',
+            'reply' => 'Want EDOS to build something like this with your team? Tell us about it: :url',
+        ],
+    ],
+
 ];

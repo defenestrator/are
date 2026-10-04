@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Chat\ChatCommandRegistry;
+use App\Chat\Commands\EdosLink;
+use App\Chat\Commands\OrkesteraLink;
 use App\Chat\Commands\SubmitQuestion;
 use App\Chat\Commands\VoteOnQuestion;
 use Illuminate\Support\ServiceProvider;
@@ -18,6 +20,8 @@ class ChatCommandServiceProvider extends ServiceProvider
         $this->app->tag([
             SubmitQuestion::class,
             VoteOnQuestion::class,
+            OrkesteraLink::class,
+            EdosLink::class,
         ], 'chat.commands');
 
         $this->app->singleton(ChatCommandRegistry::class, fn ($app) => new ChatCommandRegistry($app->tagged('chat.commands')));
