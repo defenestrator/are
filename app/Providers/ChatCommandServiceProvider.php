@@ -6,6 +6,7 @@ use App\Chat\ChatCommandRegistry;
 use App\Chat\Commands\EdosLink;
 use App\Chat\Commands\LinkAccount;
 use App\Chat\Commands\OrkesteraLink;
+use App\Chat\Commands\RequestSong;
 use App\Chat\Commands\SubmitQuestion;
 use App\Chat\Commands\VoteOnQuestion;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,7 @@ class ChatCommandServiceProvider extends ServiceProvider
             OrkesteraLink::class,
             EdosLink::class,
             LinkAccount::class,
+            RequestSong::class,
         ], 'chat.commands');
 
         $this->app->singleton(ChatCommandRegistry::class, fn ($app) => new ChatCommandRegistry($app->tagged('chat.commands')));

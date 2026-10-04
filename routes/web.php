@@ -80,5 +80,10 @@ Volt::route('music/catalogue', 'music.catalogue')
     ->middleware(['auth', 'not-banned', 'can:viewAny,'.Track::class])
     ->name('music.catalogue');
 
+// Play, skip and clear song requests from !song and channel points.
+Volt::route('music/requests', 'music.requests')
+    ->middleware(['auth', 'not-banned', 'can:moderate'])
+    ->name('music.requests');
+
 require __DIR__.'/auth.php';
 require __DIR__.'/overlays.php';

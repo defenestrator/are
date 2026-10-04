@@ -297,8 +297,8 @@ test('two commands cannot claim the same name', function () {
     expect(fn () => new ChatCommandRegistry([$make(), $make()]))->toThrow(LogicException::class);
 });
 
-test('the app registers !q, !vote, !orkestera, !edos and !link', function () {
-    expect(app(ChatCommandRegistry::class)->names())->toBe(['q', 'vote', 'orkestera', 'edos', 'link']);
+test('the app registers !q, !vote, !orkestera, !edos, !link and !song', function () {
+    expect(app(ChatCommandRegistry::class)->names())->toBe(['q', 'vote', 'orkestera', 'edos', 'link', 'song']);
 });
 
 test('parse splits the name from its arguments', function (string $text, ?array $expected) {

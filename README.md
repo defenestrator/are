@@ -70,7 +70,7 @@ Moderators of any served channel get the same admin powers as the broadcaster. A
 
 Each overlay is a transparent page for an OBS browser source, at `/overlay/{name}` where the name is `queue`, `vote`, `top-vote`, `now-playing`, `captions`, `visualizer` or `cta`. Add `?layout=horizontal` for a 1920×1080 source or `?layout=vertical` for a 1080×1920 one.
 
-Every overlay has its own token. `php artisan overlay:token queue` prints the horizontal and vertical URLs once. Only a hash is stored, so the URL can't be shown again. To replace a leaked URL, run `php artisan overlay:token queue --rotate`; the old URL stops working, and any open copy goes blank on its next refresh. The queue, vote and top-vote overlays refresh every 5 seconds.
+Every overlay has its own token. `php artisan overlay:token queue` prints the horizontal and vertical URLs once. Only a hash is stored, so the URL can't be shown again. To replace a leaked URL, run `php artisan overlay:token queue --rotate`; the old URL stops working, and any open copy goes blank on its next refresh. The queue, vote, top-vote and now-playing overlays refresh every 5 seconds.
 
 The `cta` lower-third rotates between the Orkestera and EDOS Professional Services calls to action. Set `ARE_CTA_ORKESTERA_URL` and `ARE_CTA_EDOS_URL`: an item with no URL is not shown. The copy lives in `config/are.php`.
 
@@ -121,6 +121,14 @@ Why step 3 is needed, from the source at obs-browser [a162443](https://github.co
 - obs-browser registers no `CefPermissionHandler` (`browser-client.hpp:28-36`). CEF's default for a media request is to deny it unless "the `--enable-media-stream` command-line switch is used to grant all permissions" ([CEF `CefPermissionHandler`](https://cef-builds.spotifycdn.com/docs/122.1/classCefPermissionHandler.html)).
 - OBS's own launch-parameter documentation doesn't list this switch. It's a Chromium/CEF switch that browser sources honour, and it's widely used for exactly this ([obs-studio#6329](https://github.com/obsproject/obs-studio/issues/6329), [OBS forum](https://obsproject.com/forum/threads/cant-get-mediastream-permissions-in-browser-source.143858/)).
 - I tested the switch's behaviour in headless Chrome with fake capture devices. I haven't yet tested it in OBS on the streaming machine. Report back if a platform needs something different.
+
+## Music and song requests
+
+Moderators manage the original music catalogue at `/music/catalogue`. They upload each track and its optional stems, and set its Content ID status. A track registered with Content ID can't be marked stream-safe until all four channels are allow-listed with the distributor. Stream-safe tracks are listed publicly at `/music` with their attribution text, for other creators to download.
+
+Viewers request stream-safe tracks with `!song <title or number>` in chat. They can also redeem the channel-point reward set in `MUSIC_SONG_REQUEST_REWARD_ID`, and the text they enter is the song. A track that is already queued or playing isn't added again. Each person may have `MUSIC_REQUESTS_PER_USER` songs waiting (2 by default) through `!song`; channel-point requests don't count toward that limit. Moderators play, skip and clear requests at `/music/requests`. The `now-playing` overlay shows the request on air, with its title, artist and attribution.
+
+To find the reward's id, redeem it once, then read `reward_id` from the newest row in `channel_point_redemptions`. Twitch's [Get Custom Reward](https://dev.twitch.tv/docs/api/reference/#get-custom-reward) endpoint also lists it. Refused redemptions (an unknown or already-queued song) are logged but not refunded, so the broadcaster refunds them by hand from the Twitch redemption queue.
 
 ## Forge deployment and PostgreSQL
 

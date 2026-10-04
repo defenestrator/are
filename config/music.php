@@ -29,4 +29,23 @@ return [
 
     'max_upload_kb' => (int) env('MUSIC_MAX_UPLOAD_KB', 204800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Song requests
+    |--------------------------------------------------------------------------
+    |
+    | requests_per_user: how many songs one person may have waiting in the
+    | request queue at once, through !song. Channel-point requests are paid
+    | for with points, so they do not count against it.
+    |
+    | song_request_reward_id: the Twitch custom reward whose redemptions
+    | become song requests, using the redeemer's text as the song. Leave it
+    | empty to turn channel-point requests off.
+    |
+    */
+
+    'requests_per_user' => (int) env('MUSIC_REQUESTS_PER_USER', 2),
+
+    'song_request_reward_id' => env('MUSIC_SONG_REQUEST_REWARD_ID'),
+
 ];
