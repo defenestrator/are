@@ -26,29 +26,51 @@ class Twitch
      * - moderation:read        list bans and moderators; channel.moderator.* EventSub
      * - channel:moderate       channel.ban / channel.unban EventSub
      * - channel:manage:broadcast  set the stream title
+     * - user:read:chat, user:bot, channel:bot  channel.chat.message, read as the broadcaster
+     * - channel:read:redemptions  channel.channel_points_custom_reward_redemption.add
+     * - channel:read:subscriptions  channel.subscribe
+     * - moderator:read:followers  channel.follow v2, with the broadcaster as moderator
+     * channel.raid, stream.online and stream.offline need no scope.
+     *
+     * @see https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/
      */
     public const BROADCASTER_SCOPES = [
         'moderation:read',
         'channel:moderate',
         'channel:manage:broadcast',
+        'user:read:chat',
+        'user:bot',
+        'channel:bot',
+        'channel:read:redemptions',
+        'channel:read:subscriptions',
+        'moderator:read:followers',
     ];
 
     /**
-     * EventSub subscriptions that keep the local ban and moderator lists current.
+     * EventSub subscriptions this app creates for every channel it serves.
+     * The ban and moderator types keep the local lists current; the rest are
+     * handed to queued jobs in App\Jobs\EventSub.
      */
     public const EVENTSUB_TYPES = [
         'channel.ban',
         'channel.unban',
         'channel.moderator.add',
         'channel.moderator.remove',
+        'channel.chat.message',
+        'channel.channel_points_custom_reward_redemption.add',
+        'channel.subscribe',
+        'channel.raid',
+        'channel.follow',
+        'stream.online',
+        'stream.offline',
     ];
 
     public static function checkUserSubscription(string $accessToken, string $channelId, string $userId): TwitchSubscription
     {
         $response = Http::withHeaders([
             'Client-ID' => Config::get('services.twitch.client_id'),
-            'Authorization' => 'Bearer ' . $accessToken,
-        ])->get(self::HELIX . '/subscriptions/user', [
+            'Authorization' => 'Bearer '.$accessToken,
+        ])->get(self::HELIX.'/subscriptions/user', [
             'broadcaster_id' => $channelId,
             'user_id' => $userId,
         ]);
@@ -60,6 +82,7 @@ class Twitch
             }
 
             $subscription = $data['data'][0];
+
             return TwitchSubscription::tryFrom($subscription['tier']);
         }
 
@@ -67,26 +90,21 @@ class Twitch
     }
 
     /**
-     * @param string $accessToken
-     * @param array $channels
-     * @param string $userId
      * @return Collection<string, TwitchSubscription>
      */
     public static function checkUserSubscriptions(string $accessToken, array $channels, string $userId): Collection
     {
         $headers = [
             'Client-ID' => config('services.twitch.client_id'),
-            'Authorization' => 'Bearer ' . $accessToken,
+            'Authorization' => 'Bearer '.$accessToken,
         ];
 
         $responses = Http::pool(
-            fn(Pool $pool) =>
-            collect($channels)->map(
-                fn($channel) =>
-                $pool
+            fn (Pool $pool) => collect($channels)->map(
+                fn ($channel) => $pool
                     ->as($channel)
                     ->withHeaders($headers)
-                    ->get(self::HELIX . '/subscriptions/user', [
+                    ->get(self::HELIX.'/subscriptions/user', [
                         'broadcaster_id' => $channel,
                         'user_id' => $userId,
                     ])
@@ -101,10 +119,12 @@ class Twitch
                 }
 
                 $subscription = $data['data'][0];
+
                 return TwitchSubscription::tryFrom($subscription['tier']);
             }
 
             logger()->warning($response->json());
+
             return TwitchSubscription::None;
         });
     }
@@ -151,7 +171,7 @@ class Twitch
             ]);
 
             if ($response->failed()) {
-                throw new RuntimeException("Could not refresh the token for broadcaster {$broadcasterId}; they need to reconnect. Twitch said: " . $response->body());
+                throw new RuntimeException("Could not refresh the token for broadcaster {$broadcasterId}; they need to reconnect. Twitch said: ".$response->body());
             }
 
             $token->update([
@@ -182,7 +202,7 @@ class Twitch
     public static function setTitle(string $broadcasterId, string $title): void
     {
         self::asBroadcaster($broadcasterId)
-            ->patch('/channels?broadcaster_id=' . urlencode($broadcasterId), ['title' => $title])
+            ->patch('/channels?broadcaster_id='.urlencode($broadcasterId), ['title' => $title])
             ->throw();
     }
 
@@ -250,10 +270,12 @@ class Twitch
             throw new RuntimeException("Unsupported EventSub type {$type}");
         }
 
+        [$version, $condition] = self::eventSubDefinition($type, $broadcasterId);
+
         $response = self::asApp()->post('/eventsub/subscriptions', [
             'type' => $type,
-            'version' => '1',
-            'condition' => ['broadcaster_user_id' => $broadcasterId],
+            'version' => $version,
+            'condition' => $condition,
             'transport' => [
                 'method' => 'webhook',
                 'callback' => config('services.twitch.eventsub_callback') ?: route('twitch.eventsub'),
@@ -265,5 +287,25 @@ class Twitch
         if ($response->status() !== 409) {
             $response->throw();
         }
+    }
+
+    /**
+     * The version and condition Twitch expects for each of EVENTSUB_TYPES.
+     *
+     * @return array{0: string, 1: array<string, string>}
+     *
+     * @see https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/
+     */
+    public static function eventSubDefinition(string $type, string $broadcasterId): array
+    {
+        return match ($type) {
+            // Read chat as the broadcaster, so their own grant covers user:read:chat and user:bot.
+            'channel.chat.message' => ['1', ['broadcaster_user_id' => $broadcasterId, 'user_id' => $broadcasterId]],
+            // Incoming raids only.
+            'channel.raid' => ['1', ['to_broadcaster_user_id' => $broadcasterId]],
+            // v2 needs a moderator; the broadcaster moderates their own channel.
+            'channel.follow' => ['2', ['broadcaster_user_id' => $broadcasterId, 'moderator_user_id' => $broadcasterId]],
+            default => ['1', ['broadcaster_user_id' => $broadcasterId]],
+        };
     }
 }
