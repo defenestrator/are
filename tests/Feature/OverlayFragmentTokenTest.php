@@ -209,7 +209,8 @@ test('the bootstrap page exchanges the fragment token and holds no overlay data'
         ->assertSee(Js::from(route('overlay.session', ['overlay' => 'queue']))->toHtml(), false)
         ->assertSee('data-overlay-empty', false)
         ->assertDontSee('Not on the bootstrap page')
-        ->assertDontSee('wire:poll', false);
+        ->assertDontSee('liveOverlay', false)
+        ->assertDontSee('overlay.js', false);
 });
 
 test('the bootstrap page never echoes a token from the request', function () {

@@ -9,15 +9,20 @@ use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 /**
- * Base for the overlay Volt components that refresh with wire:poll.
+ * Base for the overlay Volt components that follow the question queue
+ * (queue, vote, top-vote).
  *
- * Polls go to /livewire/update, so EnsureOverlayToken never sees them, and
- * Livewire's persistent middleware replays the route path without its query
- * string, which is where the token is. So the component captures the
- * token's hash when the page loads and checks that it is still current on
- * every render. Once the token is rotated, the overlay renders empty and
- * stops polling. That is what viewers should see, rather than an error
- * dialog appearing on stream.
+ * They update over the public `questions` channel in the browser
+ * (resources/js/live-overlay.js, #22). Their server renders come from
+ * $refresh: event-driven refreshes, the polling fallback while the socket is
+ * down, and a 60-90 s heartbeat while it is up. Those requests go to
+ * /livewire/update, so EnsureOverlayToken never sees them, and Livewire's
+ * persistent middleware replays the route path without its query string. So
+ * the component captures the token's hash when the page loads and checks that
+ * it is still current on every render. Once the token is rotated, the overlay
+ * renders empty with data-live="off", and the browser unsubscribes and stops
+ * refreshing. That is what viewers should see, rather than an error dialog
+ * appearing on stream.
  */
 abstract class PollingOverlay extends Component
 {

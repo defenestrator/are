@@ -50,7 +50,7 @@ test('an overlay without a token or grant gets only the bootstrap page', functio
         ->assertOk()
         ->assertViewIs('overlays.bootstrap')
         ->assertDontSee('visualizer-container', false)
-        ->assertDontSee('wire:poll', false)
+        ->assertDontSee('liveOverlay', false)
         ->assertDontSee('data-cta', false);
 })->with('overlays');
 
@@ -188,20 +188,22 @@ test('the top-vote overlay shows the leading active question', function () {
 
 // Polling
 
-test('a polling overlay goes blank and stops polling once its token is rotated', function () {
+test('a live overlay goes blank and switches itself off once its token is rotated', function () {
     OverlayToken::issue(Overlay::Queue);
     Question::factory()->create(['question' => 'Visible before rotation']);
 
+    // The refresh comes from live-overlay.js: an event, the polling fallback,
+    // or the heartbeat. data-live="off" makes it unsubscribe and stop (#22).
     $component = Volt::test('overlays.queue', ['layout' => 'vertical'])
         ->assertSee('Visible before rotation')
-        ->assertSeeHtml('wire:poll.5s.keep-alive');
+        ->assertSeeHtml('data-live="on"');
 
     OverlayToken::issue(Overlay::Queue);
 
     $component->call('$refresh')
         ->assertDontSee('Visible before rotation')
         ->assertSeeHtml('data-overlay-empty')
-        ->assertDontSeeHtml('wire:poll');
+        ->assertSeeHtml('data-live="off"');
 });
 
 test('a polling overlay mounted without a token shows nothing', function () {

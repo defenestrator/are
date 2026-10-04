@@ -24,7 +24,7 @@
 ]) }}>
     <div class="flex items-start gap-4">
         @if ($rank !== null)
-            <span class="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-lg font-semibold tabular-nums text-white/80 vertical:size-12 vertical:text-2xl">
+            <span data-rank class="mt-1 flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-lg font-semibold tabular-nums text-white/80 vertical:size-12 vertical:text-2xl">
                 {{ $rank }}
             </span>
         @endif
@@ -43,7 +43,8 @@
     ])>
         <div class="flex items-center gap-2 font-semibold tabular-nums">
             <flux:icon.hand-thumb-up variant="outline" class="size-[1.2em] [&_path]:stroke-[2.25]" />
-            <span>{{ $question->votes ?? 0 }}</span>
+            {{-- live-overlay.js writes VoteCast totals here when their version is newer. --}}
+            <span data-vote-count="{{ $question->id }}" data-vote-version="{{ (int) ($question->vote_version ?? 0) }}">{{ $question->votes ?? 0 }}</span>
             {{-- The number viewers vote with in chat: !vote <number> --}}
             <span class="ml-2 text-white/50">!vote {{ $question->id }}</span>
         </div>
