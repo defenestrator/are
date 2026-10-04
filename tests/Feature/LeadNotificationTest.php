@@ -127,9 +127,17 @@ test('with nothing configured, no notification is sent and a warning without PII
 });
 
 test('ARE_LEADS_NOTIFY accepts a comma-separated list', function () {
-    putenv('ARE_LEADS_NOTIFY= a@edos.example , b@edos.example,');
-    $config = require config_path('are.php');
-    putenv('ARE_LEADS_NOTIFY');
+    // env() reads $_ENV/$_SERVER (and getenv only when the putenv adapter is on), so set all three.
+    $value = ' a@edos.example , b@edos.example,';
+    putenv("ARE_LEADS_NOTIFY={$value}");
+    $_ENV['ARE_LEADS_NOTIFY'] = $_SERVER['ARE_LEADS_NOTIFY'] = $value;
+
+    try {
+        $config = require config_path('are.php');
+    } finally {
+        putenv('ARE_LEADS_NOTIFY');
+        unset($_ENV['ARE_LEADS_NOTIFY'], $_SERVER['ARE_LEADS_NOTIFY']);
+    }
 
     expect($config['leads']['notify'])->toBe(['a@edos.example', 'b@edos.example']);
 });
