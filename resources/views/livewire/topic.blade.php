@@ -1,12 +1,22 @@
 <?php
 use App\Models\Topic;
 use App\Moderation;
+use Livewire\Attributes\On;
 use Livewire\Volt\Component;
 
 new class extends Component {
     public $topic = "";
 
     public function mount()
+    {
+        $this->topic = Topic::current()?->topic;
+    }
+
+    /**
+     * Another moderator set or cleared the topic; show it everywhere at once.
+     */
+    #[On('echo:topic,TopicChanged')]
+    public function topicChanged(): void
     {
         $this->topic = Topic::current()?->topic;
     }

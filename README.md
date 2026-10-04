@@ -30,10 +30,24 @@ This project has no affiliation with, nor is it endorsed by Laravel, or anyone e
 cp .env.example .env        # then fill in the TWITCH_* values
 composer install && npm install
 php artisan key:generate
+php artisan reverb:install  # fills in the REVERB_* keys for live updates
 touch database/database.sqlite && php artisan migrate
-composer run dev            # or: php artisan serve + npm run dev
+composer run dev            # server, queue worker, Reverb, logs and Vite
 ./vendor/bin/pest           # tests
 ```
+
+## Realtime (Reverb)
+
+The vote page updates over WebSockets instead of polling. `QuestionSubmitted`, `VoteCast`, `TopicChanged` and `QuestionArchived` broadcast on the public `questions` and `topic` channels with ids, vote totals and the topic text only, never who voted. The browser applies votes from the payload itself (`resources/js/live-queue.js`), so a vote costs the server nothing per viewer. Removed questions are dropped in the browser, and a new question makes each viewer refresh once after a random 0.5–3 s delay, served from a shared 1-entry cache of the queue. Broadcasts are queued jobs on the **`broadcasts`** queue, so nothing goes live unless a worker processes that queue (`composer run dev` runs one locally with `--queue=broadcasts,default`). Production topology is in #26.
+
+On Forge, once:
+
+1. **DNS:** add an `A` record for `ws.<domain>` pointing at the server IP.
+2. **SSL:** issue a Let's Encrypt certificate covering both `<domain>` and `ws.<domain>`. Forge pre-fills the Reverb host once Reverb is enabled.
+3. **Environment and Reverb toggle:** in the site's Environment panel, set fresh `REVERB_APP_ID`, `REVERB_APP_KEY` and `REVERB_APP_SECRET` (never reuse local ones), `BROADCAST_CONNECTION=reverb`, `REVERB_HOST=ws.<domain>`, `REVERB_PORT=443`, `REVERB_SCHEME=https`, `REVERB_SERVER_PORT=<toggle port>` and the `VITE_REVERB_*` references from `.env.example`. `REVERB_ALLOWED_ORIGINS` defaults to the `APP_URL` host; set it only if pages on another host need the socket. Then enable the **Laravel Reverb** toggle with hostname `ws.<domain>`, port `8080` (or any free local port matching `REVERB_SERVER_PORT`) and maximum connections of about 2,000, so the event-loop extension is installed. `scripts/forge-deploy.sh` already runs `npm run build` (the `VITE_REVERB_*` values are compiled into the bundle, so `.env` must be right first) and `php artisan reverb:restart`. If Forge appends its own `reverb:restart` to the site script, the second restart is harmless. Then redeploy.
+4. **Smoke test:** open `/vote` in two browsers and cast a vote. It should appear in the other browser within 1 s. In DevTools, the WebSocket should connect to `wss://ws.<domain>/app/<key>`.
+
+A queue worker must cover the `broadcasts` queue. Horizon (#20) is the plan; until it ships, a plain Forge queue worker needs `--queue=broadcasts,default`.
 
 ## Twitch setup
 
@@ -132,7 +146,7 @@ bash scripts/forge-deploy.sh
 
 The checked-in script installs locked dependencies with `npm ci`, clears the old
 configuration file, runs migrations **before** clearing the database cache, then
-rebuilds caches, restarts queue workers and reloads PHP-FPM. The FPM reload is
+rebuilds caches, restarts queue workers and Reverb, and reloads PHP-FPM. The FPM reload is
 required when `opcache.validate_timestamps=0`; CLI migrations alone do not refresh
 the web process's cached PHP classes. A failing step stops deployment.
 

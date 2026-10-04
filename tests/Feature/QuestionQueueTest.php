@@ -189,6 +189,8 @@ test('the vote page runs the same queries for one card as for a full queue', fun
     $queriesFor = function (int $questions) use ($isModerator) {
         Question::query()->delete();
         Question::factory()->count($questions)->for(User::factory())->create();
+        // Factories skip the events that retire the vote page's cached queue.
+        Question::forgetCachedQueue();
 
         // actingAs() reuses one User instance across requests; a real request
         // loads it fresh, so clear the per-instance once() memo between them.

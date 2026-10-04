@@ -2,10 +2,10 @@
 
 namespace App;
 
+use App\Events\QuestionSubmitted;
 use App\Exceptions\QuestionRejected;
 use App\Models\Question;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\Validator;
  * and chat commands so that both enforce exactly the same limits.
  *
  * submit() and vote() are the only ways a question or vote is written. Keep
- * it that way: realtime broadcasting (#48) hooks in here, once, for web and
- * chat alike.
+ * it that way: they broadcast QuestionSubmitted and VoteCast, so web and chat
+ * submissions and votes show live on every open vote page.
  */
 class QuestionQueue
 {
@@ -58,16 +58,23 @@ class QuestionQueue
             throw QuestionRejected::limitReached();
         }
 
-        return $user->questions()->create(['question' => $text]);
+        $question = $user->questions()->create(['question' => $text]);
+
+        QuestionSubmitted::dispatch($question->id);
+
+        return $question;
     }
 
     /**
      * Record the user's vote on a question: 1 for up, -1 for down. One vote per
-     * user per question; voting again replaces it.
+     * user per question; voting again replaces it. The write is locked and
+     * versioned, and broadcast as VoteCast (Question::recordVote).
+     *
+     * @return array{votes: int, version: int} the new total and its version
      *
      * @throws QuestionRejected
      */
-    public static function vote(User $user, Question $question, int $direction): void
+    public static function vote(User $user, Question $question, int $direction): array
     {
         if (! in_array($direction, [1, -1], true)) {
             throw QuestionRejected::invalid('A vote is up or down.');
@@ -81,9 +88,6 @@ class QuestionQueue
             throw QuestionRejected::closed();
         }
 
-        DB::table('question_votes')->updateOrInsert(
-            ['question_id' => $question->id, 'user_id' => $user->id],
-            ['count' => $direction],
-        );
+        return $question->recordVote($user, $direction);
     }
 }

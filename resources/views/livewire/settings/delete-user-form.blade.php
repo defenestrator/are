@@ -1,7 +1,10 @@
 <?php
 
+use App\Events\QuestionArchived;
 use App\Livewire\Actions\Logout;
+use App\Models\Question;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Component;
 
 new class extends Component {
@@ -15,7 +18,34 @@ new class extends Component {
         // act here, whether or not the not-banned middleware ran.
         abort_if(Auth::user()->isBanned(), 403, 'You cannot delete your account while you are banned or timed out.');
 
-        tap(Auth::user(), $logout(...))->delete();
+        $user = Auth::user();
+        $logout();
+
+        // The database cascade removes their questions and votes without model
+        // events, so tell open vote pages here. Both events go out after commit,
+        // and a retried attempt's events are discarded with its rollback.
+        DB::transaction(function () use ($user) {
+            $own = $user->questions()->active()->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $votedOn = Question::active()
+                ->whereIn('id', $user->votes()->select('question_id'))
+                ->whereNotIn('id', $own)
+                ->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+            // Lock every open question the cascade touches, in id order, before
+            // deleting: voters lock the same rows, so neither side can hold one
+            // row while waiting on another the other holds.
+            $locked = Question::whereKey([...$own, ...$votedOn])->orderBy('id')->lockForUpdate()->get();
+
+            $user->delete();
+
+            // Each total that lost a vote goes out with a fresh vote_version.
+            $locked->whereIn('id', $votedOn)->each->announceVoteChange();
+
+            if ($own !== []) {
+                QuestionArchived::dispatch($own);
+            }
+        }, attempts: 3);
+
         $this->redirect('/', navigate: true);
     }
 }; ?>

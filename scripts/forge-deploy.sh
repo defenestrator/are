@@ -20,6 +20,9 @@ npm run build
 "$php_bin" artisan route:clear
 "$php_bin" artisan optimize
 "$php_bin" artisan queue:restart
+# Signals the Reverb daemon through the cache; Supervisor starts it again on
+# the new code. Harmless when Reverb is not enabled yet.
+"$php_bin" artisan reverb:restart
 
 # Production disables opcode timestamp checks. Clearing Blade caches is insufficient.
 sudo -n service "$fpm_service" reload

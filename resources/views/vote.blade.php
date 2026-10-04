@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\QuestionArchived;
 use Livewire\Volt\Component;
 use App\Exceptions\QuestionRejected;
 use App\Models\Question;
@@ -12,6 +13,27 @@ use Livewire\Attributes\Computed;
 new class extends Component {
     public $question = "";
     public $userVotes = [];
+
+    /**
+     * A topic change is rare and alters the submit form, so it re-renders the
+     * page. The busy `questions` channel is handled in the browser instead (see
+     * resources/js/live-queue.js): votes and removals never cost the server a
+     * request, and new questions trigger one jittered refresh.
+     */
+    public function getListeners(): array
+    {
+        return [
+            'echo:topic,TopicChanged' => '$refresh',
+        ];
+    }
+
+    /**
+     * @return array{top: \Illuminate\Database\Eloquent\Collection<int, Question>, recent: \Illuminate\Database\Eloquent\Collection<int, Question>}
+     */
+    public function with(): array
+    {
+        return Question::cachedQueue();
+    }
 
     public function mount() {
         $this->userVotes = auth()->user()->votes()->get()
@@ -45,7 +67,13 @@ new class extends Component {
     }
 
     public function clearUserQuestion() {
-        auth()->user()->questions()->active()->delete();
+        $questions = auth()->user()->questions()->active();
+        $ids = $questions->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $questions->delete();
+
+        if ($ids !== []) {
+            QuestionArchived::dispatch($ids);
+        }
     }
 
 } ?>
@@ -55,7 +83,7 @@ new class extends Component {
     @volt('vote')
     <div>
         <livewire:topic @topic-changed="$refresh" />
-        <div class="mt-4" wire:poll.keep-alive>
+        <div class="mt-4">
             @if (Auth::user()->canSubmitQuestion())
             <form wire:submit="saveQuestion">
                 <flux:input.group>
@@ -79,23 +107,23 @@ new class extends Component {
         @endif
         </div>
 
-        <div class="mt-6 grid sm:grid-cols-2 gap-2">
-            <div wire:poll.keep-alive>
+        <div class="mt-6 grid sm:grid-cols-2 gap-2" x-data="liveQueue">
+            <div>
                 <h2>Top Suggestions</h2>
-                <ul>
-                    @foreach (Question::getSortedQuestions() as $question)
-                        <li wire:key="hot-li-{{ $question->id }}">
+                <ul x-ref="top">
+                    @foreach ($top as $question)
+                        <li wire:key="hot-li-{{ $question->id }}" data-question-id="{{ $question->id }}">
                             <livewire:question-card @question-deleted="$refresh" :user-votes="$userVotes" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'hot-'.$question->id" />
                         </li>
                     @endforeach
                 </ul>
             </div>
 
-            <div wire:poll.keep-alive>
+            <div>
                 <h2>New Ideas</h2>
                 <ul>
-                    @foreach (Question::getRecentQuestions() as $question)
-                        <li wire:key="recent-li-{{ $question->id }}">
+                    @foreach ($recent as $question)
+                        <li wire:key="recent-li-{{ $question->id }}" data-question-id="{{ $question->id }}">
                             <livewire:question-card @question-deleted="$refresh" :question="$question" :vote-count="$question->votes" :can-moderate="$this->canModerate" :key="'recent-'.$question->id" />
                         </li>
                     @endforeach

@@ -2,6 +2,8 @@
 
 namespace App;
 
+use App\Events\QuestionArchived;
+use App\Events\TopicChanged;
 use App\Models\ModerationAction;
 use App\Models\Question;
 use App\Models\Topic;
@@ -102,6 +104,8 @@ class Moderation
                 ]);
             }
             $question->delete();
+
+            QuestionArchived::dispatch([$question->id]);
         });
     }
 
@@ -121,6 +125,7 @@ class Moderation
         }
 
         DB::transaction(function () use ($moderator, $duplicate, $target) {
+            $lockedTarget = Question::lockedForVoteChange($target->id);
             $alreadyVoted = DB::table('question_votes')->where('question_id', $target->id)->pluck('user_id');
 
             $moved = DB::table('question_votes')
@@ -138,7 +143,10 @@ class Moderation
             ]);
 
             $duplicate->delete();
-        });
+
+            QuestionArchived::dispatch([$duplicate->id]);
+            $lockedTarget->announceVoteChange();
+        }, attempts: 3);
     }
 
     public static function setTopic(User $moderator, string $topic): Topic
@@ -148,6 +156,8 @@ class Moderation
         return DB::transaction(function () use ($moderator, $topic) {
             $new = Topic::set($topic);
             ModerationAction::record($moderator, 'topic.set', $new, ['topic' => $topic]);
+
+            TopicChanged::dispatch($new->topic);
 
             return $new;
         });
@@ -161,6 +171,9 @@ class Moderation
             $current = Topic::current();
             Topic::archiveAll();
             ModerationAction::record($moderator, 'topic.cleared', $current, ['topic' => $current?->topic]);
+
+            TopicChanged::dispatch(null);
+            QuestionArchived::dispatch(null);
         });
     }
 }

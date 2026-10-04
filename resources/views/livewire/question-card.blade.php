@@ -11,6 +11,8 @@ use Livewire\Volt\Component;
 new class extends Component {
     public Question $question;
     public int $voteCount;
+    // Shown next to the count so the browser can drop out-of-order VoteCasts.
+    public int $voteVersion = 0;
     public array $userVotes;
 
     // Only decides whether the button shows; deleteQuestion() authorises itself.
@@ -25,6 +27,7 @@ new class extends Component {
     // queue does not run the moderator check once per card. It mirrors
     // QuestionPolicy::delete, which stays the authority.
     public function mount(?bool $canModerate = null) {
+        $this->voteVersion = (int) $this->question->vote_version;
         $user = Auth::user();
         $canModerate ??= $user?->can('moderate') ?? false;
 
@@ -51,13 +54,19 @@ new class extends Component {
         }
 
         try {
-            QuestionQueue::vote(Auth::user(), $question, $direction);
+            $result = QuestionQueue::vote(Auth::user(), $question, $direction);
         } catch (QuestionRejected) {
             return;
         }
 
-        $this->voteCount = $this->question->voteCount();
         $this->userVotes[$question->id] = $direction;
+
+        if ($question->is($this->question)) {
+            $this->voteCount = $result['votes'];
+            $this->voteVersion = $result['version'];
+        } else {
+            $this->voteCount = $this->question->voteCount();
+        }
     }
 
     public function deleteQuestion()
@@ -80,7 +89,7 @@ new class extends Component {
 
             <div class="flex jusify-between items-center">
                 <div class="flex items-center mr-auto">
-                    <flux:text class="w-4 max-w-4 min-w-4 text-sm mr-2 text-zinc-500 dark:text-zinc-400 tabular-nums">
+                    <flux:text class="w-4 max-w-4 min-w-4 text-sm mr-2 text-zinc-500 dark:text-zinc-400 tabular-nums" data-vote-count="{{ $question->id }}" data-vote-version="{{ $voteVersion }}">
                         {{ $voteCount }}</flux:text>
 
                     <div class="flex items-center gap-2">

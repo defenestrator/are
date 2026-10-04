@@ -2,14 +2,20 @@
 
 namespace App\Models;
 
+use App\Events\VoteCast;
+use Database\Factories\QuestionFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class Question extends Model
 {
-    /** @use HasFactory<\Database\Factories\QuestionFactory> */
+    /** @use HasFactory<QuestionFactory> */
     use HasFactory;
 
     protected $guarded = [];
@@ -18,6 +24,7 @@ class Question extends Model
     {
         return [
             'archived_at' => 'datetime',
+            'vote_version' => 'integer',
         ];
     }
 
@@ -68,5 +75,100 @@ class Question extends Model
     public function voteCount(): int
     {
         return (int) QuestionVote::where('question_id', $this->id)->sum('count');
+    }
+
+    /**
+     * Record $user's vote (+1 or -1) and broadcast the new total.
+     *
+     * @return array{votes: int, version: int} the total and version, read together
+     */
+    public function recordVote(User $user, int $count): array
+    {
+        return DB::transaction(function () use ($user, $count) {
+            $locked = self::lockedForVoteChange($this->id);
+
+            DB::table('question_votes')->updateOrInsert(
+                ['question_id' => $this->id, 'user_id' => $user->id],
+                ['count' => $count],
+            );
+
+            return $locked->announceVoteChange();
+        }, attempts: 3);
+    }
+
+    /**
+     * Lock the row so concurrent vote changes on this question run one at a
+     * time; each then reads its total and version without another slipping in.
+     * Call inside a transaction, before changing the question's votes.
+     */
+    public static function lockedForVoteChange(int $id): self
+    {
+        return self::whereKey($id)->lockForUpdate()->firstOrFail();
+    }
+
+    /**
+     * Bump the vote version and broadcast it with the total. Call inside the
+     * transaction that holds lockedForVoteChange(); VoteCast goes out after it
+     * commits, and browsers ignore any VoteCast older than the one they show.
+     *
+     * @return array{votes: int, version: int}
+     */
+    public function announceVoteChange(): array
+    {
+        $this->increment('vote_version');
+        $result = ['votes' => $this->voteCount(), 'version' => (int) $this->vote_version];
+
+        VoteCast::dispatch($this->id, $result['votes'], $result['version']);
+
+        return $result;
+    }
+
+    /**
+     * The vote page's two lists. They are the same for every viewer, so a burst
+     * of refreshes after a new question costs one pair of aggregate queries.
+     *
+     * One fixed key holds the lists together with the queue version they were
+     * built from, so the database cache store keeps a single row instead of one
+     * per vote. A copy built from any version but the current one (see
+     * forgetCachedQueue) is rebuilt, so a slow reader that stores pre-change
+     * lists late is simply rebuilt by the next reader.
+     *
+     * @return array{top: Collection<int, Question>, recent: Collection<int, Question>}
+     */
+    public static function cachedQueue(): array
+    {
+        $version = Cache::get('questions.queue-version');
+        if ($version === null) {
+            // Evicted or cleared: start a new version so it never matches an old
+            // copy. add() only writes if the key is still missing (atomically,
+            // given a TTL), so readers racing here end up on the version that won.
+            $candidate = (string) Str::ulid();
+            Cache::add('questions.queue-version', $candidate, now()->addDays(30));
+            $version = Cache::get('questions.queue-version') ?? $candidate;
+        }
+
+        $cached = Cache::get('questions.queue');
+        if (is_array($cached) && ($cached['version'] ?? null) === $version) {
+            return $cached['lists'];
+        }
+
+        $lists = [
+            'top' => self::getSortedQuestions(),
+            'recent' => self::getRecentQuestions(),
+        ];
+        Cache::put('questions.queue', ['version' => $version, 'lists' => $lists], now()->addMinutes(10));
+
+        return $lists;
+    }
+
+    /**
+     * Mark every cached copy of the queue as out of date.
+     */
+    public static function forgetCachedQueue(): string
+    {
+        $version = (string) Str::ulid();
+        Cache::forever('questions.queue-version', $version);
+
+        return $version;
     }
 }
