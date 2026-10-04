@@ -29,7 +29,7 @@ test('requestable tracks are exactly the stream-safe ones', function () {
     Track::factory()->registered()->create();
     Track::factory()->create();
 
-    expect(Track::requestable()->pluck('id')->all())->toBe(Track::streamSafe()->pluck('id')->all())
+    expect(Track::requestable()->orderBy('id')->pluck('id')->all())->toBe(Track::streamSafe()->orderBy('id')->pluck('id')->all())
         ->and(Track::requestable()->count())->toBe(2);
 });
 
@@ -90,6 +90,8 @@ test('downloads 404 for a missing track, missing stems or a missing file', funct
     $missingFile = Track::factory()->streamSafe()->create();
 
     $this->get(route('music.download', 999))->assertNotFound();
+    // Past bigint range: rejected by the route instead of reaching Postgres.
+    $this->get('/music/99999999999999999999/download')->assertNotFound();
     $this->get(route('music.stems', $noStems))->assertNotFound();
     $this->get(route('music.download', $missingFile))->assertNotFound();
 });

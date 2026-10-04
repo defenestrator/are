@@ -59,8 +59,8 @@ Route::middleware('can:viewAttribution')->prefix('admin')->group(function () {
 Route::controller(StreamSafePackController::class)->prefix('music')->name('music.')->group(function () {
     Route::get('/', 'index')->name('index');
     Route::middleware('throttle:60,1')->group(function () {
-        Route::get('{track}/download', 'download')->whereNumber('track')->name('download');
-        Route::get('{track}/stems', 'stems')->whereNumber('track')->name('stems');
+        Route::get('{track}/download', 'download')->where('track', '[0-9]{1,18}')->name('download');
+        Route::get('{track}/stems', 'stems')->where('track', '[0-9]{1,18}')->name('stems');
     });
 });
 

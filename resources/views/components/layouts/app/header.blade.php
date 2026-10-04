@@ -17,6 +17,10 @@
                     <flux:navbar.item icon="shield-check" href="{{ route('moderation') }}" :current="request()->routeIs('moderation')" wire:navigate>
                         {{ __('Moderation') }}
                     </flux:navbar.item>
+                    {{-- TrackPolicy::viewAny is the moderate gate; nesting here avoids re-running its queries. --}}
+                    <flux:navbar.item icon="musical-note" href="{{ route('music.catalogue') }}" :current="request()->routeIs('music.catalogue')" wire:navigate>
+                        {{ __('Music') }}
+                    </flux:navbar.item>
                 @endcan
                 {{-- Leads and attribution share one broadcaster-only rule: LeadPolicy::viewAny. --}}
                 @can('viewAny', App\Models\Lead::class)
@@ -25,11 +29,6 @@
                     </flux:navbar.item>
                     <flux:navbar.item icon="chart-bar" href="{{ route('admin.attribution') }}" :current="request()->routeIs('admin.attribution')">
                         {{ __('Attribution') }}
-                    </flux:navbar.item>
-                @endcan
-                @can('viewAny', App\Models\Track::class)
-                    <flux:navbar.item icon="musical-note" href="{{ route('music.catalogue') }}" :current="request()->routeIs('music.catalogue')" wire:navigate>
-                        {{ __('Music') }}
                     </flux:navbar.item>
                 @endcan
             </flux:navbar>
@@ -98,6 +97,9 @@
                         <flux:navlist.item icon="shield-check" href="{{ route('moderation') }}" wire:navigate>
                             {{ __('Moderation') }}
                         </flux:navlist.item>
+                        <flux:navlist.item icon="musical-note" href="{{ route('music.catalogue') }}" wire:navigate>
+                            {{ __('Music') }}
+                        </flux:navlist.item>
                     @endcan
                     @can('viewAny', App\Models\Lead::class)
                         <flux:navlist.item icon="inbox" href="{{ route('leads.index') }}" wire:navigate>
@@ -105,11 +107,6 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="chart-bar" href="{{ route('admin.attribution') }}">
                             {{ __('Attribution') }}
-                        </flux:navlist.item>
-                    @endcan
-                    @can('viewAny', App\Models\Track::class)
-                        <flux:navlist.item icon="musical-note" href="{{ route('music.catalogue') }}" wire:navigate>
-                            {{ __('Music') }}
                         </flux:navlist.item>
                     @endcan
                 </flux:navlist.group>
