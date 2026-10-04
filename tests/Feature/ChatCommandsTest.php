@@ -5,6 +5,8 @@ use App\Chat\ChatCommandInvocation;
 use App\Chat\ChatCommandRegistry;
 use App\Chat\ChatCommandResult;
 use App\Chat\ChatCommandStatus;
+use App\Events\QuestionSubmitted;
+use App\Events\VoteCast;
 use App\IdentityProvider;
 use App\Jobs\EventSub\HandleChatMessage;
 use App\Models\ChatCommandRun;
@@ -17,6 +19,7 @@ use App\TwitchSubscription;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
@@ -445,4 +448,39 @@ test('emoji joined with zero-width joiners are kept', function () {
     runChatCommand("!q songs for the \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}");
 
     expect(Question::sole()->question)->toBe("songs for the \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}");
+});
+
+// Chat commands (#77) write through App\QuestionQueue, as the vote page does,
+// so a chat vote or !q shows live for everyone with the page open.
+test('a !vote from chat broadcasts VoteCast with the new total and version', function () {
+    Event::fake([VoteCast::class]);
+    $question = Question::factory()->create();
+    $question->recordVote(User::factory()->create(), 1);
+    User::factory()->twitch('4145994')->create();
+
+    twitchChat("!vote {$question->id}");
+
+    expect($question->fresh()->vote_version)->toBe(2);
+    Event::assertDispatched(VoteCast::class, fn (VoteCast $e) => $e->questionId === $question->id
+        && $e->broadcastWith() === ['question_id' => $question->id, 'votes' => 2, 'version' => 2]);
+});
+
+test('a !q from chat broadcasts QuestionSubmitted', function () {
+    Event::fake([QuestionSubmitted::class]);
+    User::factory()->twitch('4145994')->create();
+
+    twitchChat('!q Sing about kale');
+
+    $question = Question::sole();
+    Event::assertDispatched(QuestionSubmitted::class, fn (QuestionSubmitted $e) => $e->questionId === $question->id);
+});
+
+test('a refused chat vote broadcasts nothing', function () {
+    Event::fake([VoteCast::class]);
+    $question = Question::factory()->create(['archived_at' => now()]);
+    User::factory()->twitch('4145994')->create();
+
+    twitchChat("!vote {$question->id}");
+
+    Event::assertNotDispatched(VoteCast::class);
 });
