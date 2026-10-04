@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\TwitchTokenRejected;
 use App\IdentityProvider;
 use App\Models\User;
 use App\Twitch;
@@ -58,7 +59,27 @@ class RefreshTwitchSubscriptions implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $unknown = Twitch::syncUserSubscriptions($identity->user, $identity->access_token, $identity->provider_user_id);
+        try {
+            $unknown = Twitch::syncUserSubscriptions($identity->user, $identity->access_token, $identity->provider_user_id);
+        } catch (TwitchTokenRejected) {
+            // Revoked or expired ahead of its stored expiry: refresh once, retry once.
+            if (! Twitch::refreshUserToken($identity)) {
+                return;
+            }
+
+            try {
+                $unknown = Twitch::syncUserSubscriptions($identity->user, $identity->access_token, $identity->provider_user_id);
+            } catch (TwitchTokenRejected) {
+                // A fresh token rejected too is not something a later attempt
+                // fixes (a missing scope, say), so stop rather than burn retries.
+                Log::warning('Helix rejected the viewer token even after a refresh; giving up until they sign in again.', [
+                    'user_id' => $this->userId,
+                    'twitch_user_id' => $identity->provider_user_id,
+                ]);
+
+                return;
+            }
+        }
 
         if ($unknown !== []) {
             // Throwing hands the job back to the queue for the next backoff step.

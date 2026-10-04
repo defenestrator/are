@@ -42,6 +42,27 @@ test('an expired broadcaster token is refreshed before use', function () {
     Http::assertSent(fn (Request $r) => $r['grant_type'] === 'refresh_token' && $r['refresh_token'] === 'refresh-1000');
 });
 
+test('a failed broadcaster refresh reports the status and error code, never the response body', function () {
+    connectBroadcaster(expiresAt: now()->subMinute());
+    Http::fake([
+        'id.twitch.tv/oauth2/token' => Http::response([
+            'error' => 'Bad Request',
+            'status' => 400,
+            'message' => 'Invalid refresh token refresh-1000',   // a body that echoes the request
+        ], 400),
+    ]);
+
+    try {
+        Twitch::broadcasterAccessToken('1000');
+        $this->fail('Expected the refresh to fail.');
+    } catch (RuntimeException $e) {
+        expect($e->getMessage())->toContain('HTTP 400, error Bad Request')
+            ->and($e->getMessage())->toContain('reconnect')
+            ->and($e->getMessage())->not->toContain('Invalid refresh token')
+            ->and($e->getMessage())->not->toContain('refresh-1000');
+    }
+});
+
 test('twitch:title patches the channel through Helix', function () {
     connectBroadcaster();
     Http::fake(['api.twitch.tv/helix/channels*' => Http::response(null, 204)]);

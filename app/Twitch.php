@@ -2,6 +2,7 @@
 
 namespace App;
 
+use App\Exceptions\TwitchTokenRejected;
 use App\Models\BroadcasterToken;
 use App\Models\Identity;
 use App\Models\TwitchBan;
@@ -154,12 +155,25 @@ class Twitch
      */
     public static function checkUserSubscriptions(string $accessToken, array $channels, string $userId): Collection
     {
+        return collect(self::lookUpSubscriptions($accessToken, $channels, $userId))
+            ->map(fn ($response, $channel) => self::tierFrom($response, (string) $channel, $userId));
+    }
+
+    /**
+     * One Helix lookup per channel, keyed by channel. Each entry is a
+     * Response, or the exception a connection failure left behind.
+     *
+     * @param  list<string>  $channels
+     * @return array<string, mixed>
+     */
+    private static function lookUpSubscriptions(string $accessToken, array $channels, string $userId): array
+    {
         $headers = [
             'Client-ID' => config('services.twitch.client_id'),
             'Authorization' => 'Bearer '.$accessToken,
         ];
 
-        $responses = Http::pool(
+        return Http::pool(
             fn (Pool $pool) => collect($channels)->map(
                 fn ($channel) => $pool
                     ->as($channel)
@@ -173,27 +187,28 @@ class Twitch
                     ])
             )
         );
+    }
 
-        return collect($responses)->map(function ($response, $channel) use ($userId) {
-            if ($response instanceof Response && $response->successful()) {
-                $tier = $response->json('data.0.tier');
+    private static function tierFrom(mixed $response, string $channel, string $userId): ?TwitchSubscription
+    {
+        if ($response instanceof Response && $response->successful()) {
+            $tier = $response->json('data.0.tier');
 
-                return $tier === null ? TwitchSubscription::None : (TwitchSubscription::tryFrom($tier) ?? TwitchSubscription::None);
-            }
+            return $tier === null ? TwitchSubscription::None : (TwitchSubscription::tryFrom($tier) ?? TwitchSubscription::None);
+        }
 
-            if ($response instanceof Response && $response->notFound()) {
-                return TwitchSubscription::None;
-            }
+        if ($response instanceof Response && $response->notFound()) {
+            return TwitchSubscription::None;
+        }
 
-            // Never log the response body or headers: the request carried the viewer's token.
-            Log::warning('Twitch subscription lookup failed; treating the tier as unknown.', [
-                'broadcaster_id' => (string) $channel,
-                'twitch_user_id' => $userId,
-                'reason' => $response instanceof Response ? 'HTTP '.$response->status() : $response::class,
-            ]);
+        // Never log the response body or headers: the request carried the viewer's token.
+        Log::warning('Twitch subscription lookup failed; treating the tier as unknown.', [
+            'broadcaster_id' => $channel,
+            'twitch_user_id' => $userId,
+            'reason' => $response instanceof Response ? 'HTTP '.$response->status() : get_debug_type($response),
+        ]);
 
-            return null;
-        });
+        return null;
     }
 
     /**
@@ -201,14 +216,21 @@ class Twitch
      * channels whose lookup failed are left as they were, not overwritten.
      *
      * @return list<string> the channels whose tier is still unknown
+     *
+     * @throws TwitchTokenRejected if Helix answered 401, after the answered tiers are stored.
+     *                             The token is dead for every channel, so the caller can refresh it and try again.
      */
     public static function syncUserSubscriptions(User $user, string $accessToken, string $twitchUserId): array
     {
         $unknown = [];
+        $rejected = false;
 
-        foreach (self::checkUserSubscriptions($accessToken, User::getAllFriendIDs(), $twitchUserId) as $broadcasterId => $tier) {
+        foreach (self::lookUpSubscriptions($accessToken, User::getAllFriendIDs(), $twitchUserId) as $broadcasterId => $response) {
+            $tier = self::tierFrom($response, (string) $broadcasterId, $twitchUserId);
+
             if ($tier === null) {
                 $unknown[] = (string) $broadcasterId;
+                $rejected = $rejected || ($response instanceof Response && $response->unauthorized());
 
                 continue;
             }
@@ -217,6 +239,10 @@ class Twitch
                 ['user_id' => $user->id, 'broadcaster_id' => (string) $broadcasterId],
                 ['twitch_subscription' => $tier],
             );
+        }
+
+        if ($rejected) {
+            throw TwitchTokenRejected::forTwitchUser($twitchUserId);
         }
 
         return $unknown;
@@ -264,7 +290,8 @@ class Twitch
             ]);
 
             if ($response->failed()) {
-                throw new RuntimeException("Could not refresh the token for broadcaster {$broadcasterId}; they need to reconnect. Twitch said: ".$response->body());
+                // Status and Twitch's error code only: an error body can echo request details.
+                throw new RuntimeException("Could not refresh the token for broadcaster {$broadcasterId} (".self::describeFailure($response).'); they need to reconnect.');
             }
 
             $token->update([
@@ -276,6 +303,18 @@ class Twitch
         }
 
         return $token->access_token;
+    }
+
+    /**
+     * "HTTP 400, error invalid_grant": safe to log. Twitch's error field is
+     * kept only if it looks like a code, never free text from the body.
+     */
+    private static function describeFailure(Response $response): string
+    {
+        $error = $response->json('error');
+
+        return 'HTTP '.$response->status()
+            .(is_string($error) && preg_match('/^[A-Za-z0-9_ -]{1,40}$/', $error) ? ", error {$error}" : '');
     }
 
     public static function asBroadcaster(string $broadcasterId): PendingRequest

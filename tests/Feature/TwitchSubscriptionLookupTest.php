@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\TwitchTokenRejected;
 use App\IdentityProvider;
 use App\Jobs\RefreshTwitchSubscriptions;
 use App\Models\User;
@@ -296,6 +297,99 @@ test('a token that has not expired is used as is, without a refresh', function (
 
     Http::assertNotSent(fn (Request $request) => $request->url() === Twitch::TOKEN_URL);
     expect($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::Tier1);
+});
+
+// A token Helix rejects before its stored expiry (#106)
+
+function liveTwitchViewer(): User
+{
+    $user = User::factory()->twitch('42')->create();
+    $user->identityFor(IdentityProvider::Twitch)->update([
+        'access_token' => 'revoked-token',
+        'refresh_token' => 'old-refresh-token',
+        'token_expires_at' => now()->addHours(3),   // not expired by the clock
+    ]);
+
+    return $user;
+}
+
+/**
+ * Helix answers 401 to the revoked token, and to the refreshed one when $stillRejected.
+ *
+ * @param  array{refreshes: int}  $counts
+ */
+function fakeTwitchWithRevokedToken(array &$counts, ?Closure $refresh = null, bool $stillRejected = false): void
+{
+    $refresh ??= fn () => Http::response(['access_token' => 'fresh-token', 'refresh_token' => 'new-refresh-token', 'expires_in' => 14400]);
+
+    Http::fake(function (Request $request) use (&$counts, $refresh, $stillRejected) {
+        if ($request->url() === Twitch::TOKEN_URL) {
+            $counts['refreshes']++;
+
+            return $refresh();
+        }
+
+        return $request->hasHeader('Authorization', 'Bearer revoked-token') || $stillRejected
+            ? Http::response(['error' => 'Unauthorized', 'status' => 401, 'message' => 'Invalid OAuth token'], 401)
+            : Http::response(['data' => [['tier' => '2000']]]);
+    });
+}
+
+test('a 401 refreshes the token once and the retried sync succeeds', function () {
+    $user = liveTwitchViewer();
+    $counts = ['refreshes' => 0];
+    fakeTwitchWithRevokedToken($counts);
+
+    (new RefreshTwitchSubscriptions($user->id))->handle();
+
+    $identity = $user->identityFor(IdentityProvider::Twitch)->fresh();
+    expect($counts['refreshes'])->toBe(1)
+        ->and($identity->access_token)->toBe('fresh-token')
+        ->and($identity->refresh_token)->toBe('new-refresh-token')
+        ->and($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::Tier2);
+    Http::assertSent(fn (Request $request) => str_contains($request->url(), 'subscriptions/user')
+        && $request->hasHeader('Authorization', 'Bearer fresh-token'));
+});
+
+test('a 401 followed by a rejected refresh clears the tokens and stops', function () {
+    $user = liveTwitchViewer();
+    $counts = ['refreshes' => 0];
+    fakeTwitchWithRevokedToken($counts, fn () => Http::response(['status' => 400, 'message' => 'Invalid refresh token'], 400));
+
+    (new RefreshTwitchSubscriptions($user->id))->handle();   // returns, does not throw
+
+    $identity = $user->identityFor(IdentityProvider::Twitch)->fresh();
+    expect($counts['refreshes'])->toBe(1)
+        ->and($identity->access_token)->toBeNull()
+        ->and($identity->refresh_token)->toBeNull();
+});
+
+test('a token still rejected after one refresh gives up without another refresh', function () {
+    Log::spy();
+    $user = liveTwitchViewer();
+    $counts = ['refreshes' => 0];
+    fakeTwitchWithRevokedToken($counts, stillRejected: true);
+
+    (new RefreshTwitchSubscriptions($user->id))->handle();   // returns, does not throw
+
+    expect($counts['refreshes'])->toBe(1);
+    Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context) => str_contains($message, 'even after a refresh')
+        && $context['user_id'] === $user->id
+        && ! str_contains(json_encode($context), 'token'));
+});
+
+test('a 401 on one channel keeps the tiers the others answered, then reports the dead token', function () {
+    $user = User::factory()->twitch('42')->create();
+    Http::fake([
+        '*broadcaster_id=1000*' => Http::response(['data' => [['tier' => '1000']]]),
+        '*broadcaster_id=2000*' => Http::response(['error' => 'Unauthorized'], 401),
+    ]);
+
+    expect(fn () => Twitch::syncUserSubscriptions($user, 'revoked-token', '42'))
+        ->toThrow(TwitchTokenRejected::class);
+
+    expect(UserTwitchSubscription::where('user_id', $user->id)->pluck('twitch_subscription', 'broadcaster_id')->all())
+        ->toBe(['1000' => TwitchSubscription::Tier1]);
 });
 
 test('the unguarded single-channel checkUserSubscription is gone', function () {
