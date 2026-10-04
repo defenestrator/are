@@ -6,6 +6,23 @@ use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * Runs after the application boots and before RefreshDatabase migrates,
+     * so a misconfigured run stops before it can touch any database.
+     */
+    protected function setUpTraits()
+    {
+        $connection = $this->app['config']->get('database.default');
+
+        TestDatabaseGuard::check(
+            (string) $this->app->environment(),
+            (string) $connection,
+            $this->app['config']->get("database.connections.{$connection}"),
+        );
+
+        return parent::setUpTraits();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

@@ -18,6 +18,15 @@
         </include>
     </source>
     <php>
+        <!-- Never load a cached config (production runs `optimize`): it would
+             ignore every value below. The path is deliberately one that never exists.
+             A DB_URL from .env or the shell would override DB_DATABASE.
+             Each is set twice: <env force> covers getenv() and $_ENV, but Laravel
+             reads $_SERVER first, and only <server> overwrites a shell value there. -->
+        <server name="APP_CONFIG_CACHE" value="bootstrap/cache/testing-config-never-cached.php"/>
+        <env name="APP_CONFIG_CACHE" value="bootstrap/cache/testing-config-never-cached.php" force="true"/>
+        <server name="DB_URL" value=""/>
+        <env name="DB_URL" value="" force="true"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
