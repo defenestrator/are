@@ -41,6 +41,7 @@ class RequestSong implements ChatCommand
 
         $position = SongRequest::queued()->where('id', '<=', $request->id)->count();
 
-        return ChatCommandResult::done("Requested \"{$track->title}\" by {$track->artist}. It is number {$position} in the queue.");
+        // Song numbers, not titles: chat replies carry only ARE ids (#128).
+        return ChatCommandResult::done("Requested song #{$track->id}. It is number {$position} in the queue.");
     }
 }

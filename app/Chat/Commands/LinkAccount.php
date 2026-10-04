@@ -66,7 +66,7 @@ class LinkAccount implements ChatCommand
         if ($invocation->user !== null && $invocation->user->id === $code->user_id) {
             $code->consume();
 
-            return ChatCommandResult::done("This {$provider->label()} account is already linked to you, {$invocation->chatterName}.");
+            return ChatCommandResult::done("This {$provider->label()} account is already linked to you.");
         }
 
         if (UserBan::inEffect()->forAccount($provider, $invocation->chatterId)->exists()) {
@@ -89,7 +89,7 @@ class LinkAccount implements ChatCommand
             return $this->claimedAlready($code->refresh(), $invocation);
         }
 
-        return ChatCommandResult::done("Almost done, {$invocation->chatterName}: confirm this {$provider->label()} account in Settings → Linked accounts within ".LinkCode::MINUTES.' minutes.');
+        return ChatCommandResult::done("Almost done: confirm this {$provider->label()} account in Settings → Linked accounts within ".LinkCode::MINUTES.' minutes.');
     }
 
     private function claimedAlready(LinkCode $code, ChatCommandInvocation $invocation): ChatCommandResult

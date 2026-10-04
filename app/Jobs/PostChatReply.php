@@ -50,7 +50,45 @@ class PostChatReply implements ShouldQueue
         public string $messageId,
         public string $reply,
         public Carbon $repliedAt,
+        public string $chatterName = '',
+        public string $chatterInput = '',
     ) {}
+
+    /**
+     * Whether a reply repeats text the chatter chose: their display name, or
+     * what they typed after the command. Replies post as the broadcaster, so
+     * one that did would let a viewer make the channel's own account say
+     * anything (#128). Replies are fixed templates plus ARE ids; this is the
+     * backstop that holds even if a command forgets.
+     *
+     * Matching is case-insensitive, on whole words, after removing format
+     * characters and collapsing spaces. Text with no letters (an id, "12")
+     * cannot carry a message and is not checked, nor are names under 3
+     * characters or inputs under 6, which would match ordinary template words.
+     */
+    public static function echoesChatter(string $reply, string $chatterName, string $chatterInput): bool
+    {
+        $reply = self::normalise($reply);
+
+        foreach ([[$chatterName, 3], [$chatterInput, 6]] as [$text, $minimum]) {
+            $text = self::normalise($text);
+
+            if (mb_strlen($text) >= $minimum
+                && preg_match('/\p{L}/u', $text)
+                && preg_match('/(?<![\p{L}\p{N}])'.preg_quote($text, '/').'(?![\p{L}\p{N}])/u', $reply)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function normalise(string $text): string
+    {
+        $text = (string) preg_replace('/\p{Cf}+/u', '', $text);
+
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $text)));
+    }
 
     /** Whether replies on this platform are posted at all. */
     public static function supports(IdentityProvider $provider): bool
@@ -71,6 +109,13 @@ class PostChatReply implements ShouldQueue
         $context = ['provider' => $this->provider->value, 'channel_id' => $this->channelId, 'message_id' => $this->messageId];
 
         if (! static::supports($this->provider) || trim($this->reply) === '') {
+            return;
+        }
+
+        if (static::echoesChatter($this->reply, $this->chatterName, $this->chatterInput)) {
+            // Never log the reply or the name: they are the attacker's text.
+            Log::warning('Refused to post a chat reply that repeats the chatter\'s name or input (#128). Fix the command\'s reply template.', $context);
+
             return;
         }
 

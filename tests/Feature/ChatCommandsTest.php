@@ -160,7 +160,7 @@ test('!vote refuses archived and unknown questions, and bad syntax', function ()
     $archived = Question::factory()->create(['archived_at' => now()]);
 
     expect(runChatCommand("!vote {$archived->id}")->status)->toBe(ChatCommandStatus::Rejected)
-        ->and(runChatCommand('!vote 999999')->reply)->toBe('There is no question #999999.')
+        ->and(runChatCommand('!vote 999999')->reply)->toBe('There is no question with that number.')
         ->and(runChatCommand('!vote')->status)->toBe(ChatCommandStatus::Rejected)
         ->and(runChatCommand('!vote kale')->status)->toBe(ChatCommandStatus::Rejected)
         ->and(runChatCommand("!vote {$archived->id} sideways")->status)->toBe(ChatCommandStatus::Rejected)

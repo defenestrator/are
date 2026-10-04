@@ -144,7 +144,9 @@ class ChatCommandRegistry
             && trim($result->reply) !== ''
             && $result->status !== ChatCommandStatus::RateLimited
             && PostChatReply::supports($provider)) {
-            PostChatReply::dispatch($provider, $channelId, $messageId, $result->reply, now());
+            // The chatter's name and input travel with the reply so that
+            // PostChatReply can refuse one that repeats them (#128).
+            PostChatReply::dispatch($provider, $channelId, $messageId, $result->reply, now(), $chatterName, $arguments);
         }
 
         return $result;
@@ -164,7 +166,7 @@ class ChatCommandRegistry
 
         $rateKey = 'chat-command:'.($user !== null ? 'user:'.$user->id : $provider->value.':'.$chatterId);
         if (RateLimiter::tooManyAttempts($rateKey, (int) config('chat.commands_per_minute'))) {
-            return new ChatCommandResult(ChatCommandStatus::RateLimited, 'Slow down a little, '.$chatterName.'.');
+            return new ChatCommandResult(ChatCommandStatus::RateLimited, 'Slow down a little.');
         }
         RateLimiter::hit($rateKey, 60);
 

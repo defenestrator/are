@@ -80,7 +80,8 @@ test('!song by title queues a requestable track for the linked chatter', functio
     $result = songCommand('!song midnight TEA');
 
     expect($result->status)->toBe(ChatCommandStatus::Done)
-        ->and($result->reply)->toBe('Requested "Midnight Tea" by EDOS. It is number 1 in the queue.');
+        // Song numbers, never titles or the viewer's query (#128).
+        ->and($result->reply)->toBe("Requested song #{$track->id}. It is number 1 in the queue.");
 
     $request = SongRequest::sole();
     expect($request->track->is($track))->toBeTrue()
@@ -122,9 +123,9 @@ test('!song accepts a track number, with or without #', function () {
 
 test('!song matches a unique partial title, prefers an exact one, and lists ambiguous matches', function () {
     songFan();
-    Track::factory()->streamSafe()->create(['title' => 'Tea']);
-    Track::factory()->streamSafe()->create(['title' => 'Midnight Tea']);
-    Track::factory()->streamSafe()->create(['title' => 'Tea for Two']);
+    $tea = Track::factory()->streamSafe()->create(['title' => 'Tea']);
+    $midnight = Track::factory()->streamSafe()->create(['title' => 'Midnight Tea']);
+    $forTwo = Track::factory()->streamSafe()->create(['title' => 'Tea for Two']);
     Track::factory()->streamSafe()->create(['title' => 'Solar Wind']);
 
     expect(SongRequests::resolve('tea')->title)->toBe('Tea')
@@ -132,8 +133,8 @@ test('!song matches a unique partial title, prefers an exact one, and lists ambi
 
     $result = songCommand('!song te');
     expect($result->status)->toBe(ChatCommandStatus::Rejected)
-        ->and($result->reply)->toContain('More than one song matches')
-        ->and($result->reply)->toContain('"Midnight Tea"');
+        ->and($result->reply)->toBe("More than one song matches. Use the song number: #{$midnight->id}, #{$tea->id}, #{$forTwo->id}.")
+        ->and($result->reply)->not->toContain('Midnight Tea');
 });
 
 test('!song never reaches a track that is not requestable', function () {
@@ -165,7 +166,7 @@ test('a track already queued or playing is not added twice, and can be requested
 
     $again = songCommand('!song Midnight Tea', '5550009');
     expect($again->status)->toBe(ChatCommandStatus::Rejected)
-        ->and($again->reply)->toBe('"Midnight Tea" is already in the request queue.');
+        ->and($again->reply)->toBe("Song #{$track->id} is already in the request queue.");
 
     SongRequests::playNext(songModerator());
     expect(songCommand('!song Midnight Tea', '5550009')->status)->toBe(ChatCommandStatus::Rejected);

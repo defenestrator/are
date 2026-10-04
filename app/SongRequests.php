@@ -43,7 +43,7 @@ class SongRequests
 
         $needle = mb_strtolower(ltrim($query, '#'));
         if ($needle === '') {
-            throw SongRequestRejected::notFound($query);
+            throw SongRequestRejected::notFound();
         }
 
         $tracks = Track::requestable()->orderBy('title')->orderBy('id')->get();
@@ -52,10 +52,10 @@ class SongRequests
         $matches = $exact->isNotEmpty() ? $exact : $tracks->filter(fn (Track $t) => str_contains(mb_strtolower($t->title), $needle));
 
         return match ($matches->count()) {
-            0 => throw SongRequestRejected::notFound($query),
+            0 => throw SongRequestRejected::notFound(),
             1 => $matches->first(),
             default => throw SongRequestRejected::ambiguous(
-                $matches->take(3)->map(fn (Track $t) => "\"{$t->title}\" (#{$t->id})")->values()->all(),
+                $matches->take(3)->map(fn (Track $t) => (int) $t->id)->values()->all(),
             ),
         };
     }
@@ -91,11 +91,11 @@ class SongRequests
             // cannot both pass the duplicate check on Postgres.
             $locked = Track::requestable()->lockForUpdate()->find($track->id);
             if ($locked === null) {
-                throw SongRequestRejected::notFound($track->title);
+                throw SongRequestRejected::notFound();
             }
 
             if (SongRequest::open()->where('track_id', $locked->id)->exists()) {
-                throw SongRequestRejected::alreadyQueued($locked->title);
+                throw SongRequestRejected::alreadyQueued((int) $locked->id);
             }
 
             $limit = (int) config('music.requests_per_user');

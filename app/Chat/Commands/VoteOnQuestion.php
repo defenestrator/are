@@ -42,7 +42,7 @@ class VoteOnQuestion implements ChatCommand
 
         $question = Question::find((int) $m[1]);
         if ($question === null) {
-            return ChatCommandResult::rejected("There is no question #{$m[1]}.");
+            return ChatCommandResult::rejected('There is no question with that number.');
         }
 
         try {
