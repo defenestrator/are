@@ -137,69 +137,84 @@ test('votes on archived questions are ignored', function () {
     $question = Question::factory()->for($user)->create(['archived_at' => now()]);
 
     $this->actingAs($user);
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->call('upvote');
+    onVotePage()->call('upvote', $question->id);
 
     expect($question->voteCount())->toBe(0);
 });
 
-test('active votes work and retries do not duplicate a viewers vote', function (bool $includeUserVote) {
+test('active votes work and retries do not duplicate a viewers vote', function () {
     $user = User::factory()->create();
     $question = Question::factory()->create();
     $this->actingAs($user);
-    $props = ['question' => $question, 'voteCount' => 0];
-    if ($includeUserVote) {
-        $props['userVote'] = 0;
-    }
 
-    $card = Volt::test('question-card', $props);
-    $card->call('upvote')->call('upvote');
+    $page = onVotePage();
+    $page->call('upvote', $question->id)->call('upvote', $question->id);
     expect($question->voteCount())->toBe(1);
-    $card->call('downvote')->call('downvote');
+    $page->call('downvote', $question->id)->call('downvote', $question->id);
     expect($question->voteCount())->toBe(-1)
         ->and(\DB::table('question_votes')->where('question_id', $question->id)->count())->toBe(1);
-})->with(['top suggestions' => true, 'new ideas' => false]);
+});
 
-// --- A card votes only on its own question (#114) ----------------------------
+// --- Votes act only on an open question (#114, #180) -------------------------
+//
+// Since #180 the cards are Blade components and the vote page's actions take
+// the question id from the browser. It is only ever looked up among open
+// questions, and every rule still runs through QuestionQueue::vote.
 
-test('a crafted vote call naming another question still votes only on the card\'s own question', function (string $action, int $expected) {
-    [$own, $other] = Question::factory()->count(2)->create();
+test('a vote names exactly one open question and touches no other', function (string $action, int $expected) {
+    [$voted, $other] = Question::factory()->count(2)->create();
     $this->actingAs(User::factory()->create());
 
-    // What a tampered wire:click="upvote(<other id>)" sends: an extra argument.
-    Volt::test('question-card', ['question' => $own, 'voteCount' => 0])
-        ->call($action, $other->id)
-        ->assertSet('voteCount', $expected);
+    onVotePage()->call($action, $voted->id);
 
-    expect($own->voteCount())->toBe($expected)
+    expect($voted->voteCount())->toBe($expected)
         ->and($other->voteCount())->toBe(0)
         ->and(DB::table('question_votes')->where('question_id', $other->id)->exists())->toBeFalse();
 })->with(['upvote' => ['upvote', 1], 'downvote' => ['downvote', -1]]);
 
-test('a crafted update swapping the card\'s question for another is rejected or ignored', function () {
-    [$own, $other] = Question::factory()->count(2)->create();
+test('a crafted vote naming a closed, deleted or made-up question does nothing', function (Closure $id) {
     $this->actingAs(User::factory()->create());
-    $card = Volt::test('question-card', ['question' => $own, 'voteCount' => 0]);
+    $open = Question::factory()->create();
 
-    // Livewire guards model properties: their id cannot be set from the
-    // browser, and a bare id in place of the model does not replace it.
-    expect(fn () => $card->set('question.id', $other->id))->toThrow(Exception::class, "Can't set model properties directly");
-    $card->set('question', $other->id);
-    expect($card->get('question')->is($own))->toBeTrue();
+    onVotePage()->call('upvote', $id())->call('downvote', $id());
 
-    $card->call('upvote');
-    expect($own->voteCount())->toBe(1)->and($other->voteCount())->toBe(0);
-});
+    expect(DB::table('question_votes')->count())->toBe(0)
+        ->and($open->voteCount())->toBe(0);
+})->with([
+    'archived' => [fn () => Question::factory()->create(['archived_at' => now()])->id],
+    'deleted' => [function () {
+        $q = Question::factory()->create();
+        $q->delete();
 
-test('the card\'s vote buttons send no question id', function () {
+        return $q->id;
+    }],
+    'never existed' => [fn () => 999999],
+    'not a number' => [fn () => '1 or 1=1'],
+    'an array' => [fn () => [1]],
+    'null' => [fn () => null],
+]);
+
+test('a vote answers with the new total and version, and re-renders nothing', function () {
     $question = Question::factory()->create();
     $this->actingAs(User::factory()->create());
 
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->assertSeeHtml('wire:click="upvote"')
-        ->assertSeeHtml('wire:click="downvote"')
-        ->assertDontSeeHtml('upvote('.$question->id.')')
-        ->assertDontSeeHtml('downvote('.$question->id.')');
+    onVotePage()
+        ->call('upvote', $question->id)
+        ->assertDispatched('vote-recorded', question_id: $question->id, votes: 1, version: 1, vote: 1)
+        ->assertNoRedirect();
+});
+
+test('the card\'s buttons name their own question, and only that one', function () {
+    $question = Question::factory()->create();
+    $this->actingAs(User::factory()->create());
+
+    $html = cardHtml(Question::getSortedQuestions()->sole());
+
+    expect($html)->toContain('wire:click="upvote('.$question->id.')"')
+        ->toContain('wire:click="downvote('.$question->id.')"')
+        ->toContain('data-question="'.$question->id.'"');
+    expect(preg_match_all('/wire:click="(?:up|down)vote\((\d+)\)"/', $html, $ids))->toBe(2)
+        ->and(array_unique($ids[1]))->toBe([(string) $question->id]);
 });
 
 test('authors can delete their own question but not someone else\'s', function () {
@@ -209,10 +224,20 @@ test('authors can delete their own question but not someone else\'s', function (
     $theirs = Question::factory()->for($other)->create();
 
     $this->actingAs($author);
-    Volt::test('question-card', ['question' => $theirs, 'voteCount' => 0])->call('deleteQuestion')->assertForbidden();
-    Volt::test('question-card', ['question' => $mine, 'voteCount' => 0])->call('deleteQuestion');
+    onVotePage()->call('deleteQuestion', $theirs->id)->assertForbidden();
+    onVotePage()->call('deleteQuestion', $mine->id);
 
     expect(Question::pluck('id')->all())->toBe([$theirs->id]);
+});
+
+test('a crafted delete naming a closed or made-up question does nothing', function () {
+    $author = User::factory()->create();
+    $archived = Question::factory()->for($author)->create(['archived_at' => now()]);
+    $this->actingAs($author);
+
+    onVotePage()->call('deleteQuestion', $archived->id)->call('deleteQuestion', 999999)->call('deleteQuestion', 'x');
+
+    expect(Question::find($archived->id))->not->toBeNull();
 });
 
 test('a Facebook-only user can be created without Twitch fields', function () {
@@ -395,7 +420,7 @@ test('each card shows the viewer\'s own vote on that question', function () {
 
     [$html] = loadVotePage($this, $viewer);
 
-    $pressed = fn (string $button, Question $q) => preg_match_all('/<button(?=[^>]*bg-\[var\(--color-accent\)\])(?=[^>]*aria-label="'.$button.' #'.$q->id.'")/', $html);
+    $pressed = fn (string $button, Question $q) => preg_match_all('/<button(?=[^>]*aria-pressed="true")(?=[^>]*aria-label="'.$button.' #'.$q->id.'")/', $html);
 
     // Each question is on the page twice (Top Suggestions and New Ideas).
     expect($pressed('Upvote', $up))->toBe(2)

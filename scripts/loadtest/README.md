@@ -10,7 +10,7 @@ It reports p50, p95 and p99 latency and the error rate for each scenario, plus a
 |---|---|---|
 | `anonymous` | `GET /`, `/about`, `/music`, `/up` at random | `ANON_RATE` = 20/s |
 | `overlays` | `OVERLAY_SOURCES` OBS sources (queue, vote, top-vote, now-playing, bus). Each trades its overlay token for a grant once, then polls the way the page does without a socket: a Livewire `$refresh` every 5–10 s (now-playing every 5 s) | 10 sources |
-| `vote` | `VIEWERS` signed-in viewers on `/vote`. Each polls like the page's fallback (a `$refresh` every 5–10 s) and votes on a question card 15% of the time | 50 viewers |
+| `vote` | `VIEWERS` signed-in viewers on `/vote`. Each polls like the page's fallback (`refreshQueue` every 5–10 s, which renders only when something changed; #180) and votes on a question 15% of the time, through the page component with the question's id | 50 viewers |
 | `chat` | A burst of signed EventSub `channel.chat.message` webhooks carrying `!vote` (70%) and `!q` (30%) from the seeded chatters: a 5 s ramp, 20 s at peak, a 5 s ramp down, starting 15 s in | `CHAT_RATE` = 40/s peak |
 
 Each scenario runs for `DURATION` (60 s by default).

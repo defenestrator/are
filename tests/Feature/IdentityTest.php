@@ -56,8 +56,7 @@ function fakeProviderAccount(string $driver, SocialiteUser $account): void
 function voteAs(User $user, Question $question): void
 {
     test()->actingAs($user);
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->call('upvote');
+    onVotePage()->call('upvote', $question->id);
 }
 
 // Sign-in
@@ -348,13 +347,10 @@ test('moderators see the linked identities of a question\'s author; viewers do n
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => '77']);
 
     $this->actingAs($mod);
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->assertSee('Twitch: sockpuppet (42)')
-        ->assertSee('YouTube: sockpuppet (UC-yt-1)');
+    expect(cardHtml($question))->toContain('Twitch: sockpuppet (42)')->toContain('YouTube: sockpuppet (UC-yt-1)');
 
     $this->actingAs(User::factory()->create());
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->assertDontSee('UC-yt-1');
+    expect(cardHtml($question))->not->toContain('UC-yt-1');
 });
 
 test('identity lists are eager-loaded with the queue', function () {

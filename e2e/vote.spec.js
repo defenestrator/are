@@ -31,3 +31,48 @@ test('a signed-in viewer submits a question and votes, and sees another viewer\'
 
     await expect(count).toHaveText('2', { timeout: 20_000 });
 });
+
+// Both of a question's buttons (Top Suggestions and New Ideas) in one state.
+const pressed = async (buttons, value) => {
+    await expect(buttons).toHaveCount(2);
+    for (const i of [0, 1]) {
+        await expect(buttons.nth(i)).toHaveAttribute('aria-pressed', value);
+    }
+};
+
+// #180: cards are Blade components. The page's own renderless upvote and
+// downvote answer with vote-recorded, which live-queue.js writes into both
+// lists and the pressed buttons; delete goes through the page as well.
+test('a viewer\'s own vote shows in both lists without a reload, and an author deletes their own question', async ({ page }) => {
+    await signIn(page, fixtures.viewer, '/vote');
+
+    // The whole page is two Livewire components however many cards it shows.
+    await expect(page.locator('[x-data="liveQueue"] li[data-question-id]').first()).toBeVisible();
+    expect(await page.locator('[wire\\:id]').count()).toBe(2);
+
+    const question = `E2E own question ${Date.now()}`;
+    await page.getByPlaceholder('What should I sing about?').fill(question);
+    await page.getByRole('button', { name: 'Submit' }).click();
+    const card = page.locator('li[data-question-id]', { hasText: question });
+    await expect(card).toHaveCount(2);   // Top Suggestions and New Ideas
+    const id = await card.first().getAttribute('data-question-id');
+
+    const counts = page.locator(`[data-vote-count="${id}"]`);
+    const up = page.getByRole('button', { name: `Upvote #${id}` });
+    const down = page.getByRole('button', { name: `Downvote #${id}` });
+
+    await up.first().click();
+    await expect(counts).toHaveText(['1', '1']);
+    await pressed(up, 'true');
+    await pressed(down, 'false');
+
+    await down.last().click();
+    await expect(counts).toHaveText(['-1', '-1']);
+    await pressed(up, 'false');
+    await pressed(down, 'true');
+
+    // Delete asks first (wire:confirm), then the question leaves both lists.
+    page.once('dialog', (dialog) => dialog.accept());
+    await card.first().getByRole('button', { name: 'Delete question' }).click();
+    await expect(card).toHaveCount(0);
+});

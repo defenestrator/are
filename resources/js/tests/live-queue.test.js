@@ -64,10 +64,27 @@ class El {
     querySelector(selector) {
         return this.querySelectorAll(selector)[0] ?? null;
     }
+
+    setAttribute(name, value) {
+        this.attributes = {...(this.attributes ?? {}), [name]: String(value)};
+    }
+
+    getAttribute(name) {
+        return this.attributes?.[name] ?? null;
+    }
 }
 
+// A card as resources/views/components/question-card.blade.php renders it:
+// the count, and the two vote buttons tagged with their question (#180).
 function card(id, votes, version = 0) {
-    return new El('li', {questionId: id}).add(new El('p', {voteCount: id, voteVersion: version}, String(votes)));
+    const button = (direction) => {
+        const el = new El('button', {voteButton: direction, question: id});
+        el.setAttribute('aria-pressed', 'false');
+
+        return el;
+    };
+
+    return new El('li', {questionId: id}).add(new El('p', {voteCount: id, voteVersion: version}, String(votes)), button('up'), button('down'));
 }
 
 /**
@@ -112,11 +129,11 @@ function page(top, recent = [], {status = 'connected'} = {}) {
         setTimer: (fn, ms) => { const id = ++nextId; timers.push({id, fn, ms}); return id; },
         clearTimer: (id) => { timers = timers.filter((t) => t.id !== id); },
     });
-    // $refresh and dispatch() log into one list, so tests can check they go out together.
+    // refreshQueue and dispatch() log into one list, so tests can check they go out together.
     const dispatches = [];
     const calls = [];
     Object.assign(component, {$root: root, $refs: {top: topList}, $wire: {
-        $refresh: () => { refreshes.push(1); calls.push('$refresh'); },
+        refreshQueue: () => { refreshes.push(1); calls.push('refreshQueue'); },
         dispatch: (name) => { dispatches.push(name); calls.push(name); },
     }});
     component.init();
@@ -150,7 +167,7 @@ test('TopicChanged refreshes the page and syncs the topic component together, af
     assert.equal(p.pending().length, 1);
 
     p.runTimers();
-    assert.deepEqual(p.calls, ['$refresh', 'topic-sync']);
+    assert.deepEqual(p.calls, ['refreshQueue', 'topic-sync']);
 });
 
 test('a topic change shares the refresh of a new question, and only one topic-sync goes out', () => {
@@ -161,7 +178,7 @@ test('a topic change shares the refresh of a new question, and only one topic-sy
     p.fire('TopicChanged', {topic: null});
     p.runTimers();
 
-    assert.deepEqual(p.calls, ['$refresh', 'topic-sync']);
+    assert.deepEqual(p.calls, ['refreshQueue', 'topic-sync']);
 });
 
 test('a refresh for questions alone does not touch the topic component', () => {
@@ -170,7 +187,7 @@ test('a refresh for questions alone does not touch the topic component', () => {
     p.fire('QuestionSubmitted', {id: 9});
     p.runTimers();
 
-    assert.deepEqual(p.calls, ['$refresh']);
+    assert.deepEqual(p.calls, ['refreshQueue']);
 });
 
 test('without Echo every fallback poll also syncs the topic component', () => {
@@ -179,7 +196,7 @@ test('without Echo every fallback poll also syncs the topic component', () => {
     p.runTimers();
     p.runTimers();
 
-    assert.deepEqual(p.calls, ['$refresh', 'topic-sync', '$refresh', 'topic-sync']);
+    assert.deepEqual(p.calls, ['refreshQueue', 'topic-sync', 'refreshQueue', 'topic-sync']);
 });
 
 test('reconnecting syncs the topic too, since a TopicChanged may have been missed', () => {
@@ -191,7 +208,7 @@ test('reconnecting syncs the topic too, since a TopicChanged may have been misse
     p.setStatus('connected');
     p.runTimers();
 
-    assert.deepEqual(p.calls, ['$refresh', 'topic-sync']);
+    assert.deepEqual(p.calls, ['refreshQueue', 'topic-sync']);
 });
 
 test('without Echo (no Reverb key in the build) it subscribes to nothing', () => {
@@ -199,6 +216,48 @@ test('without Echo (no Reverb key in the build) it subscribes to nothing', () =>
 
     assert.deepEqual(p.subscribed, []);
     assert.equal(p.component.channel, null);
+});
+
+// The viewer's own vote (#180): the page's upvote/downvote are renderless and
+// answer with vote-recorded instead of re-rendering 100 cards.
+
+const pressed = (p, id) => p.root.querySelectorAll(`[data-question="${id}"]`).map((b) => `${b.dataset.voteButton}:${b.getAttribute('aria-pressed')}`);
+
+test('vote-recorded writes the total and presses the viewer\'s button in both lists, with no request', () => {
+    const p = page([[1, 5, 3], [2, 1, 0]], [[2, 1, 0], [1, 5, 3]]);
+
+    p.component.recorded({question_id: 2, votes: 7, version: 1, vote: 1});
+
+    assert.deepEqual(p.shown(2), [['7', 1], ['7', 1]]);
+    assert.deepEqual(pressed(p, 2), ['up:true', 'down:false', 'up:true', 'down:false']);
+    assert.deepEqual(pressed(p, 1), ['up:false', 'down:false', 'up:false', 'down:false'], 'other questions untouched');
+    assert.deepEqual(p.order(), [2, 1], 'Top re-sorts as for a VoteCast');
+    assert.equal(p.refreshes.length, 0);
+});
+
+test('vote-recorded switches a pressed upvote to a downvote', () => {
+    const p = page([[1, 5, 3]]);
+
+    p.component.recorded({question_id: 1, votes: 6, version: 4, vote: 1});
+    p.component.recorded({question_id: 1, votes: 4, version: 5, vote: -1});
+
+    assert.deepEqual(pressed(p, 1), ['up:false', 'down:true']);
+    assert.deepEqual(p.shown(1), [['4', 5]]);
+});
+
+test('vote-recorded and VoteCast for the same vote apply once, in either order', () => {
+    const early = page([[1, 5, 3]]);
+    early.fire('VoteCast', {question_id: 1, votes: 6, version: 4});
+    early.component.recorded({question_id: 1, votes: 6, version: 4, vote: 1});
+    assert.deepEqual(early.shown(1), [['6', 4]]);
+    assert.deepEqual(pressed(early, 1), ['up:true', 'down:false'], 'the button is pressed even when the broadcast won');
+
+    // A newer vote by someone else arrived first: the viewer's older total is dropped.
+    const late = page([[1, 5, 3]]);
+    late.fire('VoteCast', {question_id: 1, votes: 9, version: 6});
+    late.component.recorded({question_id: 1, votes: 6, version: 4, vote: 1});
+    assert.deepEqual(late.shown(1), [['9', 6]]);
+    assert.deepEqual(pressed(late, 1), ['up:true', 'down:false']);
 });
 
 test('VoteCast writes the total and version into every card for that question, with no request', () => {

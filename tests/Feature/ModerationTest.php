@@ -189,14 +189,14 @@ test('the moderation page is for moderators only', function () {
 
 test('the card shows a delete button to the author but not to other viewers', function () {
     $author = User::factory()->create();
-    $question = Question::factory()->for($author)->create();
-    $props = ['question' => $question, 'voteCount' => 0];
+    Question::factory()->for($author)->create();
+    $question = Question::getSortedQuestions()->sole();
 
     $this->actingAs($author);
-    Volt::test('question-card', $props)->assertSeeHtml('aria-label="Delete question"');
+    expect(cardHtml($question))->toContain('aria-label="Delete question"');
 
     $this->actingAs(User::factory()->create());
-    Volt::test('question-card', $props)->assertDontSeeHtml('aria-label="Delete question"');
+    expect(cardHtml($question))->not->toContain('aria-label="Delete question"');
 });
 
 test('logging out requires POST', function () {
@@ -236,24 +236,28 @@ test('a viewer calling deleteQuestion on someone else\'s card gets a 403', funct
     $question = Question::factory()->create();
     $this->actingAs(User::factory()->create());
 
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->call('deleteQuestion')
-        ->assertForbidden();
+    onVotePage()->call('deleteQuestion', $question->id)->assertForbidden();
 
     expect(Question::find($question->id))->not->toBeNull();
 });
 
 test('a moderator deletes from the card, and a banned moderator cannot', function () {
     $mod = moderator();
-    $props = fn () => ['question' => Question::factory()->create(), 'voteCount' => 0];
+    $fresh = function () {
+        $id = Question::factory()->create()->id;
+
+        return Question::getSortedQuestions()->firstWhere('id', $id);
+    };
     $this->actingAs($mod);
 
-    Volt::test('question-card', $props())->assertSeeHtml('aria-label="Delete question"')
-        ->call('deleteQuestion')->assertDispatched('question-deleted');
+    $first = $fresh();
+    expect(cardHtml($first))->toContain('aria-label="Delete question"');
+    onVotePage()->call('deleteQuestion', $first->id)->assertHasNoErrors();
 
     Moderation::ban(User::factory()->twitch('1000')->create(), $mod, null);
-    Volt::test('question-card', $props())->assertDontSeeHtml('aria-label="Delete question"')
-        ->call('deleteQuestion')->assertForbidden();
+    $second = $fresh();
+    expect(cardHtml($second))->not->toContain('aria-label="Delete question"');
+    onVotePage()->call('deleteQuestion', $second->id)->assertForbidden();
 
     expect(Question::count())->toBe(1)
         ->and(ModerationAction::where('action', 'question.deleted')->count())->toBe(1);

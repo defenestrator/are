@@ -4,7 +4,6 @@ use App\Models\Question;
 use App\Models\User;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
-use Livewire\Volt\Volt;
 
 /**
  * @param  array<string, string|null>  $avatars  provider => avatar URL, in link order
@@ -32,9 +31,7 @@ test('a Facebook-only author gets an avatar on the question card', function () {
     $question = Question::getSortedQuestions()->sole();
 
     $this->actingAs(User::factory()->create());
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->assertSee('https://graph.facebook.com/fb-1/picture', false)
-        ->assertDontSee('src=""', false);
+    expect(cardHtml($question))->toContain('https://graph.facebook.com/fb-1/picture')->not->toContain('src=""');
 });
 
 test('the avatar comes from the oldest identity that has one', function () {
@@ -54,9 +51,7 @@ test('an author with no picture gets initials on the question card, not a blank 
     $question = Question::getSortedQuestions()->sole();
 
     $this->actingAs(User::factory()->create());
-    Volt::test('question-card', ['question' => $question, 'voteCount' => 0])
-        ->assertSee('KF')
-        ->assertDontSee('src=""', false);
+    expect(cardHtml($question))->toContain('KF')->not->toContain('src=""');
 });
 
 test('the overlay card shows a Facebook-only author\'s avatar, or their initial', function () {

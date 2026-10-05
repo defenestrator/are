@@ -198,6 +198,16 @@ class Question extends Model
     }
 
     /**
+     * The version of the queue cachedQueue() serves. It changes with every new
+     * question, vote or removal, so a page that rendered this version is
+     * still showing the current queue (#180).
+     */
+    public static function queueVersion(): ?string
+    {
+        return Cache::get('questions.queue-version');
+    }
+
+    /**
      * Mark every cached copy of the queue as out of date.
      */
     public static function forgetCachedQueue(): string

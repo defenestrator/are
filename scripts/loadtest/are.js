@@ -13,7 +13,7 @@
 // Scenarios (SCENARIOS=a,b to run a subset):
 //   anonymous  public pages (/, /about, /music, /up) at ANON_RATE requests/s
 //   overlays   OVERLAY_SOURCES OBS sources, each polling its overlay the way
-//              the page does without a socket: a Livewire $refresh every
+//              the page does without a socket: a Livewire refreshQueue every
 //              5-10 s (now-playing: every 5 s)
 //   vote       VIEWERS signed-in viewers on /vote, each polling every 5-10 s
 //              like the page's fallback, and now and then voting
@@ -122,7 +122,7 @@ for (const name of SELECTED) {
 const BREAKDOWN = {
     anonymous: ['GET /', 'GET /about', 'GET /music', 'GET /up'],
     overlays: ['POST /overlay/{overlay}/session', 'GET /overlay/{overlay}', 'POST livewire/update (overlay refresh)'],
-    vote: ['GET /_e2e/login -> /vote', 'POST livewire/update (vote $refresh)', 'POST livewire/update (vote card)'],
+    vote: ['GET /_e2e/login -> /vote', 'POST livewire/update (vote refreshQueue)', 'POST livewire/update (vote click)'],
     chat: ['POST /twitch/eventsub (chat)'],
 };
 const BREAKDOWN_NAMES = SELECTED.reduce((names, scenario) => names.concat(BREAKDOWN[scenario]), []);
@@ -247,11 +247,13 @@ function openVotePage() {
     // The page component is an anonymous Volt fragment named
     // "volt-anonymous-fragment-<base64 of {name: vote, ...}>".
     const vote = state.components.find((component) => component.name === 'vote' || component.name.indexOf('volt-anonymous-fragment-') === 0)
-        || state.components.find((component) => !['question-card', 'topic'].includes(component.name));
-    const cards = state.components.filter((component) => component.name === 'question-card');
+        || state.components.find((component) => component.name !== 'topic');
+    // Since #180 the cards are Blade, not components: a vote is a call on the
+    // page component with the question's id, read from the cards.
+    const questionIds = [...new Set([...(page.body || '').matchAll(/data-question-id="(\d+)"/g)].map((m) => Number(m[1])))];
     check(page, { '/vote renders for the viewer': (r) => r.status === 200 && r.url.endsWith('/vote') && vote !== undefined });
 
-    return vote ? { csrf: state.csrf, updateUri: state.updateUri, vote: vote.snapshot, cards } : null;
+    return vote ? { csrf: state.csrf, updateUri: state.updateUri, vote: vote.snapshot, questionIds } : null;
 }
 
 function livewireCall(snapshot, method, params, name) {
@@ -271,8 +273,9 @@ export function viewer() {
         }
     }
 
-    // The polling fallback: refresh the page component.
-    const refreshed = livewireCall(viewerPage.vote, '$refresh', [], 'POST livewire/update (vote $refresh)');
+    // The polling fallback, as live-queue.js does it: refreshQueue, which
+    // renders only when the queue, topic or the viewer's form changed (#180).
+    const refreshed = livewireCall(viewerPage.vote, 'refreshQueue', [], 'POST livewire/update (vote refreshQueue)');
     const snapshot = nextSnapshot(refreshed);
     check(refreshed, { 'vote refresh is 200 with a snapshot': (r) => r.status === 200 && snapshot !== null });
     reportFailure('vote refresh', refreshed);
@@ -281,14 +284,14 @@ export function viewer() {
     }
 
     // Now and then, vote on a question, as a viewer clicking a card would.
-    if (viewerPage.cards.length > 0 && Math.random() < 0.15) {
-        const index = Math.floor(Math.random() * viewerPage.cards.length);
-        const voted = livewireCall(viewerPage.cards[index].snapshot, Math.random() < 0.8 ? 'upvote' : 'downvote', [], 'POST livewire/update (vote card)');
-        const cardSnapshot = nextSnapshot(voted);
+    if (viewerPage.questionIds.length > 0 && Math.random() < 0.15) {
+        const id = pick(viewerPage.questionIds);
+        const voted = livewireCall(viewerPage.vote, Math.random() < 0.8 ? 'upvote' : 'downvote', [id], 'POST livewire/update (vote click)');
+        const voteSnapshot = nextSnapshot(voted);
         check(voted, { 'vote click is 200': (r) => r.status === 200 });
         reportFailure('vote click', voted);
-        if (cardSnapshot !== null) {
-            viewerPage.cards[index].snapshot = cardSnapshot;
+        if (voteSnapshot !== null) {
+            viewerPage.vote = voteSnapshot;
         }
     }
 

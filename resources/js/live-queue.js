@@ -6,6 +6,8 @@
 //   re-sort Top Suggestions, straight from the payload. Events carry the
 //   question's vote_version; one not newer than the version shown is late and
 //   is dropped.
+// - vote-recorded (the viewer's own vote, from the page's renderless upvote
+//   and downvote, #180): the same write, plus their pressed button.
 // - QuestionArchived: remove those questions' cards. Only "the whole queue"
 //   (ids: null) needs a refresh.
 // - QuestionSubmitted: refresh once, after a random delay so every viewer does
@@ -131,6 +133,22 @@ export function liveQueue({
             }
         },
 
+        // The viewer's own vote, answered by the vote page's renderless
+        // upvote/downvote (#180): the same version-checked write as a
+        // VoteCast, which may arrive before or after it, plus their pressed
+        // button, which the cards style from aria-pressed.
+        recorded({ question_id, votes, version, vote }) {
+            const id = Number(question_id);
+
+            this.$root.querySelectorAll(`[data-question="${id}"]`).forEach((button) => {
+                const mine = (button.dataset.voteButton === 'up' && Number(vote) > 0)
+                    || (button.dataset.voteButton === 'down' && Number(vote) < 0);
+                button.setAttribute('aria-pressed', mine ? 'true' : 'false');
+            });
+
+            this.voteCast({ question_id: id, votes, version });
+        },
+
         voteCast({ question_id, votes, version }) {
             const id = Number(question_id);
 
@@ -203,8 +221,11 @@ export function liveQueue({
         },
 
         // Called in one tick, so Livewire sends both in one request.
+        // refreshQueue (not $refresh) renders only if the queue, topic or the
+        // viewer's form changed since the last render: the cards are Blade,
+        // so a needless render would cost all of them (#180).
         refresh({topic = false} = {}) {
-            this.$wire.$refresh();
+            this.$wire.refreshQueue();
             if (topic || this.topicPending) {
                 this.topicPending = false;
                 this.$wire.dispatch('topic-sync');

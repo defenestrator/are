@@ -6,9 +6,11 @@ use App\Events\TopicChanged;
 use App\Events\VoteCast;
 use App\Models\Question;
 use App\Models\Topic;
+use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Moderation;
+use App\QuestionQueue;
 use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\PresenceChannel;
@@ -38,11 +40,6 @@ function realtimeModerator(): User
 function votePage(): Testable
 {
     return Livewire::test(FragmentAlias::encode('vote', resource_path('views/vote.blade.php')));
-}
-
-function card(Question $question, int $voteCount = 0): Testable
-{
-    return Volt::test('question-card', ['question' => $question, 'voteCount' => $voteCount]);
 }
 
 /**
@@ -154,12 +151,14 @@ test('upvoting and downvoting dispatch VoteCast with the new total and no voter'
     DB::table('question_votes')->insert(['question_id' => $question->id, 'user_id' => User::factory()->create()->id, 'count' => 1]);
     $this->actingAs(User::factory()->create());
 
-    card($question, 1)->call('upvote')
-        ->assertSet('voteCount', 2)->assertSet('voteVersion', 1)
-        ->assertSeeHtml('data-vote-version="1"');
+    // The voter's own page hears it from the renderless action (#180)...
+    onVotePage()->call('upvote', $question->id)
+        ->assertDispatched('vote-recorded', question_id: $question->id, votes: 2, version: 1, vote: 1);
+    // ...and everyone else from the broadcast.
     Event::assertDispatched(VoteCast::class, fn (VoteCast $e) => $e->questionId === $question->id && $e->votes === 2 && $e->version === 1);
 
-    card($question->refresh(), 2)->call('downvote')->assertSet('voteCount', 0)->assertSet('voteVersion', 2);
+    onVotePage()->call('downvote', $question->id)
+        ->assertDispatched('vote-recorded', question_id: $question->id, votes: 0, version: 2, vote: -1);
     Event::assertDispatched(VoteCast::class, fn (VoteCast $e) => $e->votes === 0 && $e->version === 2);
 
     expect((new VoteCast($question->id, 0, 2))->broadcastWith())->not->toHaveKey('user_id');
@@ -188,7 +187,7 @@ test('a vote that is refused dispatches nothing', function () {
     $question = Question::factory()->create(['archived_at' => now()]);
     $this->actingAs(User::factory()->create());
 
-    card($question)->call('upvote');
+    onVotePage()->call('upvote', $question->id)->assertNotDispatched('vote-recorded');
 
     Event::assertNotDispatched(VoteCast::class);
 });
@@ -269,26 +268,46 @@ test('a fallback poll shows new totals: cards are keyed by vote_version, so chan
         ->assertSeeHtml('data-vote-count="'.$question->id.'" data-vote-version="1"');
 });
 
-test('a fallback poll with nothing changed reuses the cached queue and remounts no card', function () {
+test('a fallback poll with nothing changed renders nothing and runs no queue query', function () {
     Question::factory()->count(3)->create();
     $this->actingAs(User::factory()->create());
     $page = votePage();
 
     DB::flushQueryLog();
     DB::enableQueryLog();
-    $page->call('$refresh');
+    $page->call('refreshQueue');
     $queries = collect(DB::getQueryLog())->pluck('query');
 
+    // Since #180 the cards are Blade, so a render would cost all of them:
+    // a poll that would show nothing new skips the render.
     expect($queries->filter(fn (string $q) => str_contains($q, 'sum(question_votes.count)')))->toHaveCount(0)
-        ->and($page->html())->not->toContain('data-vote-version');
+        ->and($page->effects)->not->toHaveKey('html');
 });
+
+test('a fallback poll renders once the queue, the topic or the viewer\'s form changed', function (Closure $change) {
+    $question = Question::factory()->create();
+    $this->actingAs($viewer = User::factory()->create());
+    $page = votePage();
+    $page->call('refreshQueue');
+    expect($page->effects)->not->toHaveKey('html');
+
+    $change($question, $viewer);
+
+    $page->call('refreshQueue');
+    expect($page->effects)->toHaveKey('html');
+})->with([
+    'a vote elsewhere' => [fn (Question $q) => $q->recordVote(User::factory()->create(), 1)],
+    'a new question' => [fn () => QuestionQueue::submit(User::factory()->create(), 'A brand new question')],
+    'a new topic' => [fn () => Topic::set('Something new')],
+    'the viewer was banned' => [fn (Question $q, User $viewer) => TwitchBan::create(['broadcaster_id' => '1000', 'twitch_user_id' => $viewer->twitch_id])],
+]);
 
 test('a remounted card shows the viewer\'s own vote as it is now, not as it was at page load', function () {
     $question = Question::factory()->create();
     $this->actingAs($viewer = User::factory()->create());
     $page = votePage();
     // A primary (accent) upvote button marks the viewer's own upvote.
-    $upvoted = fn (string $html) => preg_match('/<button(?=[^>]*bg-\[var\(--color-accent\)\])(?=[^>]*aria-label="Upvote #'.$question->id.'")/', $html) === 1;
+    $upvoted = fn (string $html) => preg_match('/<button(?=[^>]*aria-pressed="true")(?=[^>]*aria-label="Upvote #'.$question->id.'")/', $html) === 1;
     expect($upvoted($page->html()))->toBeFalse();
 
     // The viewer votes from chat or another tab, then the page polls.
@@ -302,11 +321,11 @@ test('a vote costs other viewers no server request: no Livewire component listen
     $this->actingAs(User::factory()->create());
 
     // The card's count is updated in the browser from the payload, which must
-    // carry the id the card is tagged with and the new total.
-    card($question, 4)
-        ->assertSeeHtml('data-vote-count="'.$question->id.'"')
-        ->assertDontSee('echo:')
-        ->dispatch('echo:questions,VoteCast', ['question_id' => $question->id, 'votes' => 5]);
+    // carry the id the card is tagged with and the new total. Since #180 the
+    // card is a Blade component: it has no Livewire listeners at all.
+    expect(cardHtml(Question::getSortedQuestions()->sole()))->toContain('data-vote-count="'.$question->id.'"')->not->toContain('echo:');
+
+    votePage()->dispatch('echo:questions,VoteCast', ['question_id' => $question->id, 'votes' => 5]);
 })->throws(EventHandlerDoesNotExist::class);
 
 test('the page has no Livewire handler for the questions channel either', function () {

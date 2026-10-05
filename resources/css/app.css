@@ -114,3 +114,19 @@ html[data-overlay] .dg.ac {
         animation: none;
     }
 }
+
+/*
+ * Question card buttons on /vote (#180). Cards are Blade components repeated
+ * 100 times on a full page, so their button styles live here once instead
+ * of in each card's class attributes. The viewer's own vote is styled from
+ * aria-pressed, which live-queue.js flips when they vote.
+ */
+.card-btn {
+    @apply inline-flex h-8 shrink-0 items-center justify-center rounded-md transition-colors cursor-pointer disabled:opacity-50
+        bg-transparent text-zinc-800 hover:bg-zinc-800/5 dark:text-white dark:hover:bg-white/15;
+}
+
+.card-vote {
+    @apply px-3 aria-pressed:bg-[var(--color-accent)] aria-pressed:text-[var(--color-accent-foreground)]
+        aria-pressed:hover:bg-[color-mix(in_oklab,_var(--color-accent),_transparent_10%)];
+}
