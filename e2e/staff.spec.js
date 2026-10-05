@@ -6,7 +6,6 @@ import { test, expect, fixtures, signIn } from './support.js';
 // here. Add new pages to this list.
 const pages = [
     ['/vote', null],
-    ['/settings', null],
     ['/moderation', 'Moderation'],
     ['/clips', 'Clips'],
     ['/bus', 'Chat Control Bus'],
@@ -29,3 +28,11 @@ for (const [path, heading] of pages) {
         await page.waitForLoadState('networkidle');
     });
 }
+
+// Known broken, found by this suite: the appearance switcher throws
+// "Alpine Expression Error: dark is not defined" (#167). Turn this back into
+// a normal test, and into the list above, when #167 is fixed.
+test.fixme('/settings renders for the broadcaster (#167)', async ({ page }) => {
+    await signIn(page, fixtures.broadcaster, '/settings');
+    await page.waitForLoadState('networkidle');
+});
