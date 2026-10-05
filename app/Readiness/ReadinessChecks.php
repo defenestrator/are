@@ -15,7 +15,6 @@ use App\Models\User;
 use App\Models\YouTubeChannelToken;
 use App\Twitch;
 use App\YouTube\Quota;
-use App\YouTube\YouTubeApi;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Support\Carbon;
@@ -141,7 +140,7 @@ class ReadinessChecks
                 continue;
             }
 
-            $missing = array_values(array_diff(Twitch::BROADCASTER_SCOPES, (array) $token->scopes));
+            $missing = $token->missingScopes();
             $checks[] = $missing === []
                 ? Check::ok($name, 'Connected with every scope ARE needs.')
                 : Check::fail($name, count($missing).' scope(s) missing, granted before newer features needed them.', 'Reconnect to grant them. '.$reconnect, $missing);
@@ -512,7 +511,7 @@ class ReadinessChecks
                 continue;
             }
 
-            $missing = array_values(array_diff([YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES], (array) $token->scopes));
+            $missing = $token->missingScopes();
             $short = array_map(fn ($scope) => str_replace('https://www.googleapis.com/auth/', '', $scope), $missing);
             $checks[] = match (true) {
                 $missing === [] => Check::ok($name, 'Connected; can post chat replies and read analytics.'),

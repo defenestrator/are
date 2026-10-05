@@ -27,6 +27,11 @@ new class extends Component {
 
             <livewire:settings.linked-accounts />
 
+            {{-- Broadcasters only: there was no link to the channel connect anywhere (#194). --}}
+            @if (auth()->user()->isBroadcaster())
+                <livewire:settings.channel-connection />
+            @endif
+
             <livewire:settings.delete-user-form />
         </x-settings.layout>
     </div>

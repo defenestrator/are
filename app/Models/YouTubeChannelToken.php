@@ -53,6 +53,17 @@ class YouTubeChannelToken extends Model
         return $this->expires_at->copy()->subMinute()->isPast();
     }
 
+    /**
+     * The scopes ARE asks for (posting chat replies, then analytics) this
+     * connection was not granted. Readiness and Settings both read this.
+     *
+     * @return list<string>
+     */
+    public function missingScopes(): array
+    {
+        return array_values(array_diff([YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES], (array) $this->scopes));
+    }
+
     public function canPost(): bool
     {
         return in_array(YouTubeApi::POST_SCOPE, $this->scopes, true);
