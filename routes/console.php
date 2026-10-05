@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\FetchYouTubeAnalytics;
 use App\Jobs\PostWeeklyAttributionSummary;
 use App\Jobs\SampleTwitchViewers;
 use App\Models\ChatCommandRun;
@@ -7,6 +8,7 @@ use App\Models\LinkCode;
 use App\Models\StreamSession;
 use App\Models\YouTubeLiveChat;
 use App\Readiness\SchedulerHeartbeat;
+use App\YouTube\AnalyticsTokens;
 use App\YouTube\ShowWindows;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -89,3 +91,11 @@ Schedule::command('youtube:chat --auto')
     ->everyMinute()
     ->when(fn () => ShowWindows::isOpen())
     ->withoutOverlapping();
+
+// YouTube Analytics for connected channels (#12), daily before the Monday
+// summary. Each run re-fetches the last two weeks, because YouTube reports
+// late and revises recent days. One request per channel, one quota unit each.
+Schedule::job(new FetchYouTubeAnalytics)
+    ->dailyAt('06:00')
+    ->timezone((string) config('app.timezone'))
+    ->when(fn () => app(AnalyticsTokens::class)->channels() !== []);

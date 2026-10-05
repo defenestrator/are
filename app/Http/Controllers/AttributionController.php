@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Analytics\AttributionReport;
 use App\Analytics\AttributionRow;
 use App\Analytics\StreamMetrics;
+use App\Analytics\YouTubeChannelReport;
 use App\Http\Requests\AttributionRangeRequest;
+use App\YouTube\AnalyticsTokens;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -16,13 +18,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class AttributionController extends Controller
 {
-    public function index(AttributionRangeRequest $request): View
+    public function index(AttributionRangeRequest $request, AnalyticsTokens $youtube): View
     {
         $range = $request->range();
 
         return view('admin.attribution', [
             'report' => AttributionReport::for($range),
             'streams' => StreamMetrics::forRange($range),
+            'youtube' => YouTubeChannelReport::for($range, $youtube->channels()),
         ]);
     }
 

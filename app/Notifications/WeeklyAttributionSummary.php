@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Analytics\AttributionReport;
 use App\Analytics\AttributionRow;
 use App\Analytics\StreamMetrics;
+use App\Analytics\YouTubeChannelReport;
 use App\Notifications\Channels\WebhookChannel;
 use Illuminate\Notifications\Notification;
 
@@ -30,8 +31,13 @@ class WeeklyAttributionSummary extends Notification
 
     /**
      * @param  list<StreamMetrics>  $twitchStreams  sessions that started in the report's range
+     * @param  list<YouTubeChannelReport>  $youtubeChannels  connected channels' YouTube Analytics for the range
      */
-    public function __construct(public AttributionReport $report, public array $twitchStreams = []) {}
+    public function __construct(
+        public AttributionReport $report,
+        public array $twitchStreams = [],
+        public array $youtubeChannels = [],
+    ) {}
 
     /**
      * @return array<int, string>
@@ -66,6 +72,10 @@ class WeeklyAttributionSummary extends Notification
 
         if ($this->twitchStreams !== []) {
             array_push($lines, '', ...$this->twitchLines());
+        }
+
+        if ($this->youtubeChannels !== []) {
+            array_push($lines, '', ...$this->youtubeLines());
         }
 
         // A blank line before the link, except in the two-line quiet week.
@@ -115,6 +125,35 @@ class WeeklyAttributionSummary extends Notification
                 array_sum(array_map(fn (AttributionRow $row) => $row->clicks, $rest)),
                 array_sum(array_map(fn (AttributionRow $row) => $row->leads, $rest)),
             ));
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Each connected YouTube channel's week, with the days YouTube has not
+     * reported yet called out rather than shown as a whole week.
+     *
+     * @return list<string>
+     */
+    private function youtubeLines(): array
+    {
+        $lines = ['YouTube (engaged views count plays past the first frame; views from subscribers is not returning viewers):'];
+
+        foreach ($this->youtubeChannels as $channel) {
+            if ($channel->coversThrough() === null) {
+                $lines[] = '• '.$channel->title.': no YouTube data for this week yet';
+
+                continue;
+            }
+
+            $lines[] = '• '.$channel->title.': '
+                .number_format($channel->views).' views, '
+                .number_format($channel->engagedViews).' engaged, '
+                .'avg '.$channel->averageViewDurationLabel().' watched, '
+                .number_format($channel->subscriberViews).' views from subscribers ('.$channel->subscriberShareLabel().'), '
+                .number_format($channel->liveStreamViews).' live-stream views'
+                .($channel->isPartial() ? '; partial week, YouTube has reported through '.$channel->coversThrough()->format('D j M') : '');
         }
 
         return $lines;

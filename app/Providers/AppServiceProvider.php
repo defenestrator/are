@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Http\Middleware\EnsureNotBanned;
 use App\Models\Lead;
 use App\Models\User;
+use App\YouTube\AnalyticsTokens;
+use App\YouTube\StoredAnalyticsTokens;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -19,7 +21,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Channel owners' Google tokens for YouTube Analytics (#12), from the
+        // broadcaster Google connection (#126).
+        $this->app->bind(AnalyticsTokens::class, StoredAnalyticsTokens::class);
     }
 
     /**

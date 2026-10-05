@@ -5,8 +5,10 @@ namespace App\Jobs;
 use App\Analytics\AttributionReport;
 use App\Analytics\DateRange;
 use App\Analytics\StreamMetrics;
+use App\Analytics\YouTubeChannelReport;
 use App\Notifications\Channels\WebhookChannel;
 use App\Notifications\WeeklyAttributionSummary;
+use App\YouTube\AnalyticsTokens;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -78,7 +80,11 @@ class PostWeeklyAttributionSummary implements ShouldQueue
         try {
             (new AnonymousNotifiable)
                 ->route(WebhookChannel::class, $url)
-                ->notifyNow(new WeeklyAttributionSummary(AttributionReport::for($range), StreamMetrics::forRange($range)));
+                ->notifyNow(new WeeklyAttributionSummary(
+                    AttributionReport::for($range),
+                    StreamMetrics::forRange($range),
+                    YouTubeChannelReport::for($range, app(AnalyticsTokens::class)->channels()),
+                ));
         } catch (Throwable $e) {
             DB::table('attribution_summaries')->where('iso_week', $this->isoWeek())->whereNull('posted_at')->delete();
 

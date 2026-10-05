@@ -1,6 +1,7 @@
 @php
     /** @var \App\Analytics\AttributionReport $report */
     /** @var list<\App\Analytics\StreamMetrics> $streams */
+    /** @var list<\App\Analytics\YouTubeChannelReport> $youtube */
     $range = $report->range;
     $query = $range->preset
         ? ['preset' => $range->preset]
@@ -106,6 +107,50 @@
                                     <td class="py-2 pe-4 text-right tabular-nums">{{ $metrics->participationLabel() }}</td>
                                     <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($attributed->clicks) }}</td>
                                     <td class="py-2 text-right tabular-nums">{{ number_format($attributed->leads) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </section>
+
+        <section class="space-y-3">
+            <flux:heading size="lg">YouTube channels</flux:heading>
+            <flux:text class="text-sm">
+                From YouTube Analytics, for every video on the channel, not just streams. <strong>Views</strong> are the views
+                YouTube displays; <strong>engaged views</strong> count only plays past the first frame. <strong>Avg view
+                duration</strong> is watch time ÷ views. <strong>Views from subscribers</strong> are views by people subscribed
+                at the time; it is not returning viewers, which YouTube's API does not report. YouTube reports a day or more
+                late, so the range a row covers can end before the range you chose.
+            </flux:text>
+
+            @if ($youtube === [])
+                <flux:text class="text-sm text-zinc-500">No YouTube channel is connected for analytics. The channel's owner connects it at <flux:link href="{{ route('youtube.broadcaster.connect') }}">{{ route('youtube.broadcaster.connect', absolute: false) }}</flux:link>, signed in to ARE as a broadcaster.</flux:text>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-zinc-500 border-b border-zinc-200 dark:border-zinc-700">
+                            <tr>
+                                <th scope="col" class="py-2 pe-4 font-medium">Channel</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Views</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Engaged views</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Avg view duration</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Views from subscribers</th>
+                                <th scope="col" class="py-2 pe-4 font-medium text-right">Live-stream views</th>
+                                <th scope="col" class="py-2 font-medium">Covers</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                            @foreach ($youtube as $channel)
+                                <tr>
+                                    <td class="py-2 pe-4">{{ $channel->title }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($channel->views) }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($channel->engagedViews) }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ $channel->averageViewDurationLabel() }}</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($channel->subscriberViews) }} ({{ $channel->subscriberShareLabel() }})</td>
+                                    <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($channel->liveStreamViews) }}</td>
+                                    <td class="py-2 {{ $channel->isPartial() ? 'text-amber-600 dark:text-amber-400' : '' }}">{{ $channel->coverageLabel() }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
