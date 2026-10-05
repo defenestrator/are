@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 class IssueOverlayToken extends Command
 {
     protected $signature = 'overlay:token
-        {overlay : One of: queue, vote, now-playing, captions, visualizer, top-vote, cta}
+        {overlay : One of: queue, vote, now-playing, captions, visualizer, top-vote, cta, bus}
         {--rotate : Replace the existing token; the old URL stops working}';
 
     protected $description = 'Issue or rotate an OBS overlay token and print its URLs once';

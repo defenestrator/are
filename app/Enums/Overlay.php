@@ -15,6 +15,7 @@ enum Overlay: string
     case Visualizer = 'visualizer';
     case TopVote = 'top-vote';
     case Cta = 'cta';
+    case Bus = 'bus';
 
     public function view(): string
     {
@@ -31,6 +32,7 @@ enum Overlay: string
             self::Visualizer => 'Visualizer',
             self::TopVote => 'Top vote',
             self::Cta => 'Call to action',
+            self::Bus => 'Chat game',
         };
     }
 

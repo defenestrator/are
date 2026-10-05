@@ -67,7 +67,7 @@ Chat drives games with `!do`. The first game is Chat Plays Orkestera: `!do task 
 
 **Game adapters** get actions either way:
 
-- **Reverb:** subscribe to the public channel `bus.{game}` and listen for `bus.action` (an action to run), `bus.veto` (undo action `id`) and `bus.state` (paused, killed, mode, running). Payloads carry no user data.
+- **Reverb:** subscribe to the public channel `bus.{game}` and listen for `bus.action` (an action to run), `bus.veto` (undo action `id`) and `bus.state` (paused, killed, mode, running). Payloads carry no user data. The channel also carries **`bus.tally`** for the on-stream overlay (below), which adapters can ignore.
 - **Polling**, until production has Reverb or for adapters that cannot hold a socket: `GET /bus/{game}/actions?after={cursor}` with `Authorization: Bearer <token>`. Issue the token with `php artisan bus:token {game}`. The response holds up to 50 actions after the cursor (vetoed ones left out), the next `cursor`, the ids `vetoed` in the last hour, and the bus state. While the kill switch is on it returns no actions. Replay is bounded: a poll without `after` starts from now, and a cursor older than `BUS_MAX_REPLAY_SECONDS` is clamped (`"clamped": true`), so a restarted adapter never runs old actions.
 
 ## Twitch setup
@@ -116,6 +116,15 @@ If something goes wrong, the bootstrap page logs a line in OBS's log (**Help →
 - **Sentry never receives them.** `App\Support\SentryScrubber`, set as `before_send`, `before_send_transaction` and `before_breadcrumb` in `config/sentry.php`, replaces every `token=` value and every `token` field with `[Filtered]`. Sentry would otherwise attach the full URL and query string to every event, whatever `SENTRY_SEND_DEFAULT_PII` says, and the exchange's request body when PII is on.
 - **OBS stores them** in its scene collection JSON on the streaming machine.
 - **Pages never pass them on.** Responses send `Referrer-Policy: no-referrer`, so a token never leaves in a `Referer` header, and `Cache-Control: no-store` keeps it out of caches.
+
+### Chat game overlay (`/overlay/bus`)
+
+Shows the running Chat Control Bus game to viewers: the open vote's options with live counts and bars, the time left, the mode, a free-text winner **awaiting moderator approval**, the latest result for 20 seconds, and a clear **PAUSED** or **KILLED** state. With no game running it shows nothing, except KILLED while the kill switch is on. Issue its URL with `php artisan overlay:token bus`.
+
+- **What it never shows:** user names, ids or platforms, and the text of a free-text option (Orkestera's `task`) before a moderator approves it. Such an option shows as "task, hidden until approved". `App\ControlBus\BusOverlay` decides this, for both the page and the `bus.tally` broadcast, and tests pin it.
+- **Live updates:** `resources/js/live-bus.js` listens on every game's `bus.{game}`. `bus.tally` updates counts and the countdown in place. `bus.state`, `bus.action`, `bus.veto` and any change in the options or state make it re-render. The countdown runs in the browser from the server's seconds left.
+- **Coalescing:** a tally is a snapshot taken when it is sent, at most about one a second per game however busy chat is (`App\Jobs\BroadcastBusTally`).
+- **Fallback:** without a socket (no Reverb in production yet), it re-renders every 2–4 s. With a socket, it still re-renders every 60–90 s, so a rotated token blanks it.
 
 ### Visualizer audio in OBS
 

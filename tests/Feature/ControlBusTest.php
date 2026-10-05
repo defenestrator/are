@@ -15,6 +15,7 @@ use App\ControlBus\WindowStatus;
 use App\Events\BusActionPublished;
 use App\Events\BusActionVetoed;
 use App\Events\BusStateChanged;
+use App\Events\BusTallyChanged;
 use App\IdentityProvider;
 use App\Jobs\PostChatReply;
 use App\Jobs\ResolveBusWindow;
@@ -481,7 +482,7 @@ test('BUS_ENABLED=false is a deploy-time kill switch', function () {
 
 test('a queued broadcast checks the switches again when it is sent', function () {
     config(['broadcasting.default' => 'reverb']);
-    Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class]);
+    Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class, BusTallyChanged::class]);
     $mod = busStart(Mode::Anarchy);
     busSay(User::factory()->create(), '!do say An action');
     $event = new BusActionPublished('orkestera', BusPublication::sole()->id);
@@ -1072,7 +1073,7 @@ test('actions published after the restore are served as normal', function () {
 
 test('the Reverb send never carries an action from before the last kill', function () {
     config(['broadcasting.default' => 'reverb', 'bus.kill_undo_seconds' => 0]);
-    Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class]);
+    Event::fake([BusActionPublished::class, BusActionVetoed::class, BusStateChanged::class, BusTallyChanged::class]);
     $mod = busStart(Mode::Anarchy);
     busSay(User::factory()->create(), '!do say Before the kill');
     $publication = BusPublication::sole();
