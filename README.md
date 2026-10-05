@@ -155,6 +155,21 @@ Create the reward with `php artisan music:create-song-reward [--broadcaster=ID] 
 
 A refused song redemption (an unknown, ambiguous or already-queued song, or a banned viewer) is **refunded automatically**. So is a channel-point request that a moderator skips or clears **before it plays**. Once a request is on air or has played, it isn't refunded. A queued job cancels it through Helix [Update Redemption Status](https://dev.twitch.tv/docs/api/reference/#update-redemption-status), which returns the points. This needs the `channel:manage:redemptions` scope, so a broadcaster who connected before it was added must reconnect at `/twitch/broadcaster/connect`. Twitch only lets the client id that created a reward update its redemptions. **A reward created in the Twitch dashboard can't be refunded by ARE**: such refunds are logged as warnings and must be done by hand. Use the artisan command instead.
 
+### Keeping now-playing in step with the music
+
+The overlay shows whatever the queue says is on air, so something has to tell the queue when a track really starts:
+
+- **Moderators** press **Done, play next** on `/music/requests`. In chat, they type `!np next` to finish the current request and start the next, or `!np done` to just finish it. Anyone can type `!np` to see what's playing.
+- **A local player** (an OBS script, a Mac Shortcut, a DJ app hook) calls the advance hook when a track starts. Issue it a token once with `php artisan music:player-token obs`; the token is shown only once, and only its hash is stored. Then call:
+
+  ```sh
+  curl -fsS -X POST -H "Authorization: Bearer $ARE_PLAYER_TOKEN" https://your-are-host/music/requests/advance
+  # only mark the current request played:
+  curl -fsS -X POST -H "Authorization: Bearer $ARE_PLAYER_TOKEN" -d action=done https://your-are-host/music/requests/advance
+  ```
+
+  The response is JSON with the request now on air (`now_playing`, or `null` when the queue is empty) and how many are still queued. Send the token only in the `Authorization` header: a token in the URL is refused, and URLs end up in access logs. Each address gets 20 calls a minute, and every advance appears in the moderation audit log as `player obs`. `--rotate` replaces a leaked token and `--revoke` removes it.
+
 ## Forge deployment and PostgreSQL
 
 Create the database and its owning login before deploying. For bright-viper:

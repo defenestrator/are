@@ -8,9 +8,11 @@ use App\Exceptions\SongRequestRejected;
 use App\Jobs\RefundChannelPointRedemption;
 use App\Models\ChannelPointRedemption;
 use App\Models\ModerationAction;
+use App\Models\MusicPlayerToken;
 use App\Models\SongRequest;
 use App\Models\Track;
 use App\Models\User;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
@@ -166,6 +168,76 @@ class SongRequests
         Gate::forUser($moderator)->authorize('moderate');
 
         self::finishPlaying();
+    }
+
+    /**
+     * The "mark playing" step (#136): the request on air counts as played and
+     * the oldest queued request goes on air. Returns the new one, or null
+     * when the queue is empty (then nothing is on air). Audited.
+     */
+    public static function advance(User $moderator): ?SongRequest
+    {
+        Gate::forUser($moderator)->authorize('moderate');
+
+        return self::advanceQueue(fn (?SongRequest $next, ?SongRequest $finished) => ModerationAction::record(
+            $moderator, 'song_request.advanced', $next, self::auditDetails($next, $finished),
+        ));
+    }
+
+    /**
+     * advance(), for a local player that authenticated with its token through
+     * POST /music/requests/advance. Audited under the player's name.
+     */
+    public static function advanceForPlayer(MusicPlayerToken $player): ?SongRequest
+    {
+        return self::advanceQueue(fn (?SongRequest $next, ?SongRequest $finished) => ModerationAction::recordForPlayer(
+            $player, 'song_request.advanced', $next, self::auditDetails($next, $finished),
+        ));
+    }
+
+    /**
+     * finish(), for a local player. Audited under the player's name.
+     */
+    public static function finishForPlayer(MusicPlayerToken $player): void
+    {
+        DB::transaction(function () use ($player) {
+            $finished = SongRequest::where('status', SongRequestStatus::Playing->value)->lockForUpdate()->first();
+            self::finishPlaying();
+            ModerationAction::recordForPlayer($player, 'song_request.finished', $finished, self::auditDetails(null, $finished));
+        });
+    }
+
+    /**
+     * @param  Closure(?SongRequest, ?SongRequest): mixed  $audit
+     */
+    private static function advanceQueue(Closure $audit): ?SongRequest
+    {
+        return DB::transaction(function () use ($audit) {
+            // Lock what changes, so two advances at once (a double-tapped
+            // Shortcut, or the hook and a moderator) move the queue one step
+            // each instead of both starting the same request.
+            $finished = SongRequest::where('status', SongRequestStatus::Playing->value)->lockForUpdate()->first();
+            $next = SongRequest::queued()->lockForUpdate()->first();
+
+            self::finishPlaying();
+            $next?->update(['status' => SongRequestStatus::Playing, 'started_at' => now()]);
+
+            $audit($next, $finished);
+
+            return $next;
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function auditDetails(?SongRequest $next, ?SongRequest $finished): array
+    {
+        return array_filter([
+            'finished_id' => $finished?->id,
+            'playing_id' => $next?->id,
+            'track_id' => $next?->track_id,
+        ], fn ($value) => $value !== null);
     }
 
     /**

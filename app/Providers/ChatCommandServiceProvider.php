@@ -7,6 +7,7 @@ use App\Chat\Commands\ClipMarker;
 use App\Chat\Commands\DoAction;
 use App\Chat\Commands\EdosLink;
 use App\Chat\Commands\LinkAccount;
+use App\Chat\Commands\NowPlaying;
 use App\Chat\Commands\OrkesteraLink;
 use App\Chat\Commands\RequestSong;
 use App\Chat\Commands\SubmitQuestion;
@@ -30,6 +31,7 @@ class ChatCommandServiceProvider extends ServiceProvider
             RequestSong::class,
             ClipMarker::class,
             DoAction::class,
+            NowPlaying::class,
         ], 'chat.commands');
 
         $this->app->singleton(ChatCommandRegistry::class, fn ($app) => new ChatCommandRegistry($app->tagged('chat.commands')));

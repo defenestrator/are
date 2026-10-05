@@ -187,7 +187,7 @@ new class extends Component {
                 @forelse ($actions as $action)
                     <li class="py-2 flex gap-3" wire:key="ma-{{ $action->id }}">
                         <span class="text-zinc-500 w-40 tabular-nums">{{ $action->created_at->toDateTimeString() }}</span>
-                        <span class="w-32">{{ $action->moderator?->name ?? 'deleted user' }}</span>
+                        <span class="w-32">{{ $action->actorName() }}</span>
                         <span class="w-36 font-mono">{{ $action->action }}</span>
                         <span class="flex-1 text-zinc-500 break-all">{{ $action->details ? json_encode($action->details) : '' }}</span>
                     </li>

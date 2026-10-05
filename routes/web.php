@@ -3,6 +3,7 @@
 use App\Http\Controllers\AttributionController;
 use App\Http\Controllers\BusActionsController;
 use App\Http\Controllers\ClipFileController;
+use App\Http\Controllers\MusicPlayerController;
 use App\Http\Controllers\ShortLinkRedirectController;
 use App\Http\Controllers\StreamSafePackController;
 use App\Models\StreamMarker;
@@ -115,6 +116,17 @@ Volt::route('music/catalogue', 'music.catalogue')
 Volt::route('music/requests', 'music.requests')
     ->middleware(['auth', 'not-banned', 'can:moderate'])
     ->name('music.requests');
+
+// A local player advances the queue when a track really starts (#136). The
+// bearer token is the credential, so no session or CSRF, as for /go.
+Route::post('music/requests/advance', MusicPlayerController::class)
+    ->middleware('throttle:music-player')
+    ->withoutMiddleware([
+        StartSession::class,
+        ShareErrorsFromSession::class,
+        ValidateCsrfToken::class,
+    ])
+    ->name('music.requests.advance');
 
 require __DIR__.'/auth.php';
 require __DIR__.'/overlays.php';

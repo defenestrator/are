@@ -70,6 +70,11 @@ class AppServiceProvider extends ServiceProvider
         // guessed either way; this only stops floods.
         RateLimiter::for('overlay-session', fn (Request $request) => Limit::perMinute(30)
             ->by($request->ip().'|'.$this->overlayName($request)));
+
+        // POST /music/requests/advance (#136). A player advances once per
+        // track, so this only stops a runaway script, and it counts wrong
+        // tokens too.
+        RateLimiter::for('music-player', fn (Request $request) => Limit::perMinute(20)->by((string) $request->ip()));
     }
 
     private function overlayName(Request $request): string

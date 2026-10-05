@@ -20,11 +20,13 @@ new class extends Component {
         }
     }
 
+    // "Mark playing" (#136): what was on air counts as played, and the
+    // oldest queued request goes on air. Audited, like the player hook.
     public function playNext(): void
     {
         $this->authorize('moderate');
 
-        SongRequests::playNext(auth()->user());
+        SongRequests::advance(auth()->user());
     }
 
     public function finish(): void
@@ -80,7 +82,8 @@ new class extends Component {
                     <span class="font-medium">{{ $nowPlaying->track->title }}</span>
                     <span class="text-zinc-500">· {{ $nowPlaying->track->artist }} · requested by {{ $nowPlaying->requester_name }}</span>
                 </span>
-                <flux:button size="sm" variant="primary" wire:click="finish">Done</flux:button>
+                <flux:button size="sm" variant="primary" wire:click="playNext">Done, play next</flux:button>
+                <flux:button size="sm" wire:click="finish">Done</flux:button>
                 <flux:button size="sm" wire:click="skip({{ $nowPlaying->id }})">Skip</flux:button>
             </div>
         @else
