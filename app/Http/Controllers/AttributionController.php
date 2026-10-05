@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Analytics\AttributionReport;
 use App\Analytics\AttributionRow;
 use App\Analytics\StreamMetrics;
+use App\Analytics\StreamSegments;
 use App\Analytics\YouTubeChannelReport;
 use App\Http\Requests\AttributionRangeRequest;
 use App\YouTube\AnalyticsTokens;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -26,6 +28,8 @@ class AttributionController extends Controller
             'report' => AttributionReport::for($range),
             'streams' => StreamMetrics::forRange($range),
             'youtube' => YouTubeChannelReport::for($range, $youtube->channels()),
+            'segments' => StreamSegments::forRange($range),
+            'undatedVotes' => DB::table('question_votes')->whereNull('created_at')->count(),
         ]);
     }
 

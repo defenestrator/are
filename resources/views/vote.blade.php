@@ -62,7 +62,7 @@ new class extends Component {
 
         // The same rules as !q in chat.
         try {
-            QuestionQueue::submit(auth()->user(), $this->question);
+            QuestionQueue::submit(auth()->user(), $this->question, \App\Models\Question::SOURCE_WEB);
         } catch (QuestionRejected $e) {
             throw ValidationException::withMessages([
                 'question' => $e->getMessage(),

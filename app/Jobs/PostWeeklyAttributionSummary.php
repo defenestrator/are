@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Analytics\AttributionReport;
 use App\Analytics\DateRange;
 use App\Analytics\StreamMetrics;
+use App\Analytics\StreamSegments;
 use App\Analytics\YouTubeChannelReport;
 use App\Notifications\Channels\WebhookChannel;
 use App\Notifications\WeeklyAttributionSummary;
@@ -84,6 +85,7 @@ class PostWeeklyAttributionSummary implements ShouldQueue
                     AttributionReport::for($range),
                     StreamMetrics::forRange($range),
                     YouTubeChannelReport::for($range, app(AnalyticsTokens::class)->channels()),
+                    StreamSegments::forRange($range),
                 ));
         } catch (Throwable $e) {
             DB::table('attribution_summaries')->where('iso_week', $this->isoWeek())->whereNull('posted_at')->delete();

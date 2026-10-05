@@ -26,7 +26,7 @@ class SubmitQuestion implements ChatCommand
     public function handle(ChatCommandInvocation $invocation): ChatCommandResult
     {
         try {
-            $question = QuestionQueue::submit($invocation->user, $invocation->arguments);
+            $question = QuestionQueue::submit($invocation->user, $invocation->arguments, $invocation->provider->value);
         } catch (QuestionRejected $e) {
             return ChatCommandResult::rejected($e->getMessage());
         }

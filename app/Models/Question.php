@@ -18,6 +18,9 @@ class Question extends Model
     /** @use HasFactory<QuestionFactory> */
     use HasFactory;
 
+    /** questions.source for the vote page. Chat questions store their platform instead. */
+    public const SOURCE_WEB = 'web';
+
     protected $guarded = [];
 
     protected function casts(): array
@@ -87,9 +90,14 @@ class Question extends Model
         return DB::transaction(function () use ($user, $count) {
             $locked = self::lockedForVoteChange($this->id);
 
-            DB::table('question_votes')->updateOrInsert(
-                ['question_id' => $this->id, 'user_id' => $user->id],
-                ['count' => $count],
+            // created_at is when this person first voted on the question and
+            // updated_at when they last changed it, so votes can be counted by
+            // time (#12). The primary key (user_id, question_id) is the conflict.
+            $now = now();
+            DB::table('question_votes')->upsert(
+                [['question_id' => $this->id, 'user_id' => $user->id, 'count' => $count, 'created_at' => $now, 'updated_at' => $now]],
+                ['user_id', 'question_id'],
+                ['count', 'updated_at'],
             );
 
             return $locked->announceVoteChange();

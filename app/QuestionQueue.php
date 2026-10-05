@@ -40,9 +40,12 @@ class QuestionQueue
     }
 
     /**
+     * @param  string|null  $source  where it was asked, for per-segment analytics (#12):
+     *                               Question::SOURCE_WEB, or the chat platform (IdentityProvider value)
+     *
      * @throws QuestionRejected
      */
-    public static function submit(User $user, string $text): Question
+    public static function submit(User $user, string $text, ?string $source = null): Question
     {
         $text = self::clean($text);
 
@@ -56,7 +59,7 @@ class QuestionQueue
         // cap. Lock the user's row first: a second submission by the same
         // person waits here until the first has inserted and committed, and
         // then counts it. Other users are not blocked.
-        $question = DB::transaction(function () use ($user, $text) {
+        $question = DB::transaction(function () use ($user, $text, $source) {
             User::whereKey($user->id)->lockForUpdate()->first();
 
             if ($user->isBanned()) {
@@ -67,7 +70,7 @@ class QuestionQueue
                 throw QuestionRejected::limitReached();
             }
 
-            return $user->questions()->create(['question' => $text]);
+            return $user->questions()->create(['question' => $text, 'source' => $source]);
         });
 
         // After the commit, outside the transaction, so viewers are never told

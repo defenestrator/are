@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Analytics\AttributionReport;
 use App\Analytics\AttributionRow;
 use App\Analytics\StreamMetrics;
+use App\Analytics\StreamSegments;
 use App\Analytics\YouTubeChannelReport;
 use App\Notifications\Channels\WebhookChannel;
 use Illuminate\Notifications\Notification;
@@ -32,11 +33,13 @@ class WeeklyAttributionSummary extends Notification
     /**
      * @param  list<StreamMetrics>  $twitchStreams  sessions that started in the report's range
      * @param  list<YouTubeChannelReport>  $youtubeChannels  connected channels' YouTube Analytics for the range
+     * @param  list<StreamSegments>  $segments  ARE activity per stream that started in the range
      */
     public function __construct(
         public AttributionReport $report,
         public array $twitchStreams = [],
         public array $youtubeChannels = [],
+        public array $segments = [],
     ) {}
 
     /**
@@ -76,6 +79,10 @@ class WeeklyAttributionSummary extends Notification
 
         if ($this->youtubeChannels !== []) {
             array_push($lines, '', ...$this->youtubeLines());
+        }
+
+        if ($this->segments !== []) {
+            array_push($lines, '', ...$this->segmentLines());
         }
 
         // A blank line before the link, except in the two-line quiet week.
@@ -154,6 +161,45 @@ class WeeklyAttributionSummary extends Notification
                 .number_format($channel->subscriberViews).' views from subscribers ('.$channel->subscriberShareLabel().'), '
                 .number_format($channel->liveStreamViews).' live-stream views'
                 .($channel->isPartial() ? '; partial week, YouTube has reported through '.$channel->coversThrough()->format('D j M') : '');
+        }
+
+        return $lines;
+    }
+
+    /**
+     * ARE activity per stream, with its busiest topic.
+     *
+     * @return list<string>
+     */
+    private function segmentLines(): array
+    {
+        $lines = ['On ARE, per stream (all driven by a human until the VTuber bridge lands):'];
+
+        foreach (array_slice($this->segments, 0, self::MAX_TWITCH_STREAMS) as $stream) {
+            $t = $stream->total;
+            $line = '• '.$stream->stream().': '
+                .$t->totalQuestions().' '.($t->totalQuestions() === 1 ? 'question' : 'questions')
+                .($t->totalQuestions() > 0 ? ' ('.$t->questionsLabel().')' : '')
+                .', '.$t->votes.' '.($t->votes === 1 ? 'vote' : 'votes')
+                .', '.$t->ballots.' bus '.($t->ballots === 1 ? 'ballot' : 'ballots')
+                .' ('.$t->published.' published, '.$t->vetoed.' vetoed, '.$t->approved.' approved)'
+                .', '.$t->songRequests.' song '.($t->songRequests === 1 ? 'request' : 'requests')
+                .', '.$t->clipsMarked.' '.($t->clipsMarked === 1 ? 'clip' : 'clips').' marked';
+
+            $busiest = collect($stream->segments)
+                ->filter(fn (array $s) => $s['topic'] !== null && $s['counts']->totalQuestions() > 0)
+                ->sortByDesc(fn (array $s) => $s['counts']->totalQuestions())
+                ->first();
+            if ($busiest !== null) {
+                $line .= '; busiest topic: "'.$busiest['topic'].'" ('.$busiest['counts']->totalQuestions().' '.($busiest['counts']->totalQuestions() === 1 ? 'question' : 'questions').')';
+            }
+
+            $lines[] = $line;
+        }
+
+        $more = count($this->segments) - self::MAX_TWITCH_STREAMS;
+        if ($more > 0) {
+            $lines[] = '• and '.$more.' more on the full report';
         }
 
         return $lines;

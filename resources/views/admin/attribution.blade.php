@@ -2,6 +2,8 @@
     /** @var \App\Analytics\AttributionReport $report */
     /** @var list<\App\Analytics\StreamMetrics> $streams */
     /** @var list<\App\Analytics\YouTubeChannelReport> $youtube */
+    /** @var list<\App\Analytics\StreamSegments> $segments */
+    /** @var int $undatedVotes */
     $range = $report->range;
     $query = $range->preset
         ? ['preset' => $range->preset]
@@ -156,6 +158,86 @@
                         </tbody>
                     </table>
                 </div>
+            @endif
+        </section>
+
+        <section class="space-y-3">
+            <flux:heading size="lg">On ARE, by stream and topic</flux:heading>
+            <flux:text class="text-sm">
+                What the audience did on ARE during each stream that started in this range, split by the topic that was set
+                (a stretch with no topic is its own row). Questions are by where they were asked; votes are first votes on a
+                question, not changes; bus counts are chat ballots, actions published to the game, published actions vetoed,
+                and free-text actions a moderator approved. Topics and the queue are shared by every channel, so when two
+                channels stream at once their rows show the same activity. <strong>Driven by</strong> is human for every
+                segment until the VTuber bridge lands.
+            </flux:text>
+
+            @if ($segments === [])
+                <flux:text class="text-sm text-zinc-500">No streams started in this range.</flux:text>
+            @else
+                @foreach ($segments as $stream)
+                    <div class="space-y-2">
+                        <flux:heading size="md" class="font-mono">{{ $stream->stream() }}</flux:heading>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="text-left text-zinc-500 border-b border-zinc-200 dark:border-zinc-700">
+                                    <tr>
+                                        <th scope="col" class="py-2 pe-4 font-medium">Topic</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium">Time</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium">Questions</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Votes</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Bus ballots</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Published</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Vetoed</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Approved</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Song requests</th>
+                                        <th scope="col" class="py-2 pe-4 font-medium text-right">Clips marked</th>
+                                        <th scope="col" class="py-2 font-medium">Driven by</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                                    @foreach ($stream->segments as $segment)
+                                        @php($c = $segment['counts'])
+                                        <tr>
+                                            <td class="py-2 pe-4">{{ $segment['topic'] ?? '(no topic)' }}</td>
+                                            <td class="py-2 pe-4 tabular-nums whitespace-nowrap">{{ $segment['from']->format('D H:i') }}–{{ $segment['until']->format('H:i') }}</td>
+                                            <td class="py-2 pe-4">{{ $c->totalQuestions() }}@if ($c->totalQuestions() > 0) <span class="text-zinc-500">({{ $c->questionsLabel() }})</span>@endif</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->votes) }}</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->ballots) }}</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->published) }}</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->vetoed) }}</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->approved) }}</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->songRequests) }}</td>
+                                            <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($c->clipsMarked) }}</td>
+                                            <td class="py-2">{{ $segment['driver'] }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                @php($t = $stream->total)
+                                <tfoot class="border-t-2 border-zinc-300 dark:border-zinc-600 font-semibold">
+                                    <tr>
+                                        <th scope="row" class="py-2 pe-4 text-left" colspan="2">Stream total</th>
+                                        <td class="py-2 pe-4">{{ $t->totalQuestions() }}@if ($t->totalQuestions() > 0) <span class="font-normal text-zinc-500">({{ $t->questionsLabel() }})</span>@endif</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->votes) }}</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->ballots) }}</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->published) }}</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->vetoed) }}</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->approved) }}</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->songRequests) }}</td>
+                                        <td class="py-2 pe-4 text-right tabular-nums">{{ number_format($t->clipsMarked) }}</td>
+                                        <td class="py-2"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                @endforeach
+            @endif
+
+            @if ($undatedVotes > 0)
+                <flux:text class="text-sm text-zinc-500">
+                    {{ number_format($undatedVotes) }} earlier {{ \Illuminate\Support\Str::plural('vote', $undatedVotes) }} {{ $undatedVotes === 1 ? 'was' : 'were' }} cast before votes were dated, so {{ $undatedVotes === 1 ? 'it is' : 'they are' }} in no segment.
+                </flux:text>
             @endif
         </section>
 
