@@ -1,6 +1,8 @@
 <?php
 
+use App\Agent\AgentControls;
 use App\Agent\AgentGate;
+use App\Agent\AgentTokens;
 use App\Agent\AvatarDriver;
 use App\Chat\ChatCommandRegistry;
 use App\ControlBus\BallotStatus;
@@ -17,7 +19,12 @@ use App\Models\ModerationAction;
 use App\Models\Question;
 use App\Models\TwitchModerator;
 use App\Models\User;
+use App\Readiness\ReadinessChecks;
+use App\Readiness\Status as ReadinessStatus;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -215,6 +222,7 @@ test('only configured expressions are accepted, and an avatar app failure is a 5
     [, $token] = agentWithToken();
 
     fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'evil grin'])->assertJsonValidationErrors('expression');
+    $this->travel(2)->seconds();   // expressions are limited to one a second
     fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'happy'])->assertStatus(502);
 });
 
@@ -491,4 +499,233 @@ test('agent:kill-token is for moderators only', function () {
     $this->artisan('agent:kill-token', ['user' => User::factory()->create()->id])->assertExitCode(2);
 
     expect($mod->tokens()->sole()->abilities)->toBe(['kill-switch']);
+});
+
+// --- Review round 1 (#153) ----------------------------------------------------
+
+test('Andras A153-1: junk from an address is refused with 429 before it can grow the log', function () {
+    config(['agent.failed_auth_per_minute' => 30]);
+    $body = ['answer' => str_repeat('x', 20000), 'moderation' => ['verdict' => 'allowed']];
+
+    $statuses = [];
+    foreach (range(1, 300) as $i) {
+        $statuses[] = fresh()->withToken('not-a-token')->postJson('/api/agent/questions/1/answer', $body)->status();
+    }
+
+    expect(array_count_values($statuses))->toBe([401 => 30, 429 => 270])
+        ->and(AgentRequest::count())->toBe(30)
+        ->and(AgentRequest::whereNotNull('request')->orWhereNotNull('response')->count())->toBe(0);
+});
+
+test('failed auth is limited per address, and a working agent never spends that budget', function () {
+    config(['agent.failed_auth_per_minute' => 3, 'agent.requests_per_minute' => 1000]);
+    [, $token] = agentWithToken();
+
+    foreach (range(1, 10) as $i) {
+        fresh()->withToken($token)->getJson('/api/agent/queue')->assertOk();
+    }
+    foreach (range(1, 3) as $i) {
+        fresh()->withToken('bad')->getJson('/api/agent/queue')->assertUnauthorized();
+    }
+    fresh()->withToken('bad')->getJson('/api/agent/queue')->assertTooManyRequests();
+
+    $this->travel(61)->seconds();
+    fresh()->withToken('bad')->getJson('/api/agent/queue')->assertUnauthorized();
+});
+
+test('a refused-auth request is logged without bodies; an authenticated one keeps them', function () {
+    [, $token] = agentWithToken();
+
+    fresh()->withToken('bad')->postJson('/api/agent/expression', ['expression' => 'happy'])->assertUnauthorized();
+    fresh()->withToken(agentModerator()->createToken('kill-switch', ['kill-switch'])->plainTextToken)->postJson('/api/agent/expression', ['expression' => 'happy'])->assertForbidden();
+    fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'happy'])->assertOk();
+
+    expect(AgentRequest::orderBy('id')->get()->map(fn ($r) => [$r->status, $r->request !== null, $r->response !== null])->all())
+        ->toBe([[401, false, false], [403, false, false], [200, true, true]]);
+});
+
+test('the request log is pruned after AGENT_LOG_DAYS', function () {
+    config(['agent.log_days' => 14]);
+    [, $token] = agentWithToken();
+    fresh()->withToken($token)->getJson('/api/agent/queue');
+    $this->travel(15)->days();
+    fresh()->withToken($token)->getJson('/api/agent/queue');
+
+    $this->artisan('model:prune', ['--model' => [AgentRequest::class]])->assertSuccessful();
+
+    expect(AgentRequest::count())->toBe(1)
+        ->and(AgentRequest::sole()->created_at->isToday())->toBeTrue();
+});
+
+test('the scheduler prunes the agent request log daily', function () {
+    $prune = collect(app(Schedule::class)->events())->first(fn ($e) => str_contains($e->command ?? '', 'model:prune'));
+
+    expect($prune->command)->toContain("--model='".AgentRequest::class."'")
+        ->and($prune->expression)->toBe('0 0 * * *');
+});
+
+test('expressions are limited to one a second on their own', function () {
+    config(['agent.requests_per_minute' => 1000]);
+    [, $token] = agentWithToken();
+
+    fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'happy'])->assertOk();
+    fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'sad'])->assertTooManyRequests();
+    fresh()->withToken($token)->getJson('/api/agent/queue')->assertOk();
+
+    $this->travel(2)->seconds();
+    fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'sad'])->assertOk();
+});
+
+test('a kill landing during a claim rolls the claim back', function () {
+    [, $token] = agentWithToken();
+    $question = Question::factory()->create();
+    AgentClaim::creating(fn () => BusControl::whereKey(BusControl::GLOBAL)->update(['killed_at' => now()]));
+
+    fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/claim", ['reason' => 'mine'])->assertStatus(423);
+
+    expect(AgentClaim::count())->toBe(0);
+});
+
+test('a kill landing during an answer rolls the answer back', function () {
+    [, $token] = agentWithToken();
+    $question = Question::factory()->create();
+    fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/claim", ['reason' => 'mine'])->assertCreated();
+    AgentClaim::updating(fn () => BusControl::whereKey(BusControl::GLOBAL)->update(['killed_at' => now()]));
+
+    fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/answer", ['answer' => 'Hi', 'moderation' => ['verdict' => 'allowed']])->assertStatus(423);
+
+    expect(AgentClaim::sole()->answered_at)->toBeNull();
+});
+
+test('every agent effect holds the switch rows FOR SHARE, and the kill and the agent stop take them FOR UPDATE', function () {
+    [, $token] = agentWithToken();
+    $question = Question::factory()->create();
+    $pgsql = DB::getDriverName() === 'pgsql';
+    // The lock query itself (AgentGate::refusal() reads the same rows, but
+    // selects only its columns and takes no lock).
+    $switchRows = fn (array $q) => str_starts_with($q['query'], 'select * from "bus_controls" where "scope" in') && str_contains($q['query'], 'order by "scope" asc');
+
+    foreach ([
+        fn () => fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/claim", ['reason' => 'mine']),
+        fn () => fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/answer", ['answer' => 'Hi', 'moderation' => ['verdict' => 'allowed']]),
+        fn () => fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'happy']),
+    ] as $call) {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $call()->assertSuccessful();
+        $log = collect(DB::getQueryLog());
+
+        $locked = $log->filter($switchRows)->filter(fn ($q) => ! $pgsql || str_ends_with($q['query'], 'for share'));
+        expect($locked)->not->toBeEmpty();
+    }
+
+    if ($pgsql) {
+        DB::flushQueryLog();
+        app(AgentControls::class)->stop(agentModerator());
+        expect(collect(DB::getQueryLog())->contains(fn ($q) => str_contains($q['query'], 'from "bus_controls" where "bus_controls"."scope" = ?') && str_ends_with($q['query'], 'for update')))->toBeTrue();
+    }
+});
+
+test('agent tokens expire, after AGENT_TOKEN_DAYS or --days', function () {
+    config(['agent.token_days' => 30]);
+
+    $this->artisan('agent:token', ['name' => 'vtuber'])->expectsOutputToContain('valid until')->assertSuccessful();
+    expect(Agent::sole()->tokens()->sole()->expires_at->toDateString())->toBe(now()->addDays(30)->toDateString());
+
+    $this->artisan('agent:token', ['name' => 'vtuber', '--rotate' => true, '--days' => 7])->assertSuccessful();
+    expect(Agent::sole()->tokens()->sole()->expires_at->toDateString())->toBe(now()->addDays(7)->toDateString());
+
+    $this->artisan('agent:token', ['name' => 'vtuber', '--rotate' => true, '--days' => 0])->assertExitCode(2);
+    $this->artisan('agent:token', ['name' => 'vtuber', '--rotate' => true, '--days' => 400])->assertExitCode(2);
+});
+
+test('an expired agent token is refused', function () {
+    $agent = Agent::named('vtuber');
+    $token = $agent->createToken('agent', Agent::ABILITIES, now()->addDay())->plainTextToken;
+
+    fresh()->withToken($token)->getJson('/api/agent/queue')->assertOk();
+    $this->travel(2)->days();
+    fresh()->withToken($token)->getJson('/api/agent/queue')->assertUnauthorized();
+});
+
+test('/agent and the readiness check show when agent tokens expire', function () {
+    $this->freezeTime();
+    $fresh = Agent::named('fresh-agent');
+    $fresh->createToken('agent', Agent::ABILITIES, now()->addDays(20));
+    $soon = Agent::named('soon-agent');
+    $soon->createToken('agent', Agent::ABILITIES, now()->addDay());
+    $never = Agent::named('legacy-agent');
+    $never->createToken('agent', Agent::ABILITIES);
+
+    $check = AgentTokens::readinessCheck();
+    expect($check->status)->toBe(ReadinessStatus::Warn)
+        ->and($check->summary)->toContain('soon-agent', 'legacy-agent')->not->toContain('fresh-agent')
+        ->and($check->details)->toContain('fresh-agent: valid until '.now()->addDays(20)->toDateTimeString());
+
+    $this->actingAs(agentModerator(), 'web')->get('/agent')->assertOk()
+        ->assertSee('valid until '.now()->addDays(20)->toDateTimeString())
+        ->assertSee('a token never expires');
+
+    $never->tokens()->delete();
+    $soon->tokens()->delete();
+    expect(AgentTokens::readinessCheck()->status)->toBe(ReadinessStatus::Warn);   // soon-agent has no valid token
+    $soon->delete();
+    $never->delete();
+    expect(AgentTokens::readinessCheck()->status)->toBe(ReadinessStatus::Ok);
+});
+
+test('the readiness page has a VTuber agent group, skipped until an agent exists', function () {
+    $groups = app(ReadinessChecks::class)->all();
+
+    expect($groups)->toHaveKey('VTuber agent')
+        ->and($groups['VTuber agent'][0]->status)->toBe(ReadinessStatus::Skip);
+});
+
+test('rolling back the migration deletes agent ballots rather than leaving an invalid provider', function () {
+    $mod = agentModerator();
+    app(ControlBus::class)->setActiveGame($mod, 'orkestera');
+    [, $token] = agentWithToken();
+    fresh()->withToken($token)->postJson('/api/agent/bus/actions', ['action' => 'task Write the README'])->assertStatus(202);
+    $viewer = User::factory()->create();
+    app(ChatCommandRegistry::class)->run(IdentityProvider::Twitch, '1000', (string) $viewer->twitch_id, $viewer->name, (string) Str::uuid(), '!do task Fix the tests');
+
+    $migration = require database_path('migrations/2026_10_05_010611_create_agent_bridge_tables.php');
+    $migration->down();
+
+    expect(DB::table('bus_ballots')->pluck('provider')->all())->toBe(['twitch']);
+
+    $migration->up();
+});
+
+// Andras's direct tests on #153: each layer of the kill-switch endpoint's
+// authorisation, on its own.
+test('Andras A153b-1: a kill-switch token whose owner is no longer a moderator cannot kill or cut to intermission', function () {
+    $mod = User::factory()->create();
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $mod->twitch_id]);
+    $token = $mod->createToken('kill-switch', ['kill-switch'])->plainTextToken;   // as agent:kill-token issues it
+    TwitchModerator::query()->delete();                                            // demoted later
+
+    Event::fake([KillSwitchThrown::class]);
+    fresh()->withToken($token)->postJson('/api/kill-switch')->assertForbidden()
+        ->assertJson(['message' => "Only a moderator's token can throw the kill switch."]);   // pins the controller's own check
+
+    Event::assertNotDispatched(KillSwitchThrown::class);
+    expect(BusControl::find(BusControl::GLOBAL)?->killed_at)->toBeNull()
+        ->and(ModerationAction::whereIn('action', ['bus.killed', 'bus.intermission'])->count())->toBe(0);
+});
+
+test('Andras A153b-2: the bus refuses a non-moderator before any side effect, independent of the controller', function () {
+    Event::fake([KillSwitchThrown::class]);
+    expect(fn () => app(ControlBus::class)->kill(User::factory()->create(), 'x'))->toThrow(AuthorizationException::class);
+    Event::assertNotDispatched(KillSwitchThrown::class);
+    expect(ModerationAction::count())->toBe(0);
+});
+
+test('a CLI kill records its intermission cut as the CLI, never as a deleted user', function () {
+    $this->artisan('bus:kill')->assertSuccessful();
+
+    $cut = ModerationAction::where('action', 'bus.intermission')->sole();
+    expect($cut->moderator_id)->toBeNull()
+        ->and($cut->details)->toMatchArray(['via' => 'cli', 'command' => 'bus:kill'])
+        ->and($cut->actorName())->not->toBe('deleted user');
 });

@@ -14,5 +14,8 @@ class KillSwitchThrown implements ShouldDispatchAfterCommit
 {
     use Dispatchable;
 
-    public function __construct(public ?int $moderatorId, public ?string $reason) {}
+    /**
+     * @param  string|null  $command  The CLI command, when thrown from the CLI (no moderator)
+     */
+    public function __construct(public ?int $moderatorId, public ?string $reason, public ?string $command = null) {}
 }

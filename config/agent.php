@@ -21,6 +21,19 @@ return [
 
     'requests_per_minute' => (int) env('AGENT_REQUESTS_PER_MINUTE', 120),
 
+    // An address that fails authentication this often in a minute is
+    // refused (429) before its requests are logged.
+    'failed_auth_per_minute' => (int) env('AGENT_FAILED_AUTH_PER_MINUTE', 30),
+
+    // Avatar expressions per second per token, on top of the general limit.
+    'expressions_per_second' => (int) env('AGENT_EXPRESSIONS_PER_SECOND', 1),
+
+    // How long the request log is kept (pruned daily).
+    'log_days' => (int) env('AGENT_LOG_DAYS', 14),
+
+    // Agent tokens expire after this many days (agent:token --days overrides).
+    'token_days' => (int) env('AGENT_TOKEN_DAYS', 30),
+
     // How many queue items GET /api/agent/queue returns at most.
     'queue_limit' => 50,
 

@@ -10,6 +10,7 @@ class AgentToken extends Command
     protected $signature = 'agent:token
         {name : The agent, e.g. "orkestera-vtuber"; created if new}
         {--rotate : Revoke the agent\'s existing tokens first}
+        {--days= : Days until the token expires (default: AGENT_TOKEN_DAYS, 30)}
         {--ability=* : Limit the token to these abilities (default: all of them)}';
 
     protected $description = 'Issue an API token for a VTuber agent and print it once';
@@ -31,6 +32,13 @@ class AgentToken extends Command
             return self::INVALID;
         }
 
+        $days = $this->option('days') === null ? (int) config('agent.token_days') : (int) $this->option('days');
+        if ($days < 1 || $days > 366) {
+            $this->error('--days must be from 1 to 366.');
+
+            return self::INVALID;
+        }
+
         $agent = Agent::named($name);
 
         if ($agent->tokens()->exists() && ! $this->option('rotate')) {
@@ -40,9 +48,10 @@ class AgentToken extends Command
         }
 
         $agent->tokens()->delete();
-        $token = $agent->createToken('agent', array_values($abilities))->plainTextToken;
+        $expiresAt = now()->addDays($days);
+        $token = $agent->createToken('agent', array_values($abilities), $expiresAt)->plainTextToken;
 
-        $this->info("Token for {$name} (abilities: ".implode(', ', $abilities).'). It is shown only this once.');
+        $this->info("Token for {$name} (abilities: ".implode(', ', $abilities)."), valid until {$expiresAt->toDateTimeString()}. It is shown only this once.");
         $this->newLine();
         $this->line('  Authorization: Bearer '.$token);
         $this->line('  Base URL: '.url('/api/agent'));

@@ -73,8 +73,9 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Agent ballots have no chat platform; the old schema requires one.
-        DB::table('bus_ballots')->whereNull('provider')->update(['provider' => 'agent']);
+        // Agent ballots have no chat platform, and the old schema requires
+        // one that is a real IdentityProvider, so they go with the agents.
+        DB::table('bus_ballots')->whereNull('provider')->delete();
 
         Schema::table('bus_ballots', function (Blueprint $table) {
             $table->dropConstrainedForeignId('agent_id');

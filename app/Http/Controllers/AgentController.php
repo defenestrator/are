@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Agent\AgentGate;
 use App\Agent\AvatarDriver;
+use App\Agent\AvatarUnavailable;
 use App\ControlBus\ControlBus;
 use App\Models\Agent;
 use App\Models\AgentClaim;
@@ -11,10 +12,8 @@ use App\Models\Question;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use RuntimeException;
 
 /**
  * /api/agent (#10): what an Orkestera-driven VTuber can do. Every route sits
@@ -70,10 +69,8 @@ class AgentController extends Controller
             return response()->json(['message' => 'That question is no longer in the queue.'], 422);
         }
 
-        AgentGate::ensure();
-
         try {
-            $claim = DB::transaction(function () use ($agent, $question, $data) {
+            $claim = AgentGate::whileAllowed(function () use ($agent, $question, $data) {
                 $existing = AgentClaim::where('question_id', $question->id)->lockForUpdate()->first();
                 if ($existing !== null) {
                     return $existing;
@@ -124,14 +121,12 @@ class AgentController extends Controller
             return response()->json(['message' => 'That question was already answered.'], 409);
         }
 
-        AgentGate::ensure();
-
-        $claim->update([
+        AgentGate::whileAllowed(fn () => $claim->update([
             'answer' => $data['answer'],
             'moderation_verdict' => $data['moderation']['verdict'],
             'moderation' => $data['moderation'],
             'answered_at' => now(),
-        ]);
+        ]));
 
         return response()->json(['claim' => $claim->payload()], 201);
     }
@@ -144,11 +139,11 @@ class AgentController extends Controller
     {
         $data = $request->validate(['expression' => ['required', 'string', Rule::in(AvatarDriver::expressions())]]);
 
-        AgentGate::ensure();
-
         try {
-            $avatar->express($data['expression']);
-        } catch (RuntimeException $e) {
+            // Under the lock, so a kill waits for the call (a few seconds at
+            // most) rather than landing between the check and the call.
+            AgentGate::whileAllowed(fn () => $avatar->express($data['expression']), external: true);
+        } catch (AvatarUnavailable $e) {
             report($e);
 
             return response()->json(['message' => 'The avatar app did not take the expression.'], 502);
@@ -167,6 +162,9 @@ class AgentController extends Controller
         $agent = self::agent($request);
         $data = $request->validate(['action' => ['required', 'string', 'max:300']]);
 
+        // The bus takes the kill switch's lock itself (ControlBus::submit
+        // holds the global row FOR SHARE), in its own lock order; this check
+        // covers the agent-only stop.
         AgentGate::ensure();
 
         $submission = $bus->submit($agent->user, null, (string) Str::uuid(), $data['action'], $agent->id);

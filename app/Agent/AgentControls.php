@@ -5,6 +5,7 @@ namespace App\Agent;
 use App\Models\BusControl;
 use App\Models\ModerationAction;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -27,11 +28,17 @@ class AgentControls
     {
         Gate::forUser($moderator)->authorize('moderate');
 
-        BusControl::for(AgentGate::SCOPE)->update([
-            'paused_at' => $stopped ? now() : null,
-            'paused_by_id' => $stopped ? $moderator->id : null,
-        ]);
+        BusControl::for(AgentGate::SCOPE);
 
-        ModerationAction::record($moderator, $stopped ? 'agent.stopped' : 'agent.started');
+        // FOR UPDATE: waits for any agent effect in flight (they hold this
+        // row FOR SHARE in AgentGate::whileAllowed), then stops the next.
+        DB::transaction(function () use ($moderator, $stopped) {
+            BusControl::whereKey(AgentGate::SCOPE)->lockForUpdate()->firstOrFail()->update([
+                'paused_at' => $stopped ? now() : null,
+                'paused_by_id' => $stopped ? $moderator->id : null,
+            ]);
+
+            ModerationAction::record($moderator, $stopped ? 'agent.stopped' : 'agent.started');
+        });
     }
 }

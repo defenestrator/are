@@ -2,6 +2,7 @@
 
 namespace App\Readiness;
 
+use App\Agent\AgentTokens;
 use App\Clips\ClipStorage;
 use App\ControlBus\Game;
 use App\Models\BroadcasterToken;
@@ -59,6 +60,7 @@ class ReadinessChecks
             'Music player' => $this->guard('Music player', fn () => [$this->musicPlayer()]),
             'Mail and leads' => $this->guard('Mail and leads', fn () => $this->mail()),
             'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck()]),
+            'VTuber agent' => $this->guard('VTuber agent', fn () => [AgentTokens::readinessCheck()]),
             'Deploy' => $this->guard('Deploy', fn () => $this->deploy()),
         ];
     }

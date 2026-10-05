@@ -72,7 +72,7 @@ Chat drives games with `!do`. The first game is Chat Plays Orkestera: `!do task 
 
 ## VTuber agent bridge (`/agent`, `/api/agent`)
 
-An Orkestera-driven VTuber can run the show while the hosts are away. It reads the queue, claims and answers questions, changes the avatar's expression and acts through the Chat Control Bus, all through `/api/agent` with a Sanctum token: `php artisan agent:token <name>`. Each token has abilities `agent:queue`, `agent:answer`, `agent:avatar` and `agent:bus`; pass `--ability` to limit one.
+An Orkestera-driven VTuber can run the show while the hosts are away. It reads the queue, claims and answers questions, changes the avatar's expression and acts through the Chat Control Bus, all through `/api/agent` with a Sanctum token: `php artisan agent:token <name>`. Each token has abilities `agent:queue`, `agent:answer`, `agent:avatar` and `agent:bus`; pass `--ability` to limit one. Tokens **expire** after `AGENT_TOKEN_DAYS` (30) or `--days`; `/agent` and `/admin/readiness` show when, and warn three days ahead.
 
 | Endpoint | What it does |
 |---|---|
@@ -82,10 +82,11 @@ An Orkestera-driven VTuber can run the show while the hosts are away. It reads t
 | `POST /api/agent/expression` `{"expression": "happy"}` | Forward an expression to VTube Studio or Warudo (`AGENT_AVATAR_*`; only names in `config/agent.php` are accepted) |
 | `POST /api/agent/bus/actions` `{"action": "task Write the README"}` | Act through the Chat Control Bus exactly as `!do` from chat: one vote, and free text still waits for a moderator |
 
-- **The kill switch is a hard gate on every agent request.** It is the Chat Control Bus kill switch, read from the database on every request (nothing caches it), and again right before each effect. The first request after it is thrown gets `423 Locked`. Moderators can also stop only the agent on `/agent`; `AGENT_ENABLED=false` turns it off at deploy time.
+- **The kill switch is a hard gate on every agent request.** It is the Chat Control Bus kill switch, read from the database on every request (nothing caches it). The first request after it is thrown gets `423 Locked`. Each effect (a claim, an answer, an expression) then runs holding the switch rows `FOR SHARE` and checks again under the lock, while the kill takes them `FOR UPDATE`, so a kill can never commit between the check and the effect. Moderators can also stop only the agent on `/agent`; `AGENT_ENABLED=false` turns it off at deploy time.
 - **Throwing the kill switch** (from `/agent`, `/bus`, `bus:kill`, or `POST /api/kill-switch`) stops the agent and the chat game and **cuts the stream to the intermission scene**: `AGENT_OBS_DRIVER=obs_http` posts `SetCurrentProgramScene` to an obs-websocket HTTP bridge such as [obs-websocket-http](https://github.com/IRLToolkit/obs-websocket-http). With the default `log` driver OBS is not told. A failed cut is recorded and never undoes the kill. Only a broadcaster resets it, on `/bus`.
 - **Stream Deck button:** `php artisan agent:kill-token <moderator user id>` issues a token for `POST /api/kill-switch`. It can throw the switch, never reset it.
-- **Request log:** every request an agent token makes, refused ones included, is stored with its body and ARE's response (capped at 64 KB; headers and so tokens never). Moderators read it on `/agent`, next to what the agent claimed, why, and what it said with its verdict.
+- **Request log:** every request to `/api/agent`, refused ones included, is stored with its body and ARE's response (capped at 64 KB; headers and so tokens never). Requests that fail authentication are stored without bodies, and an address that fails `AGENT_FAILED_AUTH_PER_MINUTE` (30) times a minute gets `429` before anything is logged. Rows go after `AGENT_LOG_DAYS` (14), pruned daily. Moderators read the log on `/agent`, next to what the agent claimed, why, and what it said with its verdict.
+- **Rate limits:** `AGENT_REQUESTS_PER_MINUTE` (120) per token, and avatar expressions at most `AGENT_EXPRESSIONS_PER_SECOND` (1).
 
 ## Twitch setup
 

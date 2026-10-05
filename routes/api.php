@@ -5,19 +5,20 @@ use App\Http\Controllers\KillSwitchController;
 use Illuminate\Support\Facades\Route;
 
 /*
-| The VTuber agent bridge (#10). Every agent route is logged in full
-| (agent.log runs first, so refusals are logged too), needs an agent's
-| Sanctum token with the route's ability, and passes the kill-switch gate,
-| which reads the switch from the database on every request.
+| The VTuber agent bridge (#10). An address that keeps failing auth is
+| refused before anything is logged (agent.ip). Every other request is
+| logged (agent.log wraps auth, so refusals are logged too), needs an
+| agent's Sanctum token with the route's ability, and passes the
+| kill-switch gate, which reads the switch from the database every time.
 */
 Route::prefix('agent')
-    ->middleware(['agent.log', 'auth:sanctum', 'agent.only', 'throttle:agent', 'agent.gate'])
+    ->middleware(['agent.ip', 'agent.log', 'auth:sanctum', 'agent.only', 'throttle:agent', 'agent.gate'])
     ->name('agent.')
     ->group(function () {
         Route::get('queue', [AgentController::class, 'queue'])->middleware('abilities:agent:queue')->name('queue');
         Route::post('questions/{question}/claim', [AgentController::class, 'claim'])->middleware('abilities:agent:answer')->name('claim');
         Route::post('questions/{question}/answer', [AgentController::class, 'answer'])->middleware('abilities:agent:answer')->name('answer');
-        Route::post('expression', [AgentController::class, 'expression'])->middleware('abilities:agent:avatar')->name('expression');
+        Route::post('expression', [AgentController::class, 'expression'])->middleware(['abilities:agent:avatar', 'throttle:agent-expression'])->name('expression');
         Route::post('bus/actions', [AgentController::class, 'busAction'])->middleware('abilities:agent:bus')->name('bus');
     });
 

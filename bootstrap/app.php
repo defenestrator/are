@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsureAgent;
 use App\Http\Middleware\EnsureAgentMayAct;
 use App\Http\Middleware\EnsureNotBanned;
 use App\Http\Middleware\EnsureOverlayToken;
+use App\Http\Middleware\LimitFailedAgentAuth;
 use App\Http\Middleware\LogAgentRequest;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'not-banned' => EnsureNotBanned::class,
             'overlay.token' => EnsureOverlayToken::class,
+            'agent.ip' => LimitFailedAgentAuth::class,
             'agent.log' => LogAgentRequest::class,
             'agent.only' => EnsureAgent::class,
             'agent.gate' => EnsureAgentMayAct::class,
@@ -32,11 +34,16 @@ return Application::configure(basePath: dirname(__DIR__))
             'ability' => CheckForAnyAbility::class,
         ]);
 
-        // The agent request log (#10) wraps authentication, so refused
-        // requests (bad tokens included) are logged too.
+        // The agent API (#10): the failed-auth limiter runs first, so junk
+        // is refused before it is logged; then the request log wraps
+        // authentication, so refused requests are logged too.
         $middleware->prependToPriorityList(
             before: AuthenticatesRequests::class,
             prepend: LogAgentRequest::class,
+        );
+        $middleware->prependToPriorityList(
+            before: LogAgentRequest::class,
+            prepend: LimitFailedAgentAuth::class,
         );
 
         // Twitch signs EventSub webhooks with HMAC; there is no CSRF token to check.

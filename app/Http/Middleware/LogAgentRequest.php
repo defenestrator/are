@@ -13,8 +13,10 @@ use Throwable;
 /**
  * Logs every request to /api/agent and ARE's response (#10), refusals
  * included: it runs first, outside authentication and the kill-switch gate.
- * Bodies are kept as sent, capped in length. Headers are never stored, so
- * neither is the bearer token.
+ * Bodies are kept as sent, capped in length, except for requests that fail
+ * authentication (401/403), which are recorded without bodies: method, path,
+ * status and address are enough to see an attack. Headers are never stored,
+ * so neither is the bearer token. Rows are pruned after agent.log_days.
  */
 class LogAgentRequest
 {
@@ -27,6 +29,8 @@ class LogAgentRequest
             $agent = Agent::fromToken();
             $token = $agent?->currentAccessToken();
 
+            $unauthenticated = in_array($response->getStatusCode(), [401, 403], true);
+
             AgentRequest::create([
                 'agent_id' => $agent?->id,
                 'token_id' => $token instanceof PersonalAccessToken ? $token->id : null,
@@ -35,8 +39,8 @@ class LogAgentRequest
                 'route' => $request->route()?->getName(),
                 'status' => $response->getStatusCode(),
                 'refused' => self::refusal($response),
-                'request' => AgentRequest::clip(self::requestBody($request)),
-                'response' => AgentRequest::clip((string) $response->getContent()),
+                'request' => $unauthenticated ? null : AgentRequest::clip(self::requestBody($request)),
+                'response' => $unauthenticated ? null : AgentRequest::clip((string) $response->getContent()),
                 'duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
                 'ip' => $request->ip(),
             ]);

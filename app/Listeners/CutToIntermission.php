@@ -21,11 +21,18 @@ class CutToIntermission
     {
         $switched = $this->scenes->cutToIntermission();
 
+        $moderator = $event->moderatorId === null ? null : User::find($event->moderatorId);
+
         ModerationAction::record(
-            $event->moderatorId === null ? null : User::find($event->moderatorId),
+            $moderator,
             'bus.intermission',
             null,
-            ['scene' => config('agent.obs.intermission_scene'), 'driver' => config('agent.obs.driver'), 'switched' => $switched],
+            // Thrown from the CLI: say so, as the kill's own record does,
+            // so the audit log never reads "deleted user" (#149).
+            array_filter([
+                'via' => $event->moderatorId === null ? 'cli' : null,
+                'command' => $event->moderatorId === null ? $event->command : null,
+            ]) + ['scene' => config('agent.obs.intermission_scene'), 'driver' => config('agent.obs.driver'), 'switched' => $switched],
         );
     }
 }

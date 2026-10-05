@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -24,6 +26,8 @@ use Illuminate\Support\Carbon;
  */
 class AgentRequest extends Model
 {
+    use MassPrunable;
+
     public const UPDATED_AT = null;
 
     /** Longest body kept, in bytes. */
@@ -49,6 +53,16 @@ class AgentRequest extends Model
             'status' => 'integer',
             'duration_ms' => 'integer',
         ];
+    }
+
+    /**
+     * Rows older than agent.log_days go (model:prune, daily).
+     *
+     * @return Builder<AgentRequest>
+     */
+    public function prunable(): Builder
+    {
+        return static::where('created_at', '<', now()->subDays(max(1, (int) config('agent.log_days'))));
     }
 
     public static function clip(?string $body): ?string

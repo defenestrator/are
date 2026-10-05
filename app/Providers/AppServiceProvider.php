@@ -69,6 +69,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('agent', fn (Request $request) => Limit::perMinute((int) config('agent.requests_per_minute'))
             ->by('agent:'.($request->user()?->currentAccessToken()?->getKey() ?? $request->ip())));
         RateLimiter::for('kill-switch', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
+        // On its own, so the avatar app never gets more than one a second.
+        RateLimiter::for('agent-expression', fn (Request $request) => Limit::perSecond((int) config('agent.expressions_per_second'))
+            ->by('agent-expression:'.($request->user()?->currentAccessToken()?->getKey() ?? $request->ip())));
 
         // Game adapters polling the Chat Control Bus: once a second is plenty.
         RateLimiter::for('bus-adapter', fn (Request $request) => Limit::perMinute(120)

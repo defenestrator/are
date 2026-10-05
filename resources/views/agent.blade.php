@@ -2,6 +2,7 @@
 
 use App\Agent\AgentControls;
 use App\Agent\AgentGate;
+use App\Agent\AgentTokens;
 use App\ControlBus\ControlBus;
 use App\Models\Agent;
 use App\Models\AgentClaim;
@@ -98,6 +99,14 @@ new class extends Component {
                             @php($used = $agent->tokens->max('last_used_at'))
                             {{ $agent->tokens->count() }} token(s), last used {{ $used ? \Illuminate\Support\Carbon::parse($used)->diffForHumans() : 'never' }}
                         </span>
+                        @php($until = AgentTokens::validUntil($agent))
+                        @if ($until === false)
+                            <flux:badge size="sm" color="amber">a token never expires</flux:badge>
+                        @elseif ($until === null)
+                            <flux:badge size="sm" color="red">no valid token</flux:badge>
+                        @else
+                            <flux:badge size="sm" :color="$until->lt(now()->addDays(AgentTokens::WARN_DAYS)) ? 'amber' : 'zinc'">valid until {{ $until->toDateTimeString() }}</flux:badge>
+                        @endif
                     </li>
                 @empty
                     <li class="py-2 text-zinc-500">No agents yet. Issue a token with <code>php artisan agent:token &lt;name&gt;</code>.</li>

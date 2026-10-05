@@ -3,6 +3,7 @@
 use App\Jobs\FetchYouTubeAnalytics;
 use App\Jobs\PostWeeklyAttributionSummary;
 use App\Jobs\SampleTwitchViewers;
+use App\Models\AgentRequest;
 use App\Models\ChatCommandRun;
 use App\Models\LinkCode;
 use App\Models\StreamSession;
@@ -32,7 +33,8 @@ Schedule::command('horizon:snapshot')->everyFiveMinutes()
 Schedule::command('bus:resolve')->everyTenSeconds()->withoutOverlapping();
 
 // Chat commands claim each message id once; a week of claims is ample.
-Schedule::command('model:prune', ['--model' => [ChatCommandRun::class, LinkCode::class]])->daily();
+// The agent request log (#10) keeps agent.log_days (AGENT_LOG_DAYS, 14).
+Schedule::command('model:prune', ['--model' => [ChatCommandRun::class, LinkCode::class, AgentRequest::class]])->daily();
 
 // Last week's attribution to Slack or Discord (#12): Mondays 09:00 app time
 // by default. The job claims its ISO week, so it never double-posts.

@@ -652,7 +652,7 @@ class ControlBus
             // After commit: the VTuber agent is refused from here on (it
             // reads the same switch), and CutToIntermission cuts the scene.
             if ($killed) {
-                KillSwitchThrown::dispatch($by?->id, $reason);
+                KillSwitchThrown::dispatch($by?->id, $reason, $by === null ? $command : null);
             }
         });
     }
