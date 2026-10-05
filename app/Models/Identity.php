@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\IdentityProvider;
+use Database\Factories\IdentityFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,7 +22,7 @@ use Illuminate\Support\Carbon;
  */
 class Identity extends Model
 {
-    /** @use HasFactory<\Database\Factories\IdentityFactory> */
+    /** @use HasFactory<IdentityFactory> */
     use HasFactory;
 
     protected $fillable = [

@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\TwitchSubscription;
+use Database\Factories\UserTwitchSubscriptionFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class UserTwitchSubscription extends Model
 {
-    /** @use HasFactory<\Database\Factories\UserTwitchSubscriptionFactory> */
+    /** @use HasFactory<UserTwitchSubscriptionFactory> */
     use HasFactory;
 
     /**
@@ -29,8 +31,8 @@ class UserTwitchSubscription extends Model
     ];
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder<static>  $query
-     * @return \Illuminate\Database\Eloquent\Builder<static>
+     * @param  Builder<static>  $query
+     * @return Builder<static>
      */
     protected function setKeysForSaveQuery($query)
     {

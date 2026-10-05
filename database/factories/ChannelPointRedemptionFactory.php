@@ -2,11 +2,12 @@
 
 namespace Database\Factories;
 
+use App\Models\ChannelPointRedemption;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\ChannelPointRedemption>
+ * @extends Factory<ChannelPointRedemption>
  */
 class ChannelPointRedemptionFactory extends Factory
 {

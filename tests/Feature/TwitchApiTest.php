@@ -8,9 +8,10 @@ use App\Twitch;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\TwitchProvider;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
-function connectBroadcaster(string $id = '1000', ?\DateTimeInterface $expiresAt = null): BroadcasterToken
+function connectBroadcaster(string $id = '1000', ?DateTimeInterface $expiresAt = null): BroadcasterToken
 {
     return BroadcasterToken::create([
         'broadcaster_id' => $id,
@@ -110,7 +111,7 @@ function fakeTwitchUser(string $id): void
         ->setExpiresIn(14400)
         ->setApprovedScopes(Twitch::BROADCASTER_SCOPES);
 
-    $provider = Mockery::mock(\Laravel\Socialite\Two\TwitchProvider::class);
+    $provider = Mockery::mock(TwitchProvider::class);
     $provider->shouldReceive('redirectUrl')->andReturnSelf();
     $provider->shouldReceive('user')->andReturn($twitchUser);
     Socialite::shouldReceive('driver')->with('twitch')->andReturn($provider);
@@ -146,7 +147,7 @@ test('viewers cannot start the broadcaster connection', function () {
 test('a banned user is turned away at Twitch login', function () {
     TwitchBan::create(['broadcaster_id' => '1000', 'twitch_user_id' => '42']);
     $twitchUser = (new SocialiteUser)->map(['id' => '42', 'name' => 'Troll', 'avatar' => 'https://example.com/a.png'])->setToken('t');
-    $provider = Mockery::mock(\Laravel\Socialite\Two\TwitchProvider::class);
+    $provider = Mockery::mock(TwitchProvider::class);
     $provider->shouldReceive('user')->andReturn($twitchUser);
     Socialite::shouldReceive('driver')->with('twitch')->andReturn($provider);
     Http::fake(['api.twitch.tv/*' => Http::response(['data' => []])]);

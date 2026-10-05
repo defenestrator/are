@@ -21,26 +21,26 @@ class DatabaseSeeder extends Seeder
         $user = User::first();
 
         UserTwitchSubscription::insert([
-            "user_id" => $user->id,
-            "broadcaster_id" => "123456789",
-            "twitch_subscription" => TwitchSubscription::Tier1,
+            'user_id' => $user->id,
+            'broadcaster_id' => '123456789',
+            'twitch_subscription' => TwitchSubscription::Tier1,
         ]);
 
         UserTwitchSubscription::insert([
-            "user_id" => $user->id,
-            "broadcaster_id" => "987654321",
-            "twitch_subscription" => TwitchSubscription::Tier3,
+            'user_id' => $user->id,
+            'broadcaster_id' => '987654321',
+            'twitch_subscription' => TwitchSubscription::Tier3,
         ]);
 
         $questions = [];
         for ($i = 0; $i < 100; $i++) {
             $questions[] = [
-                "user_id" => $user->id,
-                "question" => fake()->sentence(),
-                "created_at" => now(),
-                "updated_at" => now(),
+                'user_id' => $user->id,
+                'question' => fake()->sentence(),
+                'created_at' => now(),
+                'updated_at' => now(),
             ];
         }
-        DB::table("questions")->insert($questions);
+        DB::table('questions')->insert($questions);
     }
 }

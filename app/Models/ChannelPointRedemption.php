@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Database\Factories\ChannelPointRedemptionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * A channel-point reward redeemed on a channel this app serves.
@@ -19,11 +21,11 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $reward_prompt
  * @property string|null $user_input
  * @property string $status
- * @property \Illuminate\Support\Carbon $redeemed_at
+ * @property Carbon $redeemed_at
  */
 class ChannelPointRedemption extends Model
 {
-    /** @use HasFactory<\Database\Factories\ChannelPointRedemptionFactory> */
+    /** @use HasFactory<ChannelPointRedemptionFactory> */
     use HasFactory;
 
     protected $fillable = [

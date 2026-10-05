@@ -3,13 +3,14 @@
 namespace Database\Factories;
 
 use App\IdentityProvider;
+use App\Models\Identity;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
  * Attach identities through the user factory (`User::factory()->twitch('123')`)
  * or with `->for($user)`. Every user already gets a Twitch identity by default.
  *
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Identity>
+ * @extends Factory<Identity>
  */
 class IdentityFactory extends Factory
 {

@@ -3,6 +3,7 @@
 use App\IdentityProvider;
 use App\Models\Identity;
 use App\Models\User;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * The two migrations that move platform ids from users to identities.
  *
- * @return array{0: \Illuminate\Database\Migrations\Migration, 1: \Illuminate\Database\Migrations\Migration}
+ * @return array{0: Migration, 1: Migration}
  */
 function identityMigrations(): array
 {

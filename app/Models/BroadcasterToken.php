@@ -3,12 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property string $broadcaster_id
  * @property string $access_token
  * @property string $refresh_token
- * @property \Illuminate\Support\Carbon $expires_at
+ * @property Carbon $expires_at
  * @property list<string> $scopes
  */
 class BroadcasterToken extends Model

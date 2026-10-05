@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\AbstractProvider;
+use Laravel\Socialite\Two\User;
 
 class BroadcasterConnectionController extends Controller
 {
@@ -23,7 +24,7 @@ class BroadcasterConnectionController extends Controller
     {
         abort_unless($request->user()->isBroadcaster(), 403);
 
-        /** @var \Laravel\Socialite\Two\User $twitchUser */
+        /** @var User $twitchUser */
         $twitchUser = $this->provider()->user();
 
         // The Twitch account that granted access must be the signed-in broadcaster,

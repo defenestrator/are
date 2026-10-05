@@ -1,9 +1,15 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\BusOverlayServiceProvider;
+use App\Providers\ChatCommandServiceProvider;
+use App\Providers\HorizonServiceProvider;
+use App\Providers\VoltServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\BusOverlayServiceProvider::class,
-    App\Providers\ChatCommandServiceProvider::class,
-    App\Providers\HorizonServiceProvider::class,
-    App\Providers\VoltServiceProvider::class,
+    AppServiceProvider::class,
+    BusOverlayServiceProvider::class,
+    ChatCommandServiceProvider::class,
+    HorizonServiceProvider::class,
+    VoltServiceProvider::class,
 ];

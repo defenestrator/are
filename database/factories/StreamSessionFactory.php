@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\StreamSession;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\StreamSession>
+ * @extends Factory<StreamSession>
  */
 class StreamSessionFactory extends Factory
 {
