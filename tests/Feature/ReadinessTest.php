@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Clips\FormatClipForShorts;
 use App\Models\BroadcasterToken;
 use App\Models\BusAdapterToken;
 use App\Models\BusControl;
@@ -326,12 +327,13 @@ test('jobs stranded in the database after a move to Redis are red, and a missing
     $horizon->shouldReceive('all')->andReturn([]);
     $this->app->instance(MasterSupervisorRepository::class, $horizon);
 
-    expect(readinessCheck('Database queue backlog')->fix)->toContain('--queue='.ReadinessChecks::WORKER_QUEUES.' --stop-when-empty')
+    expect(readinessCheck('Database queue backlog')->fix)->toContain('--queue=broadcasts,default --stop-when-empty')
         ->and(readinessCheck('Horizon')->status)->toBe(Status::Fail);
 });
 
 test('the worker queue list covers every queue a job or Horizon uses', function () {
-    $covered = explode(',', ReadinessChecks::WORKER_QUEUES);
+    // The broadcasts worker and the separate long-job worker (#146) together.
+    $covered = array_merge(explode(',', ReadinessChecks::WORKER_QUEUES), explode(',', ReadinessChecks::LONG_WORKER_QUEUES));
 
     // Queues named in code: ->onQueue('x') and broadcastQueue() returning 'x'.
     $named = collect(File::allFiles(app_path()))
@@ -356,6 +358,65 @@ test('the worker queue list covers every queue a job or Horizon uses', function 
 test('the README and the dev command name the same worker queues', function () {
     expect(File::get(base_path('README.md')))->toContain('--queue='.ReadinessChecks::WORKER_QUEUES)
         ->and(File::get(base_path('composer.json')))->toContain('--queue='.ReadinessChecks::WORKER_QUEUES);
+});
+
+// Non-Horizon worker suggestions (#146 review). The guard above checks Horizon
+// supervisors against their own connections; these check the plain workers
+// the readiness page, README, runbook and dev command tell people to run.
+
+test('the long-job worker is a separate lane: never sharing a queue with the broadcasts worker', function () {
+    $main = explode(',', ReadinessChecks::WORKER_QUEUES);
+    $long = explode(',', ReadinessChecks::LONG_WORKER_QUEUES);
+
+    expect(array_intersect($main, $long))->toBe([])
+        ->and($long)->toContain('clips')
+        ->and(ReadinessChecks::LONG_WORKER_COMMAND)->toStartWith('nice -n 10 php artisan queue:work '.ReadinessChecks::LONG_WORKER_CONNECTION.' ');
+});
+
+test('every queue a job names is served by exactly one suggested worker lane', function () {
+    $named = collect(File::allFiles(app_path()))
+        ->flatMap(function ($file) {
+            preg_match_all("/onQueue\\(\\s*'([^']+)'/", $file->getContents(), $m);
+
+            return $m[1];
+        })
+        ->unique();
+    $main = explode(',', ReadinessChecks::WORKER_QUEUES);
+    $long = explode(',', ReadinessChecks::LONG_WORKER_QUEUES);
+
+    foreach ($named as $queue) {
+        expect((int) in_array($queue, $main, true) + (int) in_array($queue, $long, true))->toBe(1, "queue {$queue}");
+    }
+});
+
+test('each suggested plain worker times out before its connection retries the job', function () {
+    // queue:work's default --timeout is 60 s; the broadcasts worker passes none.
+    expect(60)->toBeLessThan(config('queue.connections.database.retry_after') - 5)
+        ->and(ReadinessChecks::LONG_WORKER_TIMEOUT)->toBeLessThan(config('queue.connections.'.ReadinessChecks::LONG_WORKER_CONNECTION.'.retry_after') - 5)
+        // And the long worker outlives the job it runs.
+        ->and((new FormatClipForShorts(1))->timeout)->toBeLessThan(ReadinessChecks::LONG_WORKER_TIMEOUT)
+        ->and(config('queue.connections.'.ReadinessChecks::LONG_WORKER_CONNECTION.'.queue'))->toBe(ReadinessChecks::LONG_WORKER_QUEUES);
+});
+
+test('on the database queue the readiness fix suggests two separate workers, never a combined one', function () {
+    config(['queue.default' => 'database']);
+    DB::table('jobs')->insert(['queue' => 'clips', 'payload' => '{}', 'attempts' => 0, 'available_at' => now()->subHour()->getTimestamp(), 'created_at' => now()->subHour()->getTimestamp()]);
+
+    $fix = (string) readinessCheck('Database queue backlog')->fix;
+
+    expect($fix)->toContain('php artisan queue:work database --queue='.ReadinessChecks::WORKER_QUEUES.',')
+        ->and($fix)->toContain(ReadinessChecks::LONG_WORKER_COMMAND)
+        ->and($fix)->not->toContain('--queue=broadcasts,default,clips');
+});
+
+test('the README, the runbook and the dev command all name the separate long-job worker', function () {
+    $listen = 'queue:listen '.ReadinessChecks::LONG_WORKER_CONNECTION.' --queue='.ReadinessChecks::LONG_WORKER_QUEUES.' --timeout='.ReadinessChecks::LONG_WORKER_TIMEOUT;
+
+    foreach (['README.md', 'docs/runbook.md'] as $doc) {
+        expect(File::get(base_path($doc)))->toContain(ReadinessChecks::LONG_WORKER_COMMAND)
+            ->not->toContain('--queue=broadcasts,default,clips');
+    }
+    expect(File::get(base_path('composer.json')))->toContain($listen);
 });
 
 test('failed jobs in the last day are amber', function () {

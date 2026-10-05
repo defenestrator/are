@@ -85,10 +85,11 @@ return [
     | the centre; "blur" shows the whole frame over a blurred copy of itself.
     | Twitch's portrait file, when there is one, is always used instead.
     |
-    | format_connection: the queue connection for the job. redis-long (with
-    | Horizon's supervisor-clips) when the queue is on Redis; otherwise the
-    | default connection, whose worker must also listen on the "clips" queue
-    | with a long enough --timeout.
+    | format_connection: force the job's queue connection. Left empty, the job
+    | uses the long lane for the active backend: redis-long (Horizon's
+    | supervisor-clips) or database-long (its own worker, see
+    | ReadinessChecks::LONG_WORKER_COMMAND). Never the default connection,
+    | whose 90 s retry_after an encode outlasts.
     |
     */
 
@@ -98,7 +99,7 @@ return [
 
     'vertical_mode' => env('CLIPS_VERTICAL_MODE', 'crop'),
 
-    'format_connection' => env('CLIPS_FORMAT_QUEUE_CONNECTION', env('QUEUE_CONNECTION') === 'redis' ? 'redis-long' : null),
+    'format_connection' => env('CLIPS_FORMAT_QUEUE_CONNECTION'),
 
     'download_hosts' => array_values(array_filter(array_map('trim', explode(',', (string) env('CLIPS_DOWNLOAD_HOSTS', 'twitchcdn.net,twitch.tv,jtvnw.net'))))),
 

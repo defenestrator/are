@@ -6,6 +6,7 @@ use App\Agent\AgentTokens;
 use App\Clips\ClipStorage;
 use App\Clips\Ffmpeg;
 use App\ControlBus\Game;
+use App\Jobs\Clips\FormatClipForShorts;
 use App\Models\BroadcasterToken;
 use App\Models\BusAdapterToken;
 use App\Models\BusControl;
@@ -38,7 +39,23 @@ class ReadinessChecks
      * changes and Chat Control Bus windows ride `broadcasts`; everything else
      * is `default`. A worker on `default` alone leaves the live views frozen.
      */
-    public const WORKER_QUEUES = 'broadcasts,default,clips';
+    public const WORKER_QUEUES = 'broadcasts,default';
+
+    /**
+     * Long jobs (ffmpeg Shorts cuts, #146) get their own worker on their own
+     * connection, never the broadcasts worker: a 5-minute encode there would
+     * freeze votes for 5 minutes, and the default connection's 90 s
+     * retry_after would hand the encode to a second worker. Low CPU priority,
+     * because it shares the box with the web server. Horizon runs the same
+     * lane as supervisor-clips on redis-long.
+     */
+    public const LONG_WORKER_CONNECTION = 'database-long';
+
+    public const LONG_WORKER_QUEUES = 'clips';
+
+    public const LONG_WORKER_TIMEOUT = 600;
+
+    public const LONG_WORKER_COMMAND = 'nice -n 10 php artisan queue:work '.self::LONG_WORKER_CONNECTION.' --queue='.self::LONG_WORKER_QUEUES.' --timeout='.self::LONG_WORKER_TIMEOUT;
 
     /** A ready database job older than this means no worker is draining the queue. */
     public const QUEUE_STALE_SECONDS = 120;
@@ -67,7 +84,7 @@ class ReadinessChecks
             'Chat Control Bus' => $this->guard('Chat Control Bus', fn () => $this->controlBus()),
             'Music player' => $this->guard('Music player', fn () => [$this->musicPlayer()]),
             'Mail and leads' => $this->guard('Mail and leads', fn () => $this->mail()),
-            'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck(), Ffmpeg::readinessCheck()]),
+            'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck(), Ffmpeg::readinessCheck(), $this->clipsLane()]),
             'VTuber agent' => $this->guard('VTuber agent', fn () => [AgentTokens::readinessCheck()]),
             'Deploy' => $this->guard('Deploy', fn () => $this->deploy()),
             'Error reporting' => $this->guard('Error reporting', fn () => [$this->sentry()]),
@@ -249,8 +266,8 @@ class ReadinessChecks
                 $name,
                 "{$count} job(s) waiting; the oldest for ".$this->ago($age).'. No worker is draining the database queue.',
                 $connection === 'database'
-                    ? 'Add a Forge daemon: php artisan queue:work database --queue='.self::WORKER_QUEUES.' (or move QUEUE_CONNECTION to redis and run Horizon).'
-                    : "QUEUE_CONNECTION is {$connection}, so these were left behind. Drain them once: php artisan queue:work database --queue=".self::WORKER_QUEUES.' --stop-when-empty.',
+                    ? 'Add a Forge daemon: php artisan queue:work database --queue='.self::WORKER_QUEUES.', and a second, separate one for Shorts cuts: '.self::LONG_WORKER_COMMAND.' (or move QUEUE_CONNECTION to redis and run Horizon).'
+                    : "QUEUE_CONNECTION is {$connection}, so these were left behind. Drain them once: php artisan queue:work database --queue=".self::WORKER_QUEUES.' --stop-when-empty, then php artisan queue:work '.self::LONG_WORKER_CONNECTION.' --queue='.self::LONG_WORKER_QUEUES.' --timeout='.self::LONG_WORKER_TIMEOUT.' --stop-when-empty.',
                 $byQueue,
             );
         } else {
@@ -568,6 +585,38 @@ class ReadinessChecks
             $players->count().' player token(s) issued.',
             $players->map(fn (MusicPlayerToken $player) => $player->name.': '.($player->last_used_at ? 'last used '.$player->last_used_at->diffForHumans() : 'never used'))->all(),
         );
+    }
+
+    // Clips ---------------------------------------------------------------------
+
+    /**
+     * Where Shorts cuts are queued (#146), and whether that lane is safe:
+     * FormatClipForShorts::queueFor() refuses to queue on a connection whose
+     * retry_after does not exceed the job timeout, so this line explains why.
+     */
+    public function clipsLane(): Check
+    {
+        $name = 'Shorts cut queue';
+        $connection = FormatClipForShorts::connectionName();
+        $problem = FormatClipForShorts::unsafeConnection();
+        $timeout = (int) config('clips.ffmpeg_timeout') + 60;
+
+        if ($problem !== null) {
+            return Check::fail(
+                $name,
+                'Shorts cuts are not being queued: '.$problem.'.',
+                'Set DB_LONG_QUEUE_RETRY_AFTER (or REDIS_LONG_QUEUE_RETRY_AFTER) above '.$timeout.' s, or lower CLIPS_FFMPEG_TIMEOUT, then php artisan optimize.',
+            );
+        }
+
+        $retryAfter = (int) config("queue.connections.{$connection}.retry_after");
+        $summary = "Queued on {$connection}, queue clips (retry_after {$retryAfter} s, job timeout {$timeout} s).";
+
+        return match (config("queue.connections.{$connection}.driver")) {
+            'redis' => Check::ok($name, $summary.' Horizon runs it as supervisor-clips.'),
+            'database' => Check::ok($name, $summary, ['Run it as its own Forge daemon, separate from the '.self::WORKER_QUEUES.' worker: '.self::LONG_WORKER_COMMAND]),
+            default => Check::ok($name, $summary),
+        };
     }
 
     // Mail and leads ----------------------------------------------------------

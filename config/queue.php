@@ -43,6 +43,20 @@ return [
             'after_commit' => false,
         ],
 
+        // Long jobs on the database queue (ffmpeg clip formatting, #146): the
+        // same jobs table, its own `clips` queue and a retry_after above the
+        // clips worker's --timeout=600, so a slow encode is never handed to a
+        // second worker mid-run. Run it as its own worker, never alongside
+        // broadcasts: see ReadinessChecks::LONG_WORKER_COMMAND.
+        'database-long' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'clips',
+            'retry_after' => (int) env('DB_LONG_QUEUE_RETRY_AFTER', 660),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),

@@ -3,6 +3,7 @@
 namespace App\Clips;
 
 use App\Readiness\Check;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Throwable;
@@ -18,6 +19,12 @@ use Throwable;
 class Ffmpeg
 {
     public const PROBE_TIMEOUT_SECONDS = 15;
+
+    /**
+     * The probe's result is reused this long, so refreshing the readiness
+     * page while ffmpeg hangs ties up no more than one PHP worker per minute.
+     */
+    public const CACHE_SECONDS = 60;
 
     /**
      * @return list<string>
@@ -45,22 +52,40 @@ class Ffmpeg
             return Check::warn($name, "CLIPS_FFMPEG_BINARY is a snap ({$binary}); snap builds fail headless.", $fix);
         }
 
-        try {
-            $result = Process::timeout(self::PROBE_TIMEOUT_SECONDS)->run(self::probeArguments());
-        } catch (Throwable $e) {
-            return Check::warn($name, "Could not run {$binary} (".class_basename($e).').', $fix);
+        $probe = self::probe($binary);
+
+        if (isset($probe['error'])) {
+            return Check::warn($name, "Could not run {$binary} ({$probe['error']}).", $fix);
         }
 
-        if ($result->successful()) {
+        if ($probe['exit'] === 0) {
             return Check::ok($name, "{$binary} encoded a test clip with libx264 and AAC.");
         }
 
-        $line = trim((string) strtok(trim($result->errorOutput()."\n".$result->output()), "\n"));
-
         return Check::warn(
             $name,
-            "{$binary} failed the encode probe (exit {$result->exitCode()})".($line !== '' ? ': '.Str::limit($line, 160) : '.'),
+            "{$binary} failed the encode probe (exit {$probe['exit']})".($probe['line'] !== '' ? ': '.$probe['line'] : '.'),
             $fix,
         );
+    }
+
+    /**
+     * Run the probe, or reuse a result from the last CACHE_SECONDS.
+     *
+     * @return array{exit?: int, line?: string, error?: string}
+     */
+    private static function probe(string $binary): array
+    {
+        return Cache::remember('readiness:ffmpeg-probe:'.sha1($binary), self::CACHE_SECONDS, function () {
+            try {
+                $result = Process::timeout(self::PROBE_TIMEOUT_SECONDS)->run(self::probeArguments());
+            } catch (Throwable $e) {
+                return ['error' => class_basename($e)];
+            }
+
+            $line = trim((string) strtok(trim($result->errorOutput()."\n".$result->output()), "\n"));
+
+            return ['exit' => (int) $result->exitCode(), 'line' => Str::limit($line, 160)];
+        });
     }
 }

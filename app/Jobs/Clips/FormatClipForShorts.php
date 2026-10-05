@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -30,8 +31,10 @@ use Throwable;
  * longer approved, or its trim changed, by the time ffmpeg finishes, the new
  * cut is thrown away rather than stored.
  *
- * Runs on the "clips" queue (redis-long and supervisor-clips under Horizon),
- * because an encode can outlast the default supervisor's 60 s timeout.
+ * Runs on the "clips" queue of a long-job connection (redis-long with
+ * Horizon's supervisor-clips, or database-long with its own worker), because
+ * an encode outlasts the default connections' 90 s retry_after. queueFor()
+ * refuses to queue it on a lane that would hand it to a second worker.
  */
 class FormatClipForShorts implements ShouldQueue
 {
@@ -57,7 +60,77 @@ class FormatClipForShorts implements ShouldQueue
     {
         $this->timeout = (int) config('clips.ffmpeg_timeout') + 60;
         $this->onQueue('clips');
-        $this->onConnection(config('clips.format_connection'));
+        $this->onConnection(self::connectionName());
+    }
+
+    /**
+     * The long-job lane for the active queue backend: clips.format_connection
+     * if set, else redis-long or database-long, else (sync in tests, or any
+     * other driver) the default connection.
+     */
+    public static function connectionName(): string
+    {
+        $forced = config('clips.format_connection');
+        if (is_string($forced) && $forced !== '') {
+            return $forced;
+        }
+
+        $default = (string) config('queue.default');
+
+        return match (config("queue.connections.{$default}.driver")) {
+            'redis' => 'redis-long',
+            'database' => 'database-long',
+            default => $default,
+        };
+    }
+
+    /**
+     * Why the resolved connection cannot run this job safely, or null if it
+     * can: its retry_after must exceed the job timeout, or a second worker
+     * picks up an encode that is still running.
+     */
+    public static function unsafeConnection(): ?string
+    {
+        $connection = self::connectionName();
+        $config = config("queue.connections.{$connection}");
+
+        if (! is_array($config)) {
+            return "the queue connection {$connection} does not exist";
+        }
+        if (($config['driver'] ?? null) === 'sync') {
+            return null;
+        }
+
+        $timeout = (int) config('clips.ffmpeg_timeout') + 60;
+        $retryAfter = (int) ($config['retry_after'] ?? 0);
+
+        return $retryAfter > $timeout
+            ? null
+            : "the {$connection} connection's retry_after ({$retryAfter} s) is not above the job timeout ({$timeout} s)";
+    }
+
+    /**
+     * Queue the Shorts cut, unless the lane would run it twice. Refusing is
+     * logged and shown on the clip, so it cannot pass unnoticed. Use this,
+     * never dispatch() directly.
+     */
+    public static function queueFor(StreamMarker $marker): bool
+    {
+        $problem = self::unsafeConnection();
+
+        if ($problem !== null) {
+            Log::error('Refused to queue a Shorts cut: '.$problem.'. Set DB_LONG_QUEUE_RETRY_AFTER or REDIS_LONG_QUEUE_RETRY_AFTER above CLIPS_FFMPEG_TIMEOUT + 60, or lower CLIPS_FFMPEG_TIMEOUT (#146).', [
+                'marker_id' => $marker->id,
+                'connection' => self::connectionName(),
+            ]);
+            $marker->update(['format_error' => 'Not queued: '.$problem.'. See the readiness page.']);
+
+            return false;
+        }
+
+        self::dispatch($marker->id);
+
+        return true;
     }
 
     /**

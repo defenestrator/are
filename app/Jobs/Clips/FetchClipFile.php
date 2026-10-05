@@ -104,7 +104,7 @@ class FetchClipFile implements ShouldQueue
 
         // Approved before its file arrived: make the Shorts cut now (#146).
         if (FormatClipForShorts::wanted($marker)) {
-            FormatClipForShorts::dispatch($marker->id);
+            FormatClipForShorts::queueFor($marker);
         }
     }
 

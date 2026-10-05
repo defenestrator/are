@@ -49,8 +49,9 @@ A queue worker and the scheduler must both run. Without them, chat commands, cha
   2. Set `REDIS_PASSWORD` to the server's real Redis password. Check `redis-cli -a "$REDIS_PASSWORD" INFO keyspace` and confirm `db4` and `db5` are unused. The Redis is shared with other apps on the low indexes.
   3. Set `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis`, `REDIS_DB=4`, `REDIS_CACHE_DB=5` (never equal to `REDIS_DB`), `REDIS_CLIENT=phpredis` (or `predis`) and `APP_ENV=production`.
   4. Turn on the **Laravel Horizon** toggle, delete any plain queue workers for the site, and set the Horizon daemon's Stop Seconds to at least 60.
-  5. Check that `/horizon` loads for a broadcaster and returns 403 for everyone else, with both supervisors (`broadcasts` and `default`) running.
-- **Or a database worker**, while `QUEUE_CONNECTION=database`: add a Forge daemon `php artisan queue:work database --queue=broadcasts,default`. It must cover **both** queues, because vote updates and bus windows run on `broadcasts`.
+  5. Check that `/horizon` loads for a broadcaster and returns 403 for everyone else, with all three supervisors running: `broadcasts`, `default` and `clips` (Shorts cuts, #146, on its own `redis-long` connection).
+- **Or database workers**, while `QUEUE_CONNECTION=database`: add a Forge daemon `php artisan queue:work database --queue=broadcasts,default`. It must cover **both** queues, because vote updates and bus windows run on `broadcasts`.
+  - Add a **second, separate** Forge daemon for Shorts cuts (#146): `nice -n 10 php artisan queue:work database-long --queue=clips --timeout=600`. Never add `clips` to the worker above: a 5-minute ffmpeg encode there freezes vote updates for 5 minutes. It uses the `database-long` connection, whose `retry_after` (660 s, `DB_LONG_QUEUE_RETRY_AFTER`) is above the job's timeout, so a slow encode is never handed to a second worker. Set the daemon's Stop Seconds to at least 600. The readiness page's **Shorts cut queue** line shows which lane is in use.
 - **Scheduler:** turn on the Forge **Laravel Scheduler** toggle (`schedule:run` every minute). The readiness page's Scheduler line turns green a minute later. Scheduled times use `config/app.php`'s timezone, which is UTC: `clips:prune-files` at 04:30, YouTube Analytics at 06:00, and the weekly summary on Mondays at 09:00.
 
 ### 1.4 Realtime (Reverb)
@@ -245,8 +246,8 @@ Symptoms: chat commands don't answer, votes lag, and the readiness page's Queue 
 
 1. Open `/admin/readiness`. The Queue group shows waiting jobs by queue and how old they are.
 2. **With Horizon:** run `php artisan horizon:status` and open `/horizon`. If Horizon isn't running, restart the Horizon daemon in Forge, or run `php artisan horizon:terminate` and let Supervisor start it.
-3. **With a database worker:** check that the Forge daemon runs `php artisan queue:work database --queue=broadcasts,default`.
-4. Jobs left in the database queue after a move to Redis: drain them once with `php artisan queue:work database --stop-when-empty`.
+3. **With database workers:** check that one Forge daemon runs `php artisan queue:work database --queue=broadcasts,default`, and a separate one runs `nice -n 10 php artisan queue:work database-long --queue=clips --timeout=600`. A backlog on the `clips` queue with an empty `broadcasts` queue means the second one is missing.
+4. Jobs left in the database queue after a move to Redis: drain them once with `php artisan queue:work database --stop-when-empty`, and any Shorts cuts with `php artisan queue:work database-long --queue=clips --timeout=600 --stop-when-empty`.
 5. Failed jobs: list them with `php artisan queue:failed`. Once the cause is fixed, run `php artisan queue:retry all`.
 6. Old broadcast rows from before #109, while broadcasting is off, are safe to delete: `DELETE FROM jobs WHERE queue = 'broadcasts';`.
 

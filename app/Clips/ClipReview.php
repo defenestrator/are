@@ -38,7 +38,7 @@ class ClipReview
 
         // Make the Shorts cut now (#146). If the file is not fetched yet,
         // FetchClipFile queues this again when it is.
-        FormatClipForShorts::dispatch($marker->id);
+        FormatClipForShorts::queueFor($marker);
     }
 
     /**

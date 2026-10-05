@@ -15,6 +15,7 @@ use App\Readiness\Status;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -279,17 +280,107 @@ test('when formatting finally gives up, the clip says so', function () {
 
 // --- dispatch and queue lane -------------------------------------------------------
 
-test('approving a clip queues its Shorts cut on the clips queue', function () {
+test('approving a clip queues its Shorts cut on the long lane for the active backend', function (string $default, string $lane) {
     Queue::fake([FormatClipForShorts::class]);
-    config(['clips.format_connection' => 'redis-long']);
+    config(['queue.default' => $default, 'clips.format_connection' => null]);
     $mod = User::factory()->twitch('7777')->create();
     $marker = approvedClip(['review_status' => ClipReviewStatus::Pending]);
 
     ClipReview::approve($marker, $mod);
 
     Queue::assertPushedOn('clips', FormatClipForShorts::class, fn (FormatClipForShorts $job) => $job->markerId === $marker->id
-        && $job->connection === 'redis-long'
+        && $job->connection === $lane
         && $job->timeout === 360);
+})->with([
+    'database queue' => ['database', 'database-long'],
+    'redis queue' => ['redis', 'redis-long'],
+]);
+
+// --- the long lane (Andras's #166 review) -------------------------------------------
+
+test('A166-1: on either backend the job times out before its connection retries it', function (string $default) {
+    config(['queue.default' => $default, 'clips.format_connection' => null]);
+    $job = new FormatClipForShorts(1);
+
+    expect($job->connection)->not->toBe($default)
+        ->and($job->timeout)->toBeLessThan(config("queue.connections.{$job->connection}.retry_after"))
+        ->and(FormatClipForShorts::unsafeConnection())->toBeNull();
+})->with(['database', 'redis']);
+
+test('A166-2: arguments stay literal for hostile-looking values', function () {
+    $args = FormatClipForShorts::ffmpegArguments('ffmpeg', '/srv/clips/1/-weird.mp4', '/tmp/out.mp4', 'crop', 1.25, 9.0);
+
+    expect($args)->toContain('-ss', '1.3', '-i', '/srv/clips/1/-weird.mp4', '-t', '7.8')
+        ->and(collect($args)->every(fn ($a) => is_string($a)))->toBeTrue();
+});
+
+test('the guard refuses to queue on a lane whose retry_after is not above the job timeout, and says why', function (string $default, array $config, string $connection) {
+    Queue::fake([FormatClipForShorts::class]);
+    Log::spy();
+    config(['queue.default' => $default] + $config);
+    $mod = User::factory()->twitch('7777')->create();
+    $marker = approvedClip(['review_status' => ClipReviewStatus::Pending]);
+
+    ClipReview::approve($marker, $mod);
+
+    Queue::assertNotPushed(FormatClipForShorts::class);
+    Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context) => str_contains($message, 'Refused to queue a Shorts cut')
+        && str_contains($message, "{$connection} connection's retry_after")
+        && $context['connection'] === $connection
+        && $context['marker_id'] === $marker->id);
+    expect($marker->refresh()->review_status)->toBe(ClipReviewStatus::Approved)
+        ->and($marker->format_error)->toContain('Not queued')
+        ->and($marker->format_error)->toContain('is not above the job timeout (360 s)');
+})->with([
+    'database-long with a short retry_after' => ['database', ['queue.connections.database-long.retry_after' => 90], 'database-long'],
+    'redis-long with a short retry_after' => ['redis', ['queue.connections.redis-long.retry_after' => 360], 'redis-long'],
+    'forced onto the default database connection' => ['database', ['clips.format_connection' => 'database'], 'database'],
+    'forced onto the default redis connection' => ['redis', ['clips.format_connection' => 'redis'], 'redis'],
+]);
+
+test('the guard also covers the dispatch after a late fetch', function () {
+    Queue::fake([FormatClipForShorts::class]);
+    Log::spy();
+    config(['queue.default' => 'database', 'queue.connections.database-long.retry_after' => 60]);
+    Http::fake(['production.assets.clips.twitchcdn.net/*' => Http::response('mp4', 200, ['Content-Type' => 'video/mp4'])]);
+    $marker = StreamMarker::factory()->ready()->create([
+        'review_status' => ClipReviewStatus::Approved,
+        'reviewed_at' => now(),
+        'download_urls_expire_at' => now()->addMinutes(20),
+    ]);
+
+    (new FetchClipFile($marker->id))->withFakeQueueInteractions()->handle(app(ClipHelix::class));
+
+    Queue::assertNotPushed(FormatClipForShorts::class);
+    Log::shouldHaveReceived('error')->once();
+    expect($marker->refresh()->fetched_at)->not->toBeNull();
+});
+
+test('a lane that does not exist is refused', function () {
+    config(['clips.format_connection' => 'nope']);
+
+    expect(FormatClipForShorts::unsafeConnection())->toBe('the queue connection nope does not exist');
+});
+
+test('the readiness page shows the Shorts lane, with the separate worker for the database queue', function () {
+    config(['queue.default' => 'database', 'clips.format_connection' => null]);
+
+    $check = app(ReadinessChecks::class)->clipsLane();
+
+    expect($check->status)->toBe(Status::Ok)
+        ->and($check->summary)->toContain('Queued on database-long, queue clips (retry_after 660 s, job timeout 360 s)')
+        ->and($check->details[0])->toContain(ReadinessChecks::LONG_WORKER_COMMAND)
+        ->and($check->details[0])->toContain('separate from the broadcasts,default worker');
+});
+
+test('an unsafe Shorts lane is red on the readiness page', function () {
+    config(['queue.default' => 'database', 'queue.connections.database-long.retry_after' => 90]);
+
+    $check = app(ReadinessChecks::class)->clipsLane();
+
+    expect($check->status)->toBe(Status::Fail)
+        ->and($check->summary)->toContain('not being queued')
+        ->and($check->fix)->toContain('DB_LONG_QUEUE_RETRY_AFTER');
 });
 
 test('a clip approved before its file arrived is formatted once the fetch finishes', function () {
@@ -413,11 +504,34 @@ test('a missing binary is amber, not an error page', function () {
         ->and($check->summary)->toContain('Could not run /opt/ffmpeg/ffmpeg');
 });
 
+test('the probe result is cached for 60 s, so refreshing the page does not re-run ffmpeg', function () {
+    Process::fake(['*' => Process::result()]);
+
+    Ffmpeg::readinessCheck();
+    Ffmpeg::readinessCheck();
+    Process::assertRanTimes(fn () => true, 1);
+
+    $this->travel(Ffmpeg::CACHE_SECONDS + 1)->seconds();
+    Ffmpeg::readinessCheck();
+    Process::assertRanTimes(fn () => true, 2);
+});
+
+test('a cached failure stays amber, and a new binary path is probed afresh', function () {
+    Process::fake(['*' => Process::result(errorOutput: 'Error: unable to open display', exitCode: 1)]);
+    expect(Ffmpeg::readinessCheck()->status)->toBe(Status::Warn)
+        ->and(Ffmpeg::readinessCheck()->summary)->toContain('unable to open display');
+
+    config(['clips.ffmpeg_binary' => '/usr/local/bin/ffmpeg']);
+    Ffmpeg::readinessCheck();
+
+    Process::assertRanTimes(fn () => true, 2);
+});
+
 test('the readiness page lists the ffmpeg line in the Clips group', function () {
     Process::fake(['*' => Process::result()]);
     config(['clips.disk_min_free_bytes' => 0]);
 
     $names = collect(app(ReadinessChecks::class)->all()['Clips'])->pluck('name')->all();
 
-    expect($names)->toBe(['Clip file storage', 'ffmpeg for Shorts formatting']);
+    expect($names)->toBe(['Clip file storage', 'ffmpeg for Shorts formatting', 'Shorts cut queue']);
 });
