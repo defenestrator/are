@@ -1,10 +1,12 @@
 <?php
 
 use App\Clips\ClipReview;
+use App\Clips\ClipStorage;
 use App\Clips\ClipReviewStatus;
 use App\Clips\StreamMarkerStatus;
 use App\Models\StreamMarker;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Number;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -108,7 +110,7 @@ new class extends Component {
             default => $query->where('status', StreamMarkerStatus::ClipReady)->where('review_status', ClipReviewStatus::Pending),
         };
 
-        return ['markers' => $query->paginate(self::PER_PAGE)];
+        return ['markers' => $query->paginate(self::PER_PAGE), 'storage' => ClipStorage::usage()];
     }
 }; ?>
 
@@ -119,6 +121,11 @@ new class extends Component {
             <flux:heading size="xl" level="1">Clips</flux:heading>
             <flux:text>Every <code>!clip</code> from chat and the clip Twitch cut around it. Approve, edit the title and trim, or reject. <strong>Approving publishes nothing</strong>: uploading approved clips is a later step.</flux:text>
         </div>
+
+        <flux:text size="sm" data-test="clip-storage">
+            Clip files: {{ Number::fileSize($storage['bytes'], 1) }} in {{ $storage['clips'] }} {{ Str::plural('clip', $storage['clips']) }}{{ $storage['free_bytes'] !== null ? ', '.Number::fileSize($storage['free_bytes'], 1).' free on the disk' : '' }}.
+            Files of rejected clips are deleted after {{ config('clips.keep_rejected_days') }} days, and of approved clips not yet published after {{ config('clips.keep_approved_days') }}. Clips to review are kept.
+        </flux:text>
 
         <flux:radio.group wire:model.live="show" variant="segmented" size="sm">
             <flux:radio value="review" label="To review" />
@@ -153,7 +160,9 @@ new class extends Component {
                                 <div class="text-zinc-500">{{ $marker->creator?->name ?? '' }}</div>
                             </td>
                             <td class="py-3 pr-4">
-                                @if ($marker->fetched_at)
+                                @if ($marker->files_pruned_at)
+                                    <div class="text-zinc-500">File deleted {{ $marker->files_pruned_at->diffForHumans() }} under the retention rules.</div>
+                                @elseif ($marker->fetched_at)
                                     @foreach (StreamMarker::VARIANTS as $variant)
                                         @if ($marker->filePath($variant))
                                             <video controls preload="metadata" class="mb-2 max-h-48 rounded" src="{{ route('clips.file', ['marker' => $marker->id, 'variant' => $variant]) }}" aria-label="{{ ucfirst($variant) }} clip"></video>

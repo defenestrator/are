@@ -2,6 +2,7 @@
 
 namespace App\Readiness;
 
+use App\Clips\ClipStorage;
 use App\Models\BroadcasterToken;
 use App\Models\User;
 use App\Twitch;
@@ -49,6 +50,7 @@ class ReadinessChecks
             'Scheduler' => $this->guard('Scheduler', fn () => [$this->scheduler()]),
             'YouTube' => $this->guard('YouTube', fn () => $this->youtube()),
             'Mail and leads' => $this->guard('Mail and leads', fn () => $this->mail()),
+            'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck()]),
             'Deploy' => $this->guard('Deploy', fn () => $this->deploy()),
         ];
     }

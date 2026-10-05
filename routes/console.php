@@ -59,6 +59,10 @@ Artisan::command('attribution:weekly-summary {--week= : A Y-m-d date in the week
     return 0;
 })->purpose('Queue the weekly attribution summary for Slack or Discord');
 
+// Clip file retention (#143): delete files of rejected clips, and of approved
+// clips not yet published, past their retention. Never touches clips to review.
+Schedule::command('clips:prune-files')->dailyAt('04:30')->withoutOverlapping();
+
 // Proves the scheduler runs, for the readiness page (#135).
 Schedule::call(fn () => SchedulerHeartbeat::beat())
     ->everyMinute()

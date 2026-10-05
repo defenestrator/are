@@ -57,7 +57,8 @@ class FetchClipFile implements ShouldQueue
     public function handle(ClipHelix $helix): void
     {
         $marker = StreamMarker::find($this->markerId);
-        if ($marker === null || $marker->status !== StreamMarkerStatus::ClipReady || $marker->clip_id === null) {
+        // A pruned clip's files were deleted on purpose (#143): never fetch them again.
+        if ($marker === null || $marker->status !== StreamMarkerStatus::ClipReady || $marker->clip_id === null || $marker->files_pruned_at !== null) {
             return;
         }
 

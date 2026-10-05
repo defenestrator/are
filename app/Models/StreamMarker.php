@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Clips\ClipReviewStatus;
 use App\Clips\StreamMarkerStatus;
 use Database\Factories\StreamMarkerFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -43,6 +44,8 @@ use Illuminate\Support\Carbon;
  * @property float|null $trim_end_seconds
  * @property int|null $reviewed_by_user_id
  * @property Carbon|null $reviewed_at
+ * @property Carbon|null $files_pruned_at
+ * @property Carbon|null $published_at
  * @property Carbon|null $created_at
  */
 class StreamMarker extends Model
@@ -79,6 +82,8 @@ class StreamMarker extends Model
         'trim_end_seconds',
         'reviewed_by_user_id',
         'reviewed_at',
+        'files_pruned_at',
+        'published_at',
     ];
 
     /** File variants Get Clips Download offers. */
@@ -99,6 +104,8 @@ class StreamMarker extends Model
             'trim_start_seconds' => 'float',
             'trim_end_seconds' => 'float',
             'reviewed_at' => 'datetime',
+            'files_pruned_at' => 'datetime',
+            'published_at' => 'datetime',
         ];
     }
 
@@ -160,6 +167,37 @@ class StreamMarker extends Model
             'portrait' => $this->portrait_download_url,
             default => null,
         };
+    }
+
+    /**
+     * Clips whose files clips:prune-files may delete now (#143): decided,
+     * with files still stored, and past their retention.
+     *  - Rejected: clips.keep_rejected_days after the decision.
+     *  - Approved and not published: clips.keep_approved_days after approval.
+     * A clip still to review is never selected, whatever its age; nor is a
+     * published one (the upload slice decides what happens to those).
+     *
+     * @param  Builder<StreamMarker>  $query
+     */
+    public function scopePrunableFiles(Builder $query): void
+    {
+        $query->whereNull('files_pruned_at')
+            ->where(fn (Builder $q) => $q->whereNotNull('landscape_file_path')->orWhereNotNull('portrait_file_path'))
+            ->whereNotNull('reviewed_at')
+            ->where(fn (Builder $q) => $q
+                ->where(fn (Builder $r) => $r
+                    ->where('review_status', ClipReviewStatus::Rejected)
+                    ->where('reviewed_at', '<=', now()->subDays((int) config('clips.keep_rejected_days'))))
+                ->orWhere(fn (Builder $a) => $a
+                    ->where('review_status', ClipReviewStatus::Approved)
+                    ->whereNull('published_at')
+                    ->where('reviewed_at', '<=', now()->subDays((int) config('clips.keep_approved_days')))));
+    }
+
+    /** Re-checks scopePrunableFiles on this row, e.g. after locking it. */
+    public function filesArePrunable(): bool
+    {
+        return static::whereKey($this->getKey())->prunableFiles()->exists();
     }
 
     public function downloadUrlsExpired(): bool

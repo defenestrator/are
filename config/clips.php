@@ -49,6 +49,30 @@ return [
 
     'max_file_bytes' => (int) env('CLIPS_MAX_FILE_BYTES', 300 * 1024 * 1024),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Retention (#143)
+    |--------------------------------------------------------------------------
+    |
+    | clips:prune-files runs daily and deletes the files (never the rows) of
+    | rejected clips keep_rejected_days after the decision, and of approved
+    | clips not yet published keep_approved_days after approval. Clips still
+    | to review are never touched.
+    |
+    | The readiness page turns amber when stored clip files pass
+    | disk_warn_bytes, or when a local CLIPS_DISK has less than
+    | disk_min_free_bytes free.
+    |
+    */
+
+    'keep_rejected_days' => (int) env('CLIPS_KEEP_REJECTED_DAYS', 7),
+
+    'keep_approved_days' => (int) env('CLIPS_KEEP_APPROVED_DAYS', 30),
+
+    'disk_warn_bytes' => (int) env('CLIPS_DISK_WARN_BYTES', 10 * 1024 ** 3),
+
+    'disk_min_free_bytes' => (int) env('CLIPS_DISK_MIN_FREE_BYTES', 5 * 1024 ** 3),
+
     'download_hosts' => array_values(array_filter(array_map('trim', explode(',', (string) env('CLIPS_DOWNLOAD_HOSTS', 'twitchcdn.net,twitch.tv,jtvnw.net'))))),
 
 ];
