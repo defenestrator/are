@@ -51,12 +51,8 @@ class Question extends Model
 
     public static function getSortedQuestions($limit = 50)
     {
-        return self::query()
-            ->active()
-            ->leftJoin('question_votes', 'questions.id', '=', 'question_votes.question_id')
-            ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
+        return self::withVoteTotals()
             ->orderBy('votes', 'desc')
-            ->groupBy('questions.id')
             ->limit($limit)
             ->with('user.identities')
             ->get();
@@ -64,15 +60,37 @@ class Question extends Model
 
     public static function getRecentQuestions($limit = 50)
     {
-        return self::query()
-            ->active()
-            ->leftJoin('question_votes', 'questions.id', '=', 'question_votes.question_id')
-            ->selectRaw('questions.*, coalesce(sum(question_votes.count), 0) as votes')
+        return self::withVoteTotals()
             ->orderBy('id', 'desc')
-            ->groupBy('questions.id')
             ->limit($limit)
             ->with('user.identities')
             ->get();
+    }
+
+    /**
+     * Open questions with their vote total selected as `votes`.
+     *
+     * The total is a correlated subquery, so only open questions' votes are
+     * read, each through the question_id index. A join grouped over
+     * question_votes hash-joins every vote ever cast, archived streams
+     * included (#179). The total is summed on read, not stored on the
+     * question, because votes also disappear through database cascades
+     * (deleting a user or a question) that no application code sees, and a
+     * stored total would silently drift.
+     *
+     * @return Builder<Question>
+     */
+    private static function withVoteTotals(): Builder
+    {
+        return self::query()
+            ->active()
+            ->select('questions.*')
+            ->selectSub(
+                fn ($query) => $query->from('question_votes')
+                    ->selectRaw('coalesce(sum(question_votes.count), 0)')
+                    ->whereColumn('question_votes.question_id', 'questions.id'),
+                'votes',
+            );
     }
 
     public function voteCount(): int
