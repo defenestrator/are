@@ -82,11 +82,19 @@ class AgentGate
      */
     public static function whileAllowed(callable $effect, bool $external = false): mixed
     {
-        BusControl::for(BusControl::GLOBAL);
-        BusControl::for(self::SCOPE);
-
         return DB::transaction(function () use ($effect, $external) {
-            BusControl::whereIn('scope', [BusControl::GLOBAL, self::SCOPE])->orderBy('scope')->sharedLock()->get();
+            $scopes = [BusControl::GLOBAL, self::SCOPE];
+            $share = fn () => BusControl::whereIn('scope', $scopes)->orderBy('scope')->sharedLock()->get();
+
+            // The rows exist after the first use, so this is normally the
+            // one locking SELECT. A missing row could not be held, so it is
+            // created (ON CONFLICT DO NOTHING: no error, no savepoint) and
+            // the rows are locked again (#181).
+            if ($share()->count() < count($scopes)) {
+                BusControl::ensure($scopes);
+                $share();
+            }
+
             self::ensure();
 
             $result = $effect();

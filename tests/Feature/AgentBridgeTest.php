@@ -23,6 +23,7 @@ use App\Readiness\ReadinessChecks;
 use App\Readiness\Status as ReadinessStatus;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -774,3 +775,45 @@ test('the body cap is held between 1 KB and 63 KB', function (int $configured, i
 
     expect(AgentRequest::maxBodyBytes())->toBe($bytes);
 })->with([[16, 16384], [0, 1024], [-5, 1024], [63, 64512], [500, 64512]]);
+
+// --- Switch rows without failing statements (#181) -----------------------------
+
+/** How many transactions or savepoints rolled back while $callback ran (see ControlBusTest). */
+function agentRollbacks(callable $callback): int
+{
+    $rollbacks = 0;
+    Event::listen(TransactionRolledBack::class, function () use (&$rollbacks) {
+        $rollbacks++;
+    });
+    $callback();
+
+    return $rollbacks;
+}
+
+test('an agent effect runs no failing statement and creates no switch row (runs on Postgres in CI)', function () {
+    [, $token] = agentWithToken();
+    [$first, $question] = Question::factory()->count(2)->create();
+
+    // The first effect creates the switch rows, without a failing statement.
+    expect(agentRollbacks(fn () => fresh()->withToken($token)->postJson("/api/agent/questions/{$first->id}/claim", ['reason' => 'mine'])->assertSuccessful()))->toBe(0);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $rollbacks = agentRollbacks(fn () => fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/claim", ['reason' => 'mine'])->assertSuccessful());
+    $inserts = collect(DB::getQueryLog())->pluck('query')->filter(fn (string $sql) => str_starts_with($sql, 'insert') && str_contains($sql, 'bus_controls'));
+    DB::disableQueryLog();
+
+    expect($rollbacks)->toBe(0)->and($inserts)->toBeEmpty();
+});
+
+test('with its switch rows missing, an agent effect creates them, holds them and still honours the kill switch', function () {
+    [, $token] = agentWithToken();
+    $question = Question::factory()->create();
+    BusControl::query()->delete();
+
+    expect(agentRollbacks(fn () => AgentGate::whileAllowed(fn () => null)))->toBe(0)
+        ->and(BusControl::whereIn('scope', [BusControl::GLOBAL, AgentGate::SCOPE])->count())->toBe(2);
+
+    BusControl::whereKey(BusControl::GLOBAL)->update(['killed_at' => now()]);
+    fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/claim", ['reason' => 'mine'])->assertStatus(423);
+});

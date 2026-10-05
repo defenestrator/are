@@ -33,6 +33,8 @@ use App\TwitchSubscription;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Database\Events\TransactionRolledBack;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
@@ -1181,4 +1183,94 @@ test('every !do refusal reason has a reply template, except a rate limit, which 
         expect(DoAction::reply(new Submission($ballot, $reason)))->not->toBe('', $reason);
     }
     expect(DoAction::reply(new Submission(new BusBallot(['game' => 'orkestera']), Submission::INVALID)))->toBe('Try !do task <text>, !do say <text>.');
+});
+
+// --- Control rows without failing statements (#181) ---------------------------
+
+/**
+ * Run $callback and return what it did to the database: the statements that
+ * succeeded, and how many transactions or savepoints rolled back. A failing
+ * statement never reaches the query log, but createOrFirst() runs its INSERT
+ * in a savepoint when a transaction is open (the test's, or the bus's own),
+ * so each INSERT that fails on a duplicate shows here as a rollback. On
+ * Postgres each one is also an ERROR in the server log.
+ *
+ * @return array{queries: Collection<int, string>, rollbacks: int}
+ */
+function busDatabaseWork(callable $callback): array
+{
+    $rollbacks = 0;
+    Event::listen(TransactionRolledBack::class, function () use (&$rollbacks) {
+        $rollbacks++;
+    });
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $callback();
+    DB::disableQueryLog();
+
+    return ['queries' => collect(DB::getQueryLog())->pluck('query'), 'rollbacks' => $rollbacks];
+}
+
+test('a !do runs no failing statement and creates no control row (runs on Postgres in CI)', function () {
+    $viewer = User::factory()->create();
+
+    // The very first use, on an empty bus_controls table, creates the rows
+    // without a failing statement too.
+    expect(BusControl::count())->toBe(0);
+    $cold = busDatabaseWork(function () use ($viewer) {
+        busStart();
+        busSay($viewer, '!do say Warm the caches up');
+    });
+    expect($cold['rollbacks'])->toBe(0)
+        ->and(BusControl::whereIn('scope', [BusControl::GLOBAL, 'orkestera'])->count())->toBe(2);
+
+    $work = busDatabaseWork(fn () => expect(busSay($viewer, '!do say Write the README')->status)->toBe(ChatCommandStatus::Done));
+
+    expect($work['rollbacks'])->toBe(0)
+        ->and($work['queries']->filter(fn (string $sql) => str_starts_with($sql, 'insert') && str_contains($sql, 'bus_controls')))->toBeEmpty()
+        // Still the bus's lock: the game's row, read by key inside the transaction.
+        ->and($work['queries']->contains(fn (string $sql) => str_contains($sql, 'from "bus_controls" where "bus_controls"."scope" = ?')))->toBeTrue();
+});
+
+test('moderator actions and the kill switch run no failing statement', function () {
+    $mod = busStart();
+    $broadcaster = busBroadcaster();
+
+    $work = busDatabaseWork(function () use ($mod, $broadcaster) {
+        busBus()->setMode($mod, 'orkestera', Mode::Anarchy);
+        busBus()->setActiveGame($mod, 'orkestera');
+        busBus()->kill($broadcaster, 'test');
+    });
+
+    expect($work['rollbacks'])->toBe(0)
+        ->and(BusControl::find(BusControl::GLOBAL)->killed_at)->not->toBeNull();
+});
+
+test('a game with no control row yet gets one on first use, without a failing statement', function () {
+    config(['bus.games.later' => config('bus.games.orkestera')]);
+    expect(BusControl::find('later'))->toBeNull();
+    $mod = busModerator();
+
+    $work = busDatabaseWork(function () use ($mod) {
+        busBus()->setActiveGame($mod, 'later');
+        busBus()->setMode($mod, 'later', Mode::Anarchy);
+    });
+
+    expect($work['rollbacks'])->toBe(0)
+        ->and(BusControl::find('later')->mode)->toBe(Mode::Anarchy);
+});
+
+test('BusControl::for() reads an existing row and creates a missing one, never failing on a duplicate', function () {
+    BusControl::create(['scope' => BusControl::GLOBAL, 'killed_at' => now()]);
+
+    $work = busDatabaseWork(function () {
+        expect(BusControl::for(BusControl::GLOBAL)->killed_at)->not->toBeNull();
+        expect(BusControl::for('brand-new')->scope)->toBe('brand-new');
+        BusControl::ensure(['brand-new', BusControl::GLOBAL]);
+    });
+
+    expect($work['rollbacks'])->toBe(0)
+        ->and(BusControl::find(BusControl::GLOBAL)->killed_at)->not->toBeNull()
+        ->and(BusControl::whereKey('brand-new')->count())->toBe(1);
 });

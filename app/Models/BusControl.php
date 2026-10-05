@@ -52,10 +52,37 @@ class BusControl extends Model
 
     /**
      * The row for a scope, created if missing. Safe when two requests race.
+     *
+     * Reads first: the rows exist after their first use, so normally this
+     * is one SELECT. createOrFirst() would try the INSERT first, which fails by
+     * design on every call and writes an ERROR to the Postgres log (#181).
      */
     public static function for(string $scope): self
     {
-        return self::createOrFirst(['scope' => $scope]);
+        $row = self::find($scope);
+        if ($row === null) {
+            self::ensure([$scope]);
+            $row = self::findOrFail($scope);
+        }
+
+        return $row;
+    }
+
+    /**
+     * Create any of these rows that are missing, in one statement that never
+     * fails on a duplicate (ON CONFLICT DO NOTHING on Postgres): no error, no
+     * savepoint, and safe inside a transaction holding the bus locks. Rows
+     * that exist are left exactly as they are, and are not locked by it.
+     *
+     * @param  list<string>  $scopes
+     */
+    public static function ensure(array $scopes): void
+    {
+        $now = now();
+        self::query()->insertOrIgnore(array_map(
+            fn (string $scope) => ['scope' => $scope, 'created_at' => $now, 'updated_at' => $now],
+            array_values(array_unique($scopes)),
+        ));
     }
 
     /**

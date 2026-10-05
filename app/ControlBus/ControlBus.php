@@ -93,8 +93,6 @@ class ControlBus
             $base += ['verb' => $action->verb, 'argument' => $action->argument, 'action_key' => $action->key()];
         }
 
-        $this->ensureControls($game);
-
         return DB::transaction(function () use ($game, $base, $reference, $action, $user) {
             $this->lock($game);
             $this->shareGlobal();
@@ -238,8 +236,6 @@ class ControlBus
             return null;
         }
 
-        $this->ensureControls($game);
-
         return DB::transaction(function () use ($window, $game) {
             $this->lock($game);
             $this->shareGlobal();
@@ -361,8 +357,6 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($approval->game);
-        $this->ensureControls($game);
-
         $publication = DB::transaction(function () use ($moderator, $approval, $game) {
             $this->lock($game);
             $this->shareGlobal();
@@ -413,8 +407,6 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($approval->game);
-        $this->ensureControls($game);
-
         DB::transaction(function () use ($moderator, $approval, $game, $reason) {
             $this->lock($game);
             $fresh = BusApproval::whereKey($approval->id)->lockForUpdate()->firstOrFail();
@@ -441,7 +433,6 @@ class ControlBus
                 if ($game === null) {
                     return;
                 }
-                $this->ensureControls($game);
 
                 DB::transaction(function () use ($approval, $game, &$expired) {
                     $this->lock($game);
@@ -556,8 +547,6 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($gameKey);
-        $this->ensureControls($game);
-
         DB::transaction(function () use ($moderator, $game, $mode) {
             $this->lock($game)->update(['mode' => $mode]);
 
@@ -584,8 +573,6 @@ class ControlBus
     {
         Gate::forUser($moderator)->authorize('moderate');
         $game = $this->gameOrFail($gameKey);
-        $this->ensureControls($game);
-
         DB::transaction(function () use ($moderator, $game, $paused) {
             $this->lock($game)->update([
                 'paused_at' => $paused ? now() : null,
@@ -755,30 +742,37 @@ class ControlBus
     // --- Helpers ------------------------------------------------------------
 
     /**
-     * Create the game's and the global control rows if missing. Outside any
-     * lock: createOrFirst is safe when two requests race.
-     */
-    private function ensureControls(Game $game): void
-    {
-        BusControl::for(BusControl::GLOBAL);
-        BusControl::for($game->key);
-    }
-
-    /**
      * Lock the game's control row for the rest of the transaction (lock 1).
+     *
+     * The rows exist after a game's first use, so this is normally the one
+     * locking SELECT. Only the first use finds a row missing: it is created
+     * once, with ON CONFLICT DO NOTHING (no error, no savepoint, safe when
+     * two requests race), and then locked (#181). Creating it here rather
+     * than before every transaction keeps the hot path to that one SELECT.
      */
     private function lock(Game $game): BusControl
     {
-        return BusControl::whereKey($game->key)->lockForUpdate()->firstOrFail();
+        $row = BusControl::whereKey($game->key)->lockForUpdate()->first();
+        if ($row === null) {
+            BusControl::ensure([BusControl::GLOBAL, $game->key]);
+            $row = BusControl::whereKey($game->key)->lockForUpdate()->firstOrFail();
+        }
+
+        return $row;
     }
 
     /**
      * Hold the global row FOR SHARE for the rest of the transaction (lock 2),
      * so the kill switch cannot change between reading it and publishing.
+     * A missing row (only before the bus's first use) is created and then
+     * locked, so there is always a row to hold.
      */
     private function shareGlobal(): void
     {
-        BusControl::whereKey(BusControl::GLOBAL)->sharedLock()->first();
+        if (BusControl::whereKey(BusControl::GLOBAL)->sharedLock()->first() === null) {
+            BusControl::ensure([BusControl::GLOBAL]);
+            BusControl::whereKey(BusControl::GLOBAL)->sharedLock()->firstOrFail();
+        }
     }
 
     private function gameOrFail(string $key): Game
