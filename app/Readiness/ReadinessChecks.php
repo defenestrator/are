@@ -417,9 +417,11 @@ class ReadinessChecks
             : Check::warn('YouTube API key', 'YOUTUBE_API_KEY is not set, so YouTube live chat is not read.', 'Create an API key in Google Cloud (YouTube Data API v3) and set YOUTUBE_API_KEY.');
 
         $channels = (array) config('services.youtube.channel_ids');
-        $checks[] = $channels !== []
-            ? Check::ok('YouTube channels', count($channels).' channel(s) allowed.', $channels)
-            : Check::warn('YouTube channels', 'YOUTUBE_CHANNEL_IDS is empty, so chat from any channel\'s video is accepted.', 'Set YOUTUBE_CHANNEL_IDS to the show\'s two channel ids, comma separated.');
+        $checks[] = match (true) {
+            $channels !== [] => Check::ok('YouTube channels', count($channels).' channel(s) allowed.', $channels),
+            $keySet => Check::fail('YouTube channels', 'YOUTUBE_CHANNEL_IDS is empty, so no YouTube chat is read and no channel can be connected.', 'Set YOUTUBE_CHANNEL_IDS to the show\'s channel ids (UC...), comma separated.'),
+            default => Check::skip('YouTube channels', 'YouTube is not configured.', 'Set YOUTUBE_API_KEY and YOUTUBE_CHANNEL_IDS to read YouTube chat.'),
+        };
 
         $checks[] = Check::skip('YouTube OAuth client and connected channels', 'Arrives with #126 (chat replies on YouTube); nothing to set up yet.');
 

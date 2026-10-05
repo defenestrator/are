@@ -442,6 +442,22 @@ test('the scheduler check follows the heartbeat\'s age', function () {
 
 // YouTube ------------------------------------------------------------------------------
 
+// #147: with YouTube configured, an empty channel list means nothing is read.
+test('YouTube channels are red when YouTube is configured and YOUTUBE_CHANNEL_IDS is empty', function (?string $key, array $channels, Status $expected) {
+    config(['services.youtube.api_key' => $key, 'services.youtube.channel_ids' => $channels]);
+
+    $check = readinessCheck('YouTube channels');
+    expect($check->status)->toBe($expected);
+
+    if ($expected === Status::Fail) {
+        expect($check->fix)->toContain('YOUTUBE_CHANNEL_IDS');
+    }
+})->with([
+    'configured, no channels' => ['k', [], Status::Fail],
+    'configured, channels set' => ['k', ['UCedos'], Status::Ok],
+    'not configured' => [null, [], Status::Skip],
+]);
+
 test('YouTube without an API key is amber and its quota not applicable', function () {
     config(['services.youtube.api_key' => null]);
 

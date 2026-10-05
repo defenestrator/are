@@ -51,7 +51,8 @@ return [
     'youtube' => [
         'api_key' => env('YOUTUBE_API_KEY'),
         // The channels whose live chat this app reads, comma separated. Videos
-        // from any other channel are refused. Empty allows any channel.
+        // from any other channel are refused, and while this is empty nothing
+        // is read or connected at all (youtube:chat, --auto, the OAuth connect).
         'channel_ids' => array_values(array_filter(array_map('trim', explode(',', (string) env('YOUTUBE_CHANNEL_IDS', ''))))),
         // Never poll faster than this, whatever pollingIntervalMillis says.
         'poll_floor_ms' => (int) env('YOUTUBE_POLL_FLOOR_MS', 3000),

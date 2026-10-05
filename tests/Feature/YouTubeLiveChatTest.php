@@ -133,6 +133,30 @@ test('youtube:chat needs an API key and makes no call without one', function () 
     Http::assertNothingSent();
 });
 
+// #147: an empty list must not mean "any channel".
+test('youtube:chat refuses to read any chat while YOUTUBE_CHANNEL_IDS is empty, and makes no call', function () {
+    Queue::fake();
+    Http::fake([YT_VIDEOS => Http::response(ytFixture('videos.list'))]);
+    config(['services.youtube.channel_ids' => []]);
+
+    $this->artisan('youtube:chat', ['videos' => ['edosLive001']])
+        ->expectsOutputToContain('YOUTUBE_CHANNEL_IDS is not set')
+        ->assertFailed();
+
+    Http::assertNothingSent();
+    expect(YouTubeLiveChat::count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+test('--stop still works while YOUTUBE_CHANNEL_IDS is empty', function () {
+    $chat = ytChat();
+    config(['services.youtube.channel_ids' => []]);
+
+    $this->artisan('youtube:chat', ['--stop' => true])->assertSuccessful();
+
+    expect($chat->fresh()->status)->toBe(YouTubeLiveChat::STOPPED);
+});
+
 test('youtube:chat --stop stops polling', function () {
     $one = ytChat();
     $two = ytChat(['video_id' => 'edosLive002']);

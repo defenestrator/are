@@ -42,6 +42,13 @@ class YouTubeChat extends Command
             return self::FAILURE;
         }
 
+        // Without the list, any channel's chat could run our commands (#147).
+        if ((array) config('services.youtube.channel_ids', []) === []) {
+            $this->error('YOUTUBE_CHANNEL_IDS is not set. Set it to this app\'s YouTube channel ids before reading any chat.');
+
+            return self::FAILURE;
+        }
+
         return $this->start($videoIds);
     }
 
@@ -129,7 +136,7 @@ class YouTubeChat extends Command
 
             $problem = match (true) {
                 $video === null => 'no such video',
-                $allowedChannels !== [] && ! in_array($channelId, $allowedChannels, true) => "it belongs to channel {$channelId}, which is not in YOUTUBE_CHANNEL_IDS",
+                ! in_array($channelId, $allowedChannels, true) => "it belongs to channel {$channelId}, which is not in YOUTUBE_CHANNEL_IDS",
                 ! is_string($liveChatId) || $liveChatId === '' => 'it is not live, or its live chat is off',
                 default => null,
             };
