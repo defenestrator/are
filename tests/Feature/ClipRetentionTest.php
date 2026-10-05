@@ -12,6 +12,7 @@ use App\Readiness\ReadinessChecks;
 use App\Readiness\Status;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Storage;
 
@@ -21,6 +22,7 @@ use Illuminate\Support\Facades\Storage;
 beforeEach(function () {
     Storage::fake('local');
     Http::preventStrayRequests();
+    Process::preventStrayProcesses(); // approving queues ffmpeg (#146); never run it for real
     $this->freezeTime();
 });
 

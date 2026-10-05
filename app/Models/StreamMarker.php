@@ -45,6 +45,11 @@ use Illuminate\Support\Carbon;
  * @property int|null $reviewed_by_user_id
  * @property Carbon|null $reviewed_at
  * @property Carbon|null $files_pruned_at
+ * @property string|null $short_file_path
+ * @property string|null $short_signature
+ * @property int|null $short_bytes
+ * @property Carbon|null $formatted_at
+ * @property string|null $format_error
  * @property Carbon|null $published_at
  * @property Carbon|null $created_at
  */
@@ -84,10 +89,18 @@ class StreamMarker extends Model
         'reviewed_at',
         'files_pruned_at',
         'published_at',
+        'short_file_path',
+        'short_signature',
+        'short_bytes',
+        'formatted_at',
+        'format_error',
     ];
 
     /** File variants Get Clips Download offers. */
     public const VARIANTS = ['landscape', 'portrait'];
+
+    /** Every stored file a mod can play: Twitch's variants plus the Shorts cut (#146). */
+    public const FILES = ['landscape', 'portrait', 'short'];
 
     protected function casts(): array
     {
@@ -106,6 +119,8 @@ class StreamMarker extends Model
             'reviewed_at' => 'datetime',
             'files_pruned_at' => 'datetime',
             'published_at' => 'datetime',
+            'short_bytes' => 'integer',
+            'formatted_at' => 'datetime',
         ];
     }
 
@@ -156,6 +171,7 @@ class StreamMarker extends Model
         return match ($variant) {
             'landscape' => $this->landscape_file_path,
             'portrait' => $this->portrait_file_path,
+            'short' => $this->short_file_path,
             default => null,
         };
     }
@@ -182,7 +198,7 @@ class StreamMarker extends Model
     public function scopePrunableFiles(Builder $query): void
     {
         $query->whereNull('files_pruned_at')
-            ->where(fn (Builder $q) => $q->whereNotNull('landscape_file_path')->orWhereNotNull('portrait_file_path'))
+            ->where(fn (Builder $q) => $q->whereNotNull('landscape_file_path')->orWhereNotNull('portrait_file_path')->orWhereNotNull('short_file_path'))
             ->whereNotNull('reviewed_at')
             ->where(fn (Builder $q) => $q
                 ->where(fn (Builder $r) => $r

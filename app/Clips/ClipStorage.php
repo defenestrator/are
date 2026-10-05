@@ -23,10 +23,10 @@ class ClipStorage
     public static function usage(): array
     {
         $stored = StreamMarker::whereNull('files_pruned_at')
-            ->where(fn ($q) => $q->whereNotNull('landscape_file_path')->orWhereNotNull('portrait_file_path'));
+            ->where(fn ($q) => $q->whereNotNull('landscape_file_path')->orWhereNotNull('portrait_file_path')->orWhereNotNull('short_file_path'));
 
         return [
-            'bytes' => (int) (clone $stored)->sum('file_bytes'),
+            'bytes' => (int) (clone $stored)->sum('file_bytes') + (int) (clone $stored)->sum('short_bytes'),
             'clips' => (clone $stored)->count(),
             'free_bytes' => self::freeBytes(),
             'disk' => (string) config('clips.disk'),

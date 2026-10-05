@@ -41,8 +41,8 @@ class PruneClipFiles extends Command
                         return;
                     }
 
-                    $paths = array_values(array_filter(array_map(fn ($variant) => $marker->filePath($variant), StreamMarker::VARIANTS)));
-                    $size = (int) $marker->file_bytes;
+                    $paths = array_values(array_filter(array_map(fn ($file) => $marker->filePath($file), StreamMarker::FILES)));
+                    $size = (int) $marker->file_bytes + (int) $marker->short_bytes;
 
                     if ($dryRun) {
                         $this->line("Would delete clip {$marker->id} ({$marker->review_status->value}, decided {$marker->reviewed_at?->toDateString()}): ".count($paths).' file(s), '.Number::fileSize($size, 1));
@@ -53,6 +53,9 @@ class PruneClipFiles extends Command
                             'landscape_file_path' => null,
                             'portrait_file_path' => null,
                             'file_bytes' => null,
+                            'short_file_path' => null,
+                            'short_signature' => null,
+                            'short_bytes' => null,
                             'files_pruned_at' => now(),
                         ]);
                     }

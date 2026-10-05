@@ -2,6 +2,7 @@
 
 namespace App\Clips;
 
+use App\Jobs\Clips\FormatClipForShorts;
 use App\Models\ClipDecision;
 use App\Models\StreamMarker;
 use App\Models\User;
@@ -34,6 +35,10 @@ class ClipReview
         self::ensureReviewable($marker);
 
         self::record($marker, $by, ClipDecisionKind::Approved, ['review_status' => ClipReviewStatus::Approved]);
+
+        // Make the Shorts cut now (#146). If the file is not fetched yet,
+        // FetchClipFile queues this again when it is.
+        FormatClipForShorts::dispatch($marker->id);
     }
 
     /**

@@ -75,17 +75,17 @@ test('every environment runs a broadcasts supervisor that never scales to zero',
         ->and($supervisor['minProcesses'])->toBeGreaterThanOrEqual(1);
 })->with(['production', 'local', '*']);
 
-test('every supervisor times out before the redis connection retries the job', function (string $environment) {
-    $retryAfter = config('queue.connections.redis.retry_after');
-
+test('every supervisor times out before its own queue connection retries the job', function (string $environment) {
     foreach (config("horizon.environments.{$environment}") as $name => $overrides) {
         $supervisor = array_replace(config("horizon.defaults.{$name}", []), $overrides);
+        $retryAfter = config("queue.connections.{$supervisor['connection']}.retry_after");
 
-        expect($supervisor['timeout'])->toBeLessThan($retryAfter - 5, "{$environment}.{$name}");
+        expect($retryAfter)->toBeInt("{$environment}.{$name}: no queue connection {$supervisor['connection']}")
+            ->and($supervisor['timeout'])->toBeLessThan($retryAfter - 5, "{$environment}.{$name}");
     }
 })->with(['production', 'local', '*']);
 
-test('Horizon starts both supervisors whatever APP_ENV is', function (string $environment) {
+test('Horizon starts every supervisor whatever APP_ENV is', function (string $environment) {
     Event::fake();
     $queues = [];
     $this->mock(HorizonCommandQueue::class)
@@ -96,7 +96,7 @@ test('Horizon starts both supervisors whatever APP_ENV is', function (string $en
 
     ProvisioningPlan::get('test-master')->deploy($environment);
 
-    expect($queues)->toEqualCanonicalizing(['broadcasts', 'default']);
+    expect($queues)->toEqualCanonicalizing(['broadcasts', 'default', 'clips']);
 })->with(['production', 'local', 'staging']);
 
 /**

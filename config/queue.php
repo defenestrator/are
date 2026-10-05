@@ -72,6 +72,18 @@ return [
             'after_commit' => false,
         ],
 
+        // Long jobs (ffmpeg clip formatting, #146): the same Redis, its own
+        // `clips` queue, and a retry_after above supervisor-clips' timeout so
+        // a slow encode is never handed to a second worker mid-run.
+        'redis-long' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'clips',
+            'retry_after' => (int) env('REDIS_LONG_QUEUE_RETRY_AFTER', 660),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
     ],
 
     /*

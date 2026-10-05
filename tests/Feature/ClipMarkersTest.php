@@ -20,6 +20,7 @@ use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
@@ -34,6 +35,7 @@ use Livewire\Volt\FragmentAlias;
 beforeEach(function () {
     Queue::fake([PostChatReply::class, FetchClipFile::class]);
     Http::preventStrayRequests();
+    Process::preventStrayProcesses(); // approving queues ffmpeg (#146); never run it for real
 });
 
 function clipBroadcasterToken(string $id = '1000', ?array $scopes = null): BroadcasterToken

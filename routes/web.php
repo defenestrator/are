@@ -48,7 +48,7 @@ Route::view('clips', 'clips')
     ->name('clips.index');
 Route::get('clips/{marker}/{variant}.mp4', ClipFileController::class)
     ->whereNumber('marker')
-    ->whereIn('variant', StreamMarker::VARIANTS)
+    ->whereIn('variant', StreamMarker::FILES)
     ->middleware(['auth', 'not-banned', 'can:moderate'])
     ->name('clips.file');
 

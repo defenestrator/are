@@ -231,10 +231,29 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+        // ffmpeg formatting of approved clips (#146): one process, low CPU
+        // priority so encodes never starve web requests, and a timeout below
+        // redis-long's retry_after (660 s).
+        'supervisor-clips' => [
+            'connection' => 'redis-long',
+            'queue' => ['clips'],
+            'balance' => 'simple',
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 600,
+            'nice' => 10,
+        ],
     ],
 
     'environments' => [
         'production' => [
+            'supervisor-clips' => [
+                'maxProcesses' => 1,
+            ],
             'supervisor-broadcasts' => [
                 'maxProcesses' => 3,
                 'balanceMaxShift' => 1,
@@ -248,6 +267,9 @@ return [
         ],
 
         'local' => [
+            'supervisor-clips' => [
+                'maxProcesses' => 1,
+            ],
             'supervisor-broadcasts' => [
                 'maxProcesses' => 1,
             ],
@@ -260,6 +282,9 @@ return [
         // instead of silently starting none. Keep this entry last: Horizon
         // uses the first environment whose name matches.
         '*' => [
+            'supervisor-clips' => [
+                'maxProcesses' => 1,
+            ],
             'supervisor-broadcasts' => [
                 'maxProcesses' => 1,
             ],

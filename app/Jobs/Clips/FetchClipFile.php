@@ -101,6 +101,11 @@ class FetchClipFile implements ShouldQueue
             ->sum(fn ($path) => $disk->size($path));
 
         $marker->update(['file_bytes' => $bytes, 'fetched_at' => now(), 'fetch_error' => null]);
+
+        // Approved before its file arrived: make the Shorts cut now (#146).
+        if (FormatClipForShorts::wanted($marker)) {
+            FormatClipForShorts::dispatch($marker->id);
+        }
     }
 
     public function failed(?Throwable $e): void

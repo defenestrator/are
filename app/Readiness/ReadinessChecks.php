@@ -4,6 +4,7 @@ namespace App\Readiness;
 
 use App\Agent\AgentTokens;
 use App\Clips\ClipStorage;
+use App\Clips\Ffmpeg;
 use App\ControlBus\Game;
 use App\Models\BroadcasterToken;
 use App\Models\BusAdapterToken;
@@ -37,7 +38,7 @@ class ReadinessChecks
      * changes and Chat Control Bus windows ride `broadcasts`; everything else
      * is `default`. A worker on `default` alone leaves the live views frozen.
      */
-    public const WORKER_QUEUES = 'broadcasts,default';
+    public const WORKER_QUEUES = 'broadcasts,default,clips';
 
     /** A ready database job older than this means no worker is draining the queue. */
     public const QUEUE_STALE_SECONDS = 120;
@@ -66,7 +67,7 @@ class ReadinessChecks
             'Chat Control Bus' => $this->guard('Chat Control Bus', fn () => $this->controlBus()),
             'Music player' => $this->guard('Music player', fn () => [$this->musicPlayer()]),
             'Mail and leads' => $this->guard('Mail and leads', fn () => $this->mail()),
-            'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck()]),
+            'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck(), Ffmpeg::readinessCheck()]),
             'VTuber agent' => $this->guard('VTuber agent', fn () => [AgentTokens::readinessCheck()]),
             'Deploy' => $this->guard('Deploy', fn () => $this->deploy()),
             'Error reporting' => $this->guard('Error reporting', fn () => [$this->sentry()]),

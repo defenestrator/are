@@ -73,6 +73,33 @@ return [
 
     'disk_min_free_bytes' => (int) env('CLIPS_DISK_MIN_FREE_BYTES', 5 * 1024 ** 3),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Formatting for Shorts (#146)
+    |--------------------------------------------------------------------------
+    |
+    | ffmpeg_binary: the ffmpeg to run. Use an absolute path to a static,
+    | non-snap build: a snap ffmpeg fails headless ("unable to open display").
+    |
+    | vertical_mode: how a landscape-only clip becomes 1080x1920. "crop" takes
+    | the centre; "blur" shows the whole frame over a blurred copy of itself.
+    | Twitch's portrait file, when there is one, is always used instead.
+    |
+    | format_connection: the queue connection for the job. redis-long (with
+    | Horizon's supervisor-clips) when the queue is on Redis; otherwise the
+    | default connection, whose worker must also listen on the "clips" queue
+    | with a long enough --timeout.
+    |
+    */
+
+    'ffmpeg_binary' => env('CLIPS_FFMPEG_BINARY', 'ffmpeg'),
+
+    'ffmpeg_timeout' => (int) env('CLIPS_FFMPEG_TIMEOUT', 300),
+
+    'vertical_mode' => env('CLIPS_VERTICAL_MODE', 'crop'),
+
+    'format_connection' => env('CLIPS_FORMAT_QUEUE_CONNECTION', env('QUEUE_CONNECTION') === 'redis' ? 'redis-long' : null),
+
     'download_hosts' => array_values(array_filter(array_map('trim', explode(',', (string) env('CLIPS_DOWNLOAD_HOSTS', 'twitchcdn.net,twitch.tv,jtvnw.net'))))),
 
 ];

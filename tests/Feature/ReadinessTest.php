@@ -326,7 +326,7 @@ test('jobs stranded in the database after a move to Redis are red, and a missing
     $horizon->shouldReceive('all')->andReturn([]);
     $this->app->instance(MasterSupervisorRepository::class, $horizon);
 
-    expect(readinessCheck('Database queue backlog')->fix)->toContain('--queue=broadcasts,default --stop-when-empty')
+    expect(readinessCheck('Database queue backlog')->fix)->toContain('--queue='.ReadinessChecks::WORKER_QUEUES.' --stop-when-empty')
         ->and(readinessCheck('Horizon')->status)->toBe(Status::Fail);
 });
 

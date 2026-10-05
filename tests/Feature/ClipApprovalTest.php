@@ -21,6 +21,7 @@ use GuzzleHttp\Psr7\PumpStream;
 use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -37,6 +38,7 @@ beforeEach(function () {
     Queue::fake([PostChatReply::class]);
     Http::preventStrayRequests();
     Storage::fake('local');
+    Process::preventStrayProcesses(); // approving queues ffmpeg (#146); never run it for real
 
     BroadcasterToken::create([
         'broadcaster_id' => '1000',

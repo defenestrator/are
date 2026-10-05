@@ -169,6 +169,19 @@ new class extends Component {
                                         @endif
                                     @endforeach
                                     <div class="text-zinc-500">Saved, {{ number_format(($marker->file_bytes ?? 0) / 1048576, 1) }} MB</div>
+                                    @if ($marker->review_status === ClipReviewStatus::Approved)
+                                        <div class="mt-2" data-test="shorts-cut">
+                                            @if ($marker->short_file_path)
+                                                <div class="font-medium">Shorts cut (1080×1920)</div>
+                                                <video controls preload="metadata" class="max-h-64 rounded" src="{{ route('clips.file', ['marker' => $marker->id, 'variant' => 'short']) }}" aria-label="Shorts cut"></video>
+                                                <div class="text-zinc-500">Made {{ $marker->formatted_at?->diffForHumans() }}, {{ number_format(($marker->short_bytes ?? 0) / 1048576, 1) }} MB</div>
+                                            @elseif ($marker->format_error)
+                                                <div class="text-red-600">Shorts cut failed: {{ $marker->format_error }}</div>
+                                            @else
+                                                <div class="text-zinc-500">Making the Shorts cut...</div>
+                                            @endif
+                                        </div>
+                                    @endif
                                 @elseif ($marker->status === StreamMarkerStatus::ClipReady)
                                     <div class="text-zinc-500">{{ $marker->fetch_error ? 'Download failed: '.$marker->fetch_error : 'Downloading the file...' }}</div>
                                 @endif
