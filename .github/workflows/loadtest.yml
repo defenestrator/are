@@ -68,7 +68,7 @@ jobs:
       CHAT_RATE: ${{ inputs.chat_rate || '40' }}
       EVENTSUB_SECRET: loadtest-eventsub-secret
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # OPcache as production runs it (#188). artisan serve uses PHP's
       # built-in server, which is the CLI SAPI, where OPcache is off unless
