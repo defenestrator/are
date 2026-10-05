@@ -91,7 +91,7 @@ An Orkestera-driven VTuber can run the show while the hosts are away. It reads t
 ## Twitch setup
 
 1. In the Twitch developer console, register **both** callback URLs: `TWITCH_REDIRECT_URL` (viewer login) and `TWITCH_BROADCASTER_REDIRECT_URL` (channel connection).
-2. Set `TWITCH_CHANNEL_ID` to the primary channel. List any other channels this app serves in `TWITCH_BROADCASTER_IDS`.
+2. Set `TWITCH_CHANNEL_ID` to the primary channel. Other channels this app serves are listed in `config/services.php` (`twitch.broadcaster_ids`), so adding one is a PR. `TWITCH_BROADCASTER_IDS` can add more, comma-separated.
 3. Each broadcaster logs in, then visits `/twitch/broadcaster/connect` once. This grants `moderation:read`, `channel:moderate` and `channel:manage:broadcast`, stores an encrypted token, and syncs bans and moderators.
 4. Run `php artisan twitch:generate-event-sub-key`, deploy, then run `php artisan twitch:eventsub-subscribe`. Twitch then pushes ban, unban and moderator changes to `/twitch/eventsub`.
 5. Run the scheduler (`php artisan schedule:work`, or a Forge scheduler job). `twitch:sync-moderation` runs hourly to catch anything EventSub missed.

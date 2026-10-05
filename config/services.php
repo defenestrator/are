@@ -33,8 +33,13 @@ return [
         'client_secret' => env('TWITCH_CLIENT_SECRET'),
         'redirect' => env('TWITCH_REDIRECT_URL'),
         'broadcaster_id' => env('TWITCH_CHANNEL_ID'),
-        // Additional channels this app serves (e.g. a second Twitch channel), comma separated.
-        'broadcaster_ids' => array_filter(explode(',', env('TWITCH_BROADCASTER_IDS', ''))),
+        // Additional channels this app serves, beyond TWITCH_CHANNEL_ID. The list is
+        // committed so that adding a broadcaster is a reviewed change; a Twitch user id
+        // is public, not a secret. TWITCH_BROADCASTER_IDS (comma separated) adds more.
+        'broadcaster_ids' => array_values(array_unique(array_filter(array_map('trim', [
+            '1426542672', // dansdumpsterfire
+            ...explode(',', (string) env('TWITCH_BROADCASTER_IDS', '')),
+        ])))),
         'friend_ids' => array_filter(explode(',', env('TWITCH_FRIEND_IDS', ''))),
         'broadcaster_redirect' => env('TWITCH_BROADCASTER_REDIRECT_URL'),
         'eventsub_secret' => env('TWITCH_HELIX_EVENTSUB_SECRET'),

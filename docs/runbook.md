@@ -87,7 +87,7 @@ While `BROADCAST_CONNECTION` is `log`, nothing is queued for broadcasting (#109)
 ### 1.7 Twitch
 
 1. **App credentials:** `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`. Register **both** callbacks in the Twitch developer console: `TWITCH_REDIRECT_URL` (`${APP_URL}/twitch/auth`) and `TWITCH_BROADCASTER_REDIRECT_URL` (`${APP_URL}/twitch/broadcaster/callback`).
-2. **Channels:** set `TWITCH_CHANNEL_ID` to the primary channel, and `TWITCH_BROADCASTER_IDS` to any others, comma-separated. `TWITCH_FRIEND_IDS` lists channels whose subscribers also count.
+2. **Channels:** set `TWITCH_CHANNEL_ID` to the primary channel. Other served channels are committed in `config/services.php` (`twitch.broadcaster_ids`); add one by PR. `TWITCH_BROADCASTER_IDS` can add more, comma-separated. A served channel's broadcaster gets every broadcaster permission: Horizon, readiness, leads, bus restore and banning moderators. `TWITCH_FRIEND_IDS` lists channels whose subscribers also count.
 3. **Connect every broadcaster** (#37, #93, #95, #129). Each one signs in to ARE, then opens `/twitch/broadcaster/connect`. ARE asks for every scope in `Twitch::BROADCASTER_SCOPES`: `moderation:read`, `channel:moderate`, `channel:manage:broadcast`, `channel:manage:clips`, `user:read:chat`, `user:bot`, `channel:bot`, `user:write:chat`, `channel:read:redemptions`, `channel:manage:redemptions`, `channel:read:subscriptions` and `moderator:read:followers`. **Reconnect after any PR that adds a scope.** The readiness page lists missing scopes per channel.
 4. **EventSub:** run `php artisan twitch:generate-event-sub-key` once (it writes `TWITCH_HELIX_EVENTSUB_SECRET`), deploy, then run `php artisan twitch:eventsub-subscribe`. Re-run it after every reconnect and every PR that adds a subscription type (#92). Existing subscriptions return 409, which counts as success. A 403 means a scope is missing. `TWITCH_EVENTSUB_CALLBACK_URL` must be public HTTPS on port 443 (it defaults to `${APP_URL}/twitch/eventsub`).
 5. **"Store past broadcasts"** (#95): in the Twitch Creator Dashboard, turn it on (Settings → Stream → VOD Settings) for every served channel. Without it, `!clip` markers fail with a 404.
@@ -152,7 +152,7 @@ Set these in Forge's Environment panel, then run `php artisan optimize`. The def
 | `SENTRY_LARAVEL_DSN` | Error reporting (not in `.env.example`) | |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | The Twitch app | |
 | `TWITCH_REDIRECT_URL`, `TWITCH_BROADCASTER_REDIRECT_URL` | OAuth callbacks registered with Twitch | |
-| `TWITCH_CHANNEL_ID`, `TWITCH_BROADCASTER_IDS`, `TWITCH_FRIEND_IDS` | Primary channel, other served channels, friend channels | |
+| `TWITCH_CHANNEL_ID`, `TWITCH_BROADCASTER_IDS`, `TWITCH_FRIEND_IDS` | Primary channel, extra served channels (added to the committed list), friend channels | |
 | `TWITCH_HELIX_EVENTSUB_SECRET`, `TWITCH_EVENTSUB_CALLBACK_URL` | EventSub signing secret and public callback | #37 |
 | `CHAT_COMMANDS_PER_MINUTE` | Commands per person per minute (10) | #77 |
 | `CHAT_REPLIES_ENABLED`, `CHAT_REPLIES_PER_CHANNEL`, `CHAT_REPLIES_WINDOW_SECONDS`, `CHAT_REPLIES_MAX_AGE_SECONDS` | Chat replies on or off (on), per-channel cap (20 per 30 s), freshness (30 s) | #93 |
