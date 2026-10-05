@@ -66,7 +66,10 @@ class ModerationAction extends Model
     }
 
     /**
-     * Who acted, for display: the moderator, a named player, or a deleted user.
+     * Who acted, for display: the moderator; a named music player (#141); the
+     * CLI, with the command when it was recorded (#149); and only otherwise a
+     * moderator whose account was deleted. A CLI action must never read as
+     * "deleted user": nobody's account went anywhere.
      */
     public function actorName(): string
     {
@@ -74,7 +77,17 @@ class ModerationAction extends Model
             return $this->moderator->name;
         }
 
-        return isset($this->details['player']) ? 'player '.$this->details['player'] : 'deleted user';
+        $details = $this->details ?? [];
+
+        if (isset($details['player'])) {
+            return 'player '.$details['player'];
+        }
+
+        if (($details['via'] ?? null) === 'cli') {
+            return isset($details['command']) ? 'CLI ('.$details['command'].')' : 'CLI';
+        }
+
+        return 'deleted user';
     }
 
     /**

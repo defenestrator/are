@@ -18,13 +18,13 @@ class BusKill extends Command
     public function handle(ControlBus $bus): int
     {
         if ($this->option('off')) {
-            $bus->restore(null);
+            $bus->restore(null, 'bus:kill --off');
             $this->info('Kill switch reset. The bus publishes again.');
 
             return self::SUCCESS;
         }
 
-        $bus->kill(null, 'bus:kill');
+        $bus->kill(null, 'bus:kill', 'bus:kill');
         $this->warn('Kill switch on. Nothing is published for any game until `bus:kill --off` or a broadcaster resets it on /bus.');
 
         return self::SUCCESS;

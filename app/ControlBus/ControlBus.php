@@ -594,35 +594,36 @@ class ControlBus
     /**
      * The kill switch: nothing is published, for any game, until a broadcaster
      * resets it, and what adapters have not run yet is voided. Any moderator
-     * may throw it; $moderator is null from the CLI.
+     * may throw it; $moderator is null from the CLI, which names its $command
+     * for the audit log (#149).
      */
-    public function kill(?User $moderator, ?string $reason = null): void
+    public function kill(?User $moderator, ?string $reason = null, ?string $command = null): void
     {
         if ($moderator !== null) {
             Gate::forUser($moderator)->authorize('moderate');
         }
 
-        $this->setKilled($moderator, true, $reason);
+        $this->setKilled($moderator, true, $reason, $command);
     }
 
     /**
      * Reset the kill switch. Only a broadcaster may, or the CLI ($moderator null).
      * Nothing voided by the kill comes back.
      */
-    public function restore(?User $broadcaster): void
+    public function restore(?User $broadcaster, ?string $command = null): void
     {
         if ($broadcaster !== null) {
             Gate::forUser($broadcaster)->authorize('restoreBus');
         }
 
-        $this->setKilled($broadcaster, false, null);
+        $this->setKilled($broadcaster, false, null, $command);
     }
 
-    private function setKilled(?User $by, bool $killed, ?string $reason): void
+    private function setKilled(?User $by, bool $killed, ?string $reason, ?string $command = null): void
     {
         BusControl::for(BusControl::GLOBAL);
 
-        DB::transaction(function () use ($by, $killed, $reason) {
+        DB::transaction(function () use ($by, $killed, $reason, $command) {
             // Waits for any publish in flight (they hold the row FOR SHARE),
             // and blocks new ones until this commits.
             BusControl::whereKey(BusControl::GLOBAL)->lockForUpdate()->firstOrFail()->update([
@@ -634,6 +635,7 @@ class ControlBus
 
             ModerationAction::record($by, $killed ? 'bus.killed' : 'bus.restored', null, array_filter([
                 'via' => $by === null ? 'cli' : null,
+                'command' => $by === null ? $command : null,
                 'reason' => $reason,
             ]) + ($killed ? ['voided' => $voided] : []));
 

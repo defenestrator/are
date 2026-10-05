@@ -826,8 +826,8 @@ test('Andras A123-3: kill and restore from the CLI leave an audit record', funct
     $records = ModerationAction::whereIn('action', ['bus.killed', 'bus.restored'])->orderBy('id')->get();
     expect($records->pluck('action')->all())->toBe(['bus.killed', 'bus.restored'])
         ->and($records->pluck('moderator_id')->all())->toBe([null, null])
-        ->and($records[0]->details)->toMatchArray(['via' => 'cli', 'reason' => 'bus:kill'])
-        ->and($records[1]->details)->toBe(['via' => 'cli']);
+        ->and($records[0]->details)->toMatchArray(['via' => 'cli', 'command' => 'bus:kill', 'reason' => 'bus:kill'])
+        ->and($records[1]->details)->toBe(['via' => 'cli', 'command' => 'bus:kill --off']);
 });
 
 // --- Review round 1 (#123): free text needs a moderator ------------------------
