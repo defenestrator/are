@@ -44,6 +44,7 @@ Copy `.fixtures.json` to the machine that runs k6. It holds that instance's over
 
 **In CI:** the **Load test** workflow (`.github/workflows/loadtest.yml`) does all of this on a runner.
 - It uses `artisan serve` with 8 workers, a Postgres service and a `queue:work` worker on `broadcasts,default`.
+- **OPcache is on, as in production** (#188): `opcache.enable_cli=1` and `opcache.validate_timestamps=0`, set through `setup-php`. The built-in server is the CLI SAPI, so without `enable_cli` every request recompiled the framework. The job proves it with a throwaway probe in `public/`, checked before the run and recorded after it (hit rate about 99.8%). The run fails if OPcache is off.
 - Start it from the Actions tab (**Run workflow**), where duration, viewers, overlay sources and rates are inputs. It also runs on pull requests that change the load test.
 - It is not in `ci-gate`.
 - The run's summary has the tables, plus how long the worker took to drain the chat burst.
@@ -53,6 +54,24 @@ Copy `.fixtures.json` to the machine that runs k6. It holds that instance's over
 `php artisan serve` is not PHP-FPM, the runner is shared, and in CI k6 runs on the same runner as the app: exactly the compromise this script exists to avoid elsewhere. CI numbers compare CI runs with each other; they are not production numbers. They also vary from run to run on a busy runner, so compare medians of a few runs, not a single one.
 
 Each virtual user is one browser, so its cookies (its session) last across iterations (`noCookiesReset`). Without that, k6 empties the jar every iteration, and every poll after the first gets a 419.
+
+### CI baseline (#188)
+
+Two dispatched runs of the default load: 60 s, 50 viewers, 10 overlay sources, anonymous 20/s, chat burst to 40/s. Both used OPcache, on `main` after #187 (`5be834d`). With two runs, the median is the mean of the pair. Both runs are shown, because a shared runner varies.
+
+| Scenario | p50 | p95 | p99 | Errors | Run 37289490523 (p50 / p95 / p99) | Run 37289782033 (p50 / p95 / p99) |
+|---|---|---|---|---|---|---|
+| anonymous | 18 ms | 220 ms | 891 ms | 0.00% | 21 / 392 / 1093 ms | 14 / 48 / 688 ms |
+| overlays | 36 ms | 940 ms | 1023 ms | 0.00% | 45 / 1133 / 1239 ms | 27 / 747 / 807 ms |
+| vote | 80 ms | 975 ms | 1082 ms | 0.00% | 112 / 1159 / 1255 ms | 47 / 791 / 908 ms |
+| chat | 28 ms | 192 ms | 269 ms | 0.00% | 41 / 354 / 448 ms | 15 / 29 / 89 ms |
+
+**How the two runs went:**
+- Every threshold passed in both runs, and 100% of checks passed.
+- The worker drained the chat burst within the run (0 jobs left, 0 failed).
+- The p95/p99 tails are still the opening burst. The first `/vote` sign-in and page load had p50 470–692 ms and p95 913–1195 ms, and the first overlay page load had p50 707–1017 ms. Polls after that are fast: the vote `refreshQueue` p50 was 40–98 ms.
+
+**Compared with the runs before OPcache and #187:** the good runs then had vote p95 about 2.0–2.2 s, and others tipped into overload (all of them are listed on #178). The change comes from OPcache and from #187's lighter `/vote` together. These runs don't separate the two.
 
 ## Production (profile `production-safe`): read-only, low rate
 
