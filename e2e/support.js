@@ -40,9 +40,11 @@ export async function guard(page, origin) {
     await page.route((url) => url.origin !== origin, (route) => {
         const type = route.request().resourceType();
 
+        const headers = { 'Access-Control-Allow-Origin': '*' };
+
         return route.fulfill(type === 'image'
-            ? { status: 200, contentType: 'image/png', body: PIXEL }
-            : { status: 200, contentType: type === 'stylesheet' ? 'text/css' : 'text/plain', body: '' });
+            ? { status: 200, headers, contentType: 'image/png', body: PIXEL }
+            : { status: 200, headers, contentType: type === 'stylesheet' ? 'text/css' : 'text/plain', body: '' });
     });
 
     page.on('console', (message) => {
