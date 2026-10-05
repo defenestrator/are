@@ -137,12 +137,121 @@ jobs:
       - name: node --test
         run: npm run test:js
 
+  # Browser smoke tests (#155): the app served for real against Postgres,
+  # seeded, and driven with headless Chromium. Catches what Pest cannot see:
+  # a stale route or compiled view that 500s, console errors and warnings,
+  # 4xx/5xx from the page's own requests, and overlay tokens in request URLs.
+  # Settings go into .env, not the job environment, because `artisan serve`
+  # passes only a few variables through to the PHP server it starts.
+  e2e:
+    name: Browser smoke tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: are_e2e
+          POSTGRES_USER: are
+          POSTGRES_PASSWORD: are
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U are -d are_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_pgsql, pgsql, mbstring, intl
+          coverage: none
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Cache the Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          set_env() {
+            if grep -q "^$1=" .env; then sed -i "s#^$1=.*#$1=$2#" .env; else echo "$1=$2" >> .env; fi
+          }
+          set_env APP_ENV testing
+          set_env APP_URL http://127.0.0.1:8123
+          set_env DB_CONNECTION pgsql
+          set_env DB_HOST 127.0.0.1
+          set_env DB_PORT 5432
+          set_env DB_DATABASE are_e2e
+          set_env DB_USERNAME are
+          set_env DB_PASSWORD are
+          set_env BROADCAST_CONNECTION log
+          set_env MAIL_MAILER log
+          set_env TWITCH_CHANNEL_ID 1000
+          php artisan key:generate
+
+      - name: Migrate and seed
+        run: |
+          php artisan migrate --force
+          php artisan db:seed --class=E2eSeeder --force
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Playwright
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+
+      - name: Keep the report and server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            storage/logs
+          retention-days: 7
+
   # The single required status check (ruleset protecc-main). Add every job
   # that must pass to `needs`; the ruleset never has to change.
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [tests, tests-pgsql, js]
+    needs: [tests, tests-pgsql, js, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Require every needed job to have succeeded

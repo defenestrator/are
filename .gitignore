@@ -23,3 +23,7 @@ yarn-error.log
 /.zed
 .DS_Store
 Thumbs.db
+# Browser end-to-end suite (#155)
+/e2e/.fixtures.json
+/e2e/test-results
+/e2e/playwright-report

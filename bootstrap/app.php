@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Testing\LoginAsController;
 use App\Http\Middleware\EnsureAgent;
 use App\Http\Middleware\EnsureAgentMayAct;
 use App\Http\Middleware\EnsureNotBanned;
@@ -10,6 +11,7 @@ use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Support\Facades\Route;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 use Sentry\Laravel\Integration;
@@ -21,6 +23,12 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
+        // Test-only routes for the browser suite (#155), never outside testing.
+        then: function () {
+            if (LoginAsController::enabled()) {
+                Route::middleware('web')->group(__DIR__.'/../routes/testing.php');
+            }
+        },
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
