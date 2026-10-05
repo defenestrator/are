@@ -1,0 +1,185 @@
+name: Load test
+
+# The load test (#176), on demand. Not part of ci-gate: it measures, it does
+# not gate merges. It also runs on pull requests that change the load test
+# itself, so a change to it shows its numbers.
+#
+# It boots the app as the e2e job in ci.yml does (artisan serve against a
+# Postgres service, APP_ENV=testing), seeds it with LoadtestSeeder, runs a
+# queue worker as production does, and drives it with k6 from the same
+# runner. The numbers compare runs with each other. They are not production
+# numbers: php artisan serve is not PHP-FPM, and the runner is shared.
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: How long each scenario runs (k6 duration, e.g. 60s, 3m)
+        default: 60s
+      viewers:
+        description: Concurrent signed-in /vote viewers
+        default: '50'
+      overlay_sources:
+        description: Concurrent OBS overlay sources
+        default: '10'
+      anon_rate:
+        description: Anonymous page requests per second
+        default: '20'
+      chat_rate:
+        description: Peak chat-command webhooks per second
+        default: '40'
+  pull_request:
+    paths:
+      - scripts/loadtest/**
+      - database/seeders/LoadtestSeeder.php
+      - .github/workflows/loadtest.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loadtest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loadtest:
+    name: k6 load test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_DB: are_load
+          POSTGRES_USER: are
+          POSTGRES_PASSWORD: are
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U are -d are_load"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DURATION: ${{ inputs.duration || '60s' }}
+      VIEWERS: ${{ inputs.viewers || '50' }}
+      OVERLAY_SOURCES: ${{ inputs.overlay_sources || '10' }}
+      ANON_RATE: ${{ inputs.anon_rate || '20' }}
+      CHAT_RATE: ${{ inputs.chat_rate || '40' }}
+      EVENTSUB_SECRET: loadtest-eventsub-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_pgsql, pgsql, mbstring, intl
+          coverage: none
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Build assets
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          set_env() {
+            if grep -q "^$1=" .env; then sed -i "s#^$1=.*#$1=$2#" .env; else echo "$1=$2" >> .env; fi
+          }
+          set_env APP_ENV testing
+          set_env APP_DEBUG false
+          set_env APP_URL http://127.0.0.1:8124
+          set_env DB_CONNECTION pgsql
+          set_env DB_HOST 127.0.0.1
+          set_env DB_PORT 5432
+          set_env DB_DATABASE are_load
+          set_env DB_USERNAME are
+          set_env DB_PASSWORD are
+          set_env BROADCAST_CONNECTION log
+          set_env MAIL_MAILER log
+          set_env LOG_LEVEL warning
+          set_env TWITCH_CHANNEL_ID 1000
+          set_env TWITCH_HELIX_EVENTSUB_SECRET "$EVENTSUB_SECRET"
+          set_env CHAT_REPLIES_ENABLED false
+          php artisan key:generate
+          php artisan optimize
+
+      - name: Migrate and seed
+        run: |
+          php artisan migrate --force
+          LOADTEST_VIEWERS="$VIEWERS" php artisan db:seed --class=LoadtestSeeder --force
+
+      - name: Start the app and a queue worker
+        run: |
+          PHP_CLI_SERVER_WORKERS=8 nohup php artisan serve --host=127.0.0.1 --port=8124 --no-reload > storage/logs/serve.log 2>&1 &
+          nohup php artisan queue:work database --queue=broadcasts,default --sleep=1 > storage/logs/worker.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8124/up > /dev/null && exit 0; sleep 1; done
+          echo "The app did not come up"; cat storage/logs/serve.log; exit 1
+
+      - name: k6
+        run: |
+          k6 run \
+            -e BASE_URL=http://127.0.0.1:8124 \
+            -e PROFILE=ci \
+            -e FIXTURES=./.fixtures.json \
+            -e DURATION="$DURATION" \
+            -e VIEWERS="$VIEWERS" \
+            -e OVERLAY_SOURCES="$OVERLAY_SOURCES" \
+            -e ANON_RATE="$ANON_RATE" \
+            -e CHAT_RATE="$CHAT_RATE" \
+            -e EVENTSUB_SECRET="$EVENTSUB_SECRET" \
+            -e SUMMARY_PATH=loadtest-summary.md \
+            -e SUMMARY_JSON=loadtest-summary.json \
+            scripts/loadtest/are.js
+
+      - name: Time how long the worker takes to drain the chat burst
+        if: always()
+        env:
+          PGPASSWORD: are
+        run: |
+          start=$(date +%s)
+          for i in $(seq 1 120); do
+            left=$(psql -h 127.0.0.1 -U are -d are_load -Atc 'select count(*) from jobs')
+            [ "$left" = "0" ] && break
+            sleep 1
+          done
+          drained=$(( $(date +%s) - start ))
+          failed=$(psql -h 127.0.0.1 -U are -d are_load -Atc 'select count(*) from failed_jobs')
+          {
+            echo ""
+            echo "Queue after the run: drained in ${drained} s after k6 finished, ${left} job(s) still waiting, ${failed} failed job(s)."
+          } >> loadtest-summary.md
+
+      - name: Publish the summary
+        if: always()
+        run: |
+          if [ -f loadtest-summary.md ]; then cat loadtest-summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Keep the results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-results
+          path: |
+            loadtest-summary.md
+            loadtest-summary.json
+            storage/logs
+          retention-days: 14

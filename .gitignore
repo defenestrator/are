@@ -27,3 +27,8 @@ Thumbs.db
 /e2e/.fixtures.json
 /e2e/test-results
 /e2e/playwright-report
+
+# Load test (#176)
+/scripts/loadtest/.fixtures.json
+/loadtest-summary.md
+/loadtest-summary.json
