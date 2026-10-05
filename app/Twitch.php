@@ -9,6 +9,7 @@ use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Models\UserTwitchSubscription;
+use App\Support\RequestMemo;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\RequestException;
@@ -436,6 +437,7 @@ class Twitch
 
         DB::transaction(function () use ($broadcasterId, $bans, $moderators) {
             TwitchBan::where('broadcaster_id', $broadcasterId)->delete();
+            RequestMemo::forgetBans();
             foreach ($bans as $ban) {
                 TwitchBan::create([
                     'broadcaster_id' => $broadcasterId,

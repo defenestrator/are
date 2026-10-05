@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\IdentityProvider;
+use App\Support\RequestMemo;
 use Database\Factories\IdentityFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -22,6 +23,13 @@ use Illuminate\Support\Carbon;
  */
 class Identity extends Model
 {
+    /** A ban, or who holds an account, changed: memoised ban standing is stale (#173). */
+    protected static function booted(): void
+    {
+        static::saved(fn () => RequestMemo::forgetBans());
+        static::deleted(fn () => RequestMemo::forgetBans());
+    }
+
     /** @use HasFactory<IdentityFactory> */
     use HasFactory;
 

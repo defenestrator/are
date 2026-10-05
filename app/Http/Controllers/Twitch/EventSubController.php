@@ -15,6 +15,7 @@ use App\Jobs\EventSub\HandleStreamOnline;
 use App\Models\TwitchBan;
 use App\Models\TwitchModerator;
 use App\Models\User;
+use App\Support\RequestMemo;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Carbon;
@@ -129,7 +130,7 @@ class EventSubController extends Controller
             'channel.ban' => TwitchBan::updateOrCreate($key, [
                 'ends_at' => ($event['is_permanent'] ?? true) || empty($event['ends_at']) ? null : Carbon::parse($event['ends_at']),
             ]),
-            'channel.unban' => TwitchBan::where($key)->delete(),
+            'channel.unban' => tap(TwitchBan::where($key)->delete(), fn () => RequestMemo::forgetBans()),
             'channel.moderator.add' => TwitchModerator::firstOrCreate($key),
             'channel.moderator.remove' => TwitchModerator::where($key)->delete(),
             default => null,

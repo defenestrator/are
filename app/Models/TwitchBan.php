@@ -2,11 +2,19 @@
 
 namespace App\Models;
 
+use App\Support\RequestMemo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class TwitchBan extends Model
 {
+    /** A ban, or who holds an account, changed: memoised ban standing is stale (#173). */
+    protected static function booted(): void
+    {
+        static::saved(fn () => RequestMemo::forgetBans());
+        static::deleted(fn () => RequestMemo::forgetBans());
+    }
+
     protected $fillable = [
         'broadcaster_id',
         'twitch_user_id',

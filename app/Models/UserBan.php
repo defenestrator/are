@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\IdentityProvider;
+use App\Support\RequestMemo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,13 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 
 class UserBan extends Model
 {
+    /** A ban, or who holds an account, changed: memoised ban standing is stale (#173). */
+    protected static function booted(): void
+    {
+        static::saved(fn () => RequestMemo::forgetBans());
+        static::deleted(fn () => RequestMemo::forgetBans());
+    }
+
     protected $fillable = [
         'user_id',
         'moderator_id',

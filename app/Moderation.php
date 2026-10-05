@@ -9,6 +9,7 @@ use App\Models\Question;
 use App\Models\Topic;
 use App\Models\User;
 use App\Models\UserBan;
+use App\Support\RequestMemo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
@@ -64,6 +65,7 @@ class Moderation
 
         return DB::transaction(function () use ($moderator, $target) {
             $lifted = UserBan::inEffect()->appliesTo($target)->update(['lifted_at' => now()]);
+            RequestMemo::forgetBans();
             ModerationAction::record($moderator, 'user.unbanned', $target, ['lifted' => $lifted]);
 
             return $lifted;

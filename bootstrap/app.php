@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Testing\LoginAsController;
+use App\Http\Middleware\EnableRequestMemo;
 use App\Http\Middleware\EnsureAgent;
 use App\Http\Middleware\EnsureAgentMayAct;
 use App\Http\Middleware\EnsureNotBanned;
@@ -53,6 +54,9 @@ return Application::configure(basePath: dirname(__DIR__))
             before: LogAgentRequest::class,
             prepend: LimitFailedAgentAuth::class,
         );
+
+        // Memoise ban standing and the topic for one request (#173).
+        $middleware->web(append: [EnableRequestMemo::class]);
 
         // Twitch signs EventSub webhooks with HMAC; there is no CSRF token to check.
         // The overlay token exchange carries its own credential (the overlay

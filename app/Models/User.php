@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\IdentityProvider;
+use App\Support\RequestMemo;
 use App\TwitchSubscription;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -251,7 +253,30 @@ class User extends Authenticatable
      */
     public function isBanned(): bool
     {
-        return $this->isLocallyBanned() || $this->isTwitchBanned();
+        $standing = $this->banStanding();
+
+        return $standing['local'] || $standing['twitch'];
+    }
+
+    /**
+     * Both ban answers in one query, memoised for the request (#173): a
+     * /vote render asked them once per card, gate and component.
+     *
+     * @return array{local: bool, twitch: bool}
+     */
+    public function banStanding(): array
+    {
+        return app(RequestMemo::class)->remember('bans.'.$this->id, function () {
+            $local = UserBan::inEffect()->appliesTo($this)->toBase();
+            $twitch = $this->twitchBans()->toBase();
+
+            $row = DB::query()->selectRaw(
+                'exists('.$local->toSql().') as local, exists('.$twitch->toSql().') as twitch',
+                [...$local->getBindings(), ...$twitch->getBindings()],
+            )->first();
+
+            return ['local' => (bool) $row->local, 'twitch' => (bool) $row->twitch];
+        });
     }
 
     /**
@@ -261,7 +286,7 @@ class User extends Authenticatable
      */
     public function isLocallyBanned(): bool
     {
-        return UserBan::inEffect()->appliesTo($this)->exists();
+        return $this->banStanding()['local'];
     }
 
     /**
@@ -270,12 +295,22 @@ class User extends Authenticatable
      */
     public function isTwitchBanned(): bool
     {
+        return $this->banStanding()['twitch'];
+    }
+
+    /**
+     * Twitch bans in effect on any of this user's Twitch identities, on any
+     * channel this app serves.
+     *
+     * @return Builder<TwitchBan>
+     */
+    private function twitchBans(): Builder
+    {
         return TwitchBan::inEffect()
             ->whereIn('twitch_user_id', $this->identities()
                 ->where('provider', IdentityProvider::Twitch)
                 ->select('provider_user_id'))
-            ->whereIn('broadcaster_id', self::getBroadcasterIDs())
-            ->exists();
+            ->whereIn('broadcaster_id', self::getBroadcasterIDs());
     }
 
     /**

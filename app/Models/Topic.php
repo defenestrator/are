@@ -2,12 +2,20 @@
 
 namespace App\Models;
 
+use App\Support\RequestMemo;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 class Topic extends Model
 {
+    /** The memoised current topic is stale (#173). */
+    protected static function booted(): void
+    {
+        static::saved(fn () => RequestMemo::forgetTopic());
+        static::deleted(fn () => RequestMemo::forgetTopic());
+    }
+
     protected $fillable = [
         'topic',
         'archived_at',
@@ -30,7 +38,7 @@ class Topic extends Model
 
     public static function current(): ?self
     {
-        return self::active()->latest('id')->first();
+        return app(RequestMemo::class)->remember('topic.current', fn () => self::active()->latest('id')->first());
     }
 
     /**
@@ -38,11 +46,13 @@ class Topic extends Model
      */
     public static function set(string $topic): self
     {
-        return DB::transaction(function () use ($topic) {
+        RequestMemo::forgetTopic();
+
+        return tap(DB::transaction(function () use ($topic) {
             self::active()->update(['archived_at' => now()]);
 
             return self::create(['topic' => $topic]);
-        });
+        }), fn () => RequestMemo::forgetTopic());
     }
 
     /**
@@ -55,5 +65,6 @@ class Topic extends Model
             self::active()->update(['archived_at' => now()]);
             Question::active()->update(['archived_at' => now()]);
         });
+        RequestMemo::forgetTopic();
     }
 }
