@@ -126,6 +126,16 @@ export const options = {
 };
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+// Report the first failed request of each virtual user, with its status, so
+// a broken run says why. Bodies are not printed: they can hold page data.
+let reported = false;
+function reportFailure(what, response) {
+    if (!reported && response.status !== 200 && response.status !== 204) {
+        reported = true;
+        console.warn(`${exec.scenario.name} VU ${exec.vu.idInTest}: ${what} answered HTTP ${response.status}${response.error ? ` (${response.error})` : ''}`);
+    }
+}
 const jitter = (min, max) => min + Math.random() * (max - min);
 
 // --- anonymous ------------------------------------------------------------------
@@ -136,6 +146,7 @@ export function anonymous() {
     const path = pick(PUBLIC_PAGES);
     const response = http.get(`${BASE_URL}${path}`, { tags: { name: `GET ${path}` } });
     check(response, { 'public page is 200': (r) => r.status === 200 });
+    reportFailure(`GET ${path}`, response);
 }
 
 // --- overlays ------------------------------------------------------------------
@@ -193,6 +204,7 @@ export function overlay() {
     });
     const snapshot = nextSnapshot(response);
     check(response, { 'overlay refresh is 200 with a snapshot': (r) => r.status === 200 && snapshot !== null });
+    reportFailure(`overlay ${source.overlay.name} refresh`, response);
     if (snapshot !== null) {
         source.snapshot = snapshot;
     }
@@ -243,6 +255,7 @@ export function viewer() {
     const refreshed = livewireCall(viewerPage.vote, '$refresh', [], 'POST livewire/update (vote $refresh)');
     const snapshot = nextSnapshot(refreshed);
     check(refreshed, { 'vote refresh is 200 with a snapshot': (r) => r.status === 200 && snapshot !== null });
+    reportFailure('vote refresh', refreshed);
     if (snapshot !== null) {
         viewerPage.vote = snapshot;
     }
@@ -253,6 +266,7 @@ export function viewer() {
         const voted = livewireCall(viewerPage.cards[index].snapshot, Math.random() < 0.8 ? 'upvote' : 'downvote', [], 'POST livewire/update (vote card)');
         const cardSnapshot = nextSnapshot(voted);
         check(voted, { 'vote click is 200': (r) => r.status === 200 });
+        reportFailure('vote click', voted);
         if (cardSnapshot !== null) {
             viewerPage.cards[index].snapshot = cardSnapshot;
         }
@@ -304,6 +318,7 @@ export function chat() {
         tags: { name: 'POST /twitch/eventsub (chat)' },
     });
     check(response, { 'chat webhook is accepted (204)': (r) => r.status === 204 });
+    reportFailure('chat webhook', response);
 }
 
 // --- summary -------------------------------------------------------------------

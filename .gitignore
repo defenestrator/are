@@ -32,3 +32,4 @@ Thumbs.db
 /scripts/loadtest/.fixtures.json
 /loadtest-summary.md
 /loadtest-summary.json
+/.loadtest-artifacts

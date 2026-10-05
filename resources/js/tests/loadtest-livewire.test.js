@@ -30,12 +30,11 @@ test('readPage copes with a page without Livewire', () => {
     assert.deepEqual(readPage('<html></html>'), { csrf: null, updateUri: '/livewire/update', components: [] });
 });
 
-test('updateBody is the payload Livewire 3 posts: a $refresh call by default', () => {
-    assert.deepEqual(JSON.parse(updateBody('t', 'SNAP')), {
-        _token: 't',
-        components: [{ snapshot: 'SNAP', updates: {}, calls: [{ path: '', method: '$refresh', params: [] }] }],
-    });
-    assert.equal(JSON.parse(updateBody('t', 'SNAP', 'upvote')).components[0].calls[0].method, 'upvote');
+test('updateBody is the payload Livewire 3 posts: $refresh is a commit with no calls', () => {
+    const refresh = { _token: 't', components: [{ snapshot: 'SNAP', updates: {}, calls: [] }] };
+    assert.deepEqual(JSON.parse(updateBody('t', 'SNAP')), refresh);
+    assert.deepEqual(JSON.parse(updateBody('t', 'SNAP', '$refresh')), refresh);
+    assert.deepEqual(JSON.parse(updateBody('t', 'SNAP', 'upvote')).components[0].calls, [{ path: '', method: 'upvote', params: [] }]);
     assert.equal(UPDATE_HEADERS['X-Livewire'], '');
 });
 

@@ -41,12 +41,16 @@ export function readPage(html) {
     };
 }
 
-/** The request body for one component calling one method. */
+/**
+ * The request body for one component: a $refresh by default, or a call to a
+ * method. In Livewire 3, $refresh is not a server method: the browser's
+ * $wire.$refresh() is a plain commit with no calls, which re-renders the
+ * component (livewire.esm.js: wireProperty("$refresh", ... $commit)).
+ */
 export function updateBody(csrf, snapshot, method, params) {
-    return JSON.stringify({
-        _token: csrf,
-        components: [{ snapshot, updates: {}, calls: [{ path: '', method: method || '$refresh', params: params || [] }] }],
-    });
+    const calls = !method || method === '$refresh' ? [] : [{ path: '', method, params: params || [] }];
+
+    return JSON.stringify({ _token: csrf, components: [{ snapshot, updates: {}, calls }] });
 }
 
 export const UPDATE_HEADERS = { 'Content-Type': 'application/json', 'X-Livewire': '', Accept: 'application/json' };
