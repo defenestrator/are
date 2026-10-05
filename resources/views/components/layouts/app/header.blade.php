@@ -37,6 +37,11 @@
                         {{ __('Attribution') }}
                     </flux:navbar.item>
                 @endcan
+                @can('viewReadiness')
+                    <flux:navbar.item icon="check-badge" href="{{ route('admin.readiness') }}" :current="request()->routeIs('admin.readiness')">
+                        {{ __('Readiness') }}
+                    </flux:navbar.item>
+                @endcan
             </flux:navbar>
 
             <flux:spacer />
@@ -123,6 +128,11 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="chart-bar" href="{{ route('admin.attribution') }}">
                             {{ __('Attribution') }}
+                        </flux:navlist.item>
+                    @endcan
+                    @can('viewReadiness')
+                        <flux:navlist.item icon="check-badge" href="{{ route('admin.readiness') }}">
+                            {{ __('Readiness') }}
                         </flux:navlist.item>
                     @endcan
                 </flux:navlist.group>

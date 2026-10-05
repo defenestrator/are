@@ -6,6 +6,7 @@ use App\Models\ChatCommandRun;
 use App\Models\LinkCode;
 use App\Models\StreamSession;
 use App\Models\YouTubeLiveChat;
+use App\Readiness\SchedulerHeartbeat;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -53,6 +54,11 @@ Artisan::command('attribution:weekly-summary {--week= : A Y-m-d date in the week
 
     return 0;
 })->purpose('Queue the weekly attribution summary for Slack or Discord');
+
+// Proves the scheduler runs, for the readiness page (#135).
+Schedule::call(fn () => SchedulerHeartbeat::beat())
+    ->everyMinute()
+    ->name('scheduler-heartbeat');
 
 // Restarts YouTube live chat polling whose job chain was lost (#24).
 Schedule::call(fn () => YouTubeLiveChat::resumeStalled())

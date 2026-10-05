@@ -72,6 +72,12 @@ Route::middleware('can:viewAttribution')->prefix('admin')->group(function () {
     Route::get('attribution.csv', [AttributionController::class, 'export'])->name('admin.attribution.export');
 });
 
+// Launch readiness (#135): broadcasters only. Like attribution, no auth
+// middleware, so a guest gets the gate's 403 rather than a login redirect.
+Route::view('admin/readiness', 'admin.readiness')
+    ->middleware('can:viewReadiness')
+    ->name('admin.readiness');
+
 // The public stream-safe pack: original music other creators may use on stream.
 Route::controller(StreamSafePackController::class)->prefix('music')->name('music.')->group(function () {
     Route::get('/', 'index')->name('index');

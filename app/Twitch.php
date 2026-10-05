@@ -263,7 +263,7 @@ class Twitch
             return $cached;
         }
 
-        $response = Http::asForm()->post(self::TOKEN_URL, [
+        $response = Http::asForm()->connectTimeout(5)->timeout(10)->post(self::TOKEN_URL, [
             'client_id' => config('services.twitch.client_id'),
             'client_secret' => config('services.twitch.client_secret'),
             'grant_type' => 'client_credentials',

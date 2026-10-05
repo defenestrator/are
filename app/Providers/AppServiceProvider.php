@@ -48,6 +48,10 @@ class AppServiceProvider extends ServiceProvider
         // a copy of it. Moderators are excluded because leads are business PII.
         Gate::define('viewAttribution', fn (User $user) => $user->can('viewAny', Lead::class));
 
+        // The launch readiness page (#135) shows which channels are connected
+        // and how the server is set up, so it is for broadcasters, like Horizon.
+        Gate::define('viewReadiness', fn (User $user) => $user->isBroadcaster() && ! $user->isBanned());
+
         // /go/{code} is public. Viewers click a link once or twice, so this only
         // stops loops; which hits count as clicks is ShortLink::recordClick's job.
         RateLimiter::for('short-links', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
