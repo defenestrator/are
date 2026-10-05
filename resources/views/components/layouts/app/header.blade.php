@@ -48,6 +48,12 @@
                         {{ __('Readiness') }}
                     </flux:navbar.item>
                 @endcan
+                {{-- Horizon is not a Livewire page, so no wire:navigate: it needs a full page load. --}}
+                @can('viewHorizon')
+                    <flux:navbar.item icon="server-stack" href="{{ url(config('horizon.path', 'horizon')) }}">
+                        {{ __('Horizon') }}
+                    </flux:navbar.item>
+                @endcan
             </flux:navbar>
 
             <flux:spacer />
@@ -145,6 +151,11 @@
                     @can('viewReadiness')
                         <flux:navlist.item icon="check-badge" href="{{ route('admin.readiness') }}">
                             {{ __('Readiness') }}
+                        </flux:navlist.item>
+                    @endcan
+                    @can('viewHorizon')
+                        <flux:navlist.item icon="server-stack" href="{{ url(config('horizon.path', 'horizon')) }}">
+                            {{ __('Horizon') }}
                         </flux:navlist.item>
                     @endcan
                 </flux:navlist.group>

@@ -137,3 +137,33 @@ test('the Horizon page itself loads for a broadcaster while Redis is unreachable
 
     $this->actingAs(User::factory()->twitch('1000')->create())->get('/horizon')->assertOk();
 });
+
+test('only broadcasters see the Horizon link in the nav, as a full page load', function () {
+    $link = 'href="'.url(config('horizon.path')).'"';
+
+    $broadcaster = User::factory()->twitch('1000')->create();
+    $this->actingAs($broadcaster)->get('/vote')
+        ->assertOk()
+        ->assertSee($link, false)
+        ->assertSee('Horizon');
+
+    $mod = User::factory()->create();
+    TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => $mod->twitch_id]);
+    expect($mod->can('moderate'))->toBeTrue();
+    $this->actingAs($mod)->get('/vote')->assertOk()->assertDontSee($link, false);
+
+    $this->actingAs(User::factory()->create())->get('/vote')->assertOk()->assertDontSee($link, false);
+});
+
+test('the Horizon nav link follows the viewHorizon gate, so a banned broadcaster does not get it', function () {
+    $broadcaster = User::factory()->twitch('1000')->create();
+    $broadcaster->localBans()->create(['moderator_id' => $broadcaster->id]);
+
+    expect($broadcaster->can('viewHorizon'))->toBeFalse();
+
+    // Banned users are bounced off /vote, so render the header directly as them.
+    $this->actingAs($broadcaster);
+    $html = view('components.layouts.app.header', ['title' => 'x', 'slot' => ''])->render();
+
+    expect($html)->not->toContain('href="'.url(config('horizon.path')).'"');
+});
