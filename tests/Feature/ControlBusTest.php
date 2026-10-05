@@ -3,17 +3,20 @@
 use App\Chat\ChatCommandRegistry;
 use App\Chat\ChatCommandResult;
 use App\Chat\ChatCommandStatus;
+use App\Chat\Commands\DoAction;
 use App\ControlBus\Action;
 use App\ControlBus\ApprovalStatus;
 use App\ControlBus\BallotStatus;
 use App\ControlBus\ControlBus;
 use App\ControlBus\Mode;
 use App\ControlBus\Picker;
+use App\ControlBus\Submission;
 use App\ControlBus\WindowStatus;
 use App\Events\BusActionPublished;
 use App\Events\BusActionVetoed;
 use App\Events\BusStateChanged;
 use App\IdentityProvider;
+use App\Jobs\PostChatReply;
 use App\Jobs\ResolveBusWindow;
 use App\Models\BusAdapterToken;
 use App\Models\BusApproval;
@@ -1124,3 +1127,57 @@ test('retyping inside words still matches a vetoed option', function (string $re
     'run together' => 'Deletetherepo',
     'Armenian look-alike o' => "Delete the rep\u{0585}",
 ]);
+
+// --- #128: replies are fixed templates ----------------------------------------
+
+test('no !do reply repeats the chatter\'s name, action, option or error text, on any path', function (Mode $mode) {
+    $hostileName = 'FREE VBUCKS at scam.example';
+    $hostile = 'Visit scam.example for FREE VBUCKS';
+    config(['chat.commands_per_minute' => 1000, 'bus.games.orkestera.anarchy' => ['actions' => 1, 'per_seconds' => 60]]);
+    $mod = busStart($mode);
+
+    $say = function (User $user, string $text) use ($hostileName) {
+        $chatterId = (string) $user->identities()->value('provider_user_id');
+
+        return app(ChatCommandRegistry::class)->run(IdentityProvider::Twitch, '1000', $chatterId, $hostileName, (string) Str::uuid(), $text);
+    };
+    $viewer = User::factory()->create();
+    $replies = [];
+
+    // Accepted, then every refusal a viewer can reach.
+    $replies[] = $say($viewer, "!do say {$hostile}");
+    $replies[] = $say($viewer, "!do say {$hostile} again");           // anarchy: rate limited
+    $replies[] = $say(User::factory()->create(), "!do {$hostile}");     // unknown verb
+    $replies[] = $say(User::factory()->create(), '!do say '.str_repeat('vbucks ', 40)); // too long
+    $replies[] = $say(User::factory()->create(), '!do say x');          // too short
+    $replies[] = $say(User::factory()->create(), '!do #4242');          // no such option / anarchy reference
+    if ($mode !== Mode::Anarchy) {
+        busBus()->vetoOption($mod, BusWindow::sole(), "say:{$hostile}");
+        $replies[] = $say(User::factory()->create(), "!do say {$hostile}"); // vetoed option
+        $replies[] = $say($viewer, '!do say Something harmless');           // backer sits out
+    }
+    busBus()->pause($mod, 'orkestera');
+    $replies[] = $say(User::factory()->create(), "!do say {$hostile}");
+    busBus()->resume($mod, 'orkestera');
+    busBus()->kill($mod);
+    $replies[] = $say(User::factory()->create(), "!do say {$hostile}");
+
+    foreach ($replies as $result) {
+        foreach (['scam.example', 'vbucks', 'harmless', '4242'] as $marker) {
+            expect(str_contains(mb_strtolower($result->reply), $marker))->toBeFalse("!do reply repeats chatter text: {$result->reply}");
+        }
+        expect(PostChatReply::echoesChatter($result->reply, $hostileName, $hostile))->toBeFalse();
+    }
+    expect(collect($replies)->pluck('reply')->filter()->count())->toBeGreaterThan(4);
+})->with([Mode::Democracy, Mode::Anarchy]);
+
+test('every !do refusal reason has a reply template, except a rate limit, which stays silent', function () {
+    $reasons = collect((new ReflectionClass(Submission::class))->getConstants())->except(['ACCEPTED', 'RATE_LIMITED']);
+    expect(DoAction::reply(new Submission(new BusBallot(['game' => 'orkestera']), Submission::RATE_LIMITED)))->toBe('');
+
+    foreach ($reasons as $reason) {
+        $ballot = new BusBallot(['game' => 'orkestera']);
+        expect(DoAction::reply(new Submission($ballot, $reason)))->not->toBe('', $reason);
+    }
+    expect(DoAction::reply(new Submission(new BusBallot(['game' => 'orkestera']), Submission::INVALID)))->toBe('Try !do task <text>, !do say <text>.');
+});

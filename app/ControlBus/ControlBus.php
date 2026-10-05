@@ -72,7 +72,7 @@ class ControlBus
 
         $game = Game::find(BusControl::query()->whereKey(BusControl::GLOBAL)->value('active_game'));
         if ($game === null) {
-            return $this->refuse($base, BallotStatus::NoGame, 'No chat game is running right now.');
+            return $this->refuse($base, BallotStatus::NoGame, Submission::NO_GAME);
         }
         $base['game'] = $game->key;
 
@@ -82,7 +82,7 @@ class ControlBus
             try {
                 $action = $game->parse($text);
             } catch (InvalidArgumentException $e) {
-                return $this->refuse($base, BallotStatus::Invalid, $e->getMessage());
+                return $this->refuse($base, BallotStatus::Invalid, Submission::INVALID);
             }
             $base += ['verb' => $action->verb, 'argument' => $action->argument, 'action_key' => $action->key()];
         }
@@ -95,10 +95,10 @@ class ControlBus
             $state = BusState::read($game);
 
             if ($state->killed) {
-                return $this->refuse($base, BallotStatus::Killed, 'The chat game is stopped.');
+                return $this->refuse($base, BallotStatus::Killed, Submission::KILLED);
             }
             if ($state->paused) {
-                return $this->refuse($base, BallotStatus::Paused, 'The chat game is paused.');
+                return $this->refuse($base, BallotStatus::Paused, Submission::PAUSED);
             }
 
             return $state->mode === Mode::Anarchy
@@ -113,12 +113,12 @@ class ControlBus
     private function submitAnarchy(Game $game, array $base, ?Action $action, User $user): Submission
     {
         if ($action === null) {
-            return $this->refuse($base, BallotStatus::Invalid, "In anarchy every action runs: send it yourself, e.g. {$game->usage()}.");
+            return $this->refuse($base, BallotStatus::Invalid, Submission::ANARCHY_REFERENCE);
         }
 
         $key = "bus-anarchy:{$game->key}:{$user->id}";
         if (RateLimiter::tooManyAttempts($key, $game->anarchyActions)) {
-            return $this->refuse($base, BallotStatus::RateLimited, 'Slow down: '.$game->anarchyActions.' actions per '.$game->anarchyPerSeconds.' seconds.');
+            return $this->refuse($base, BallotStatus::RateLimited, Submission::RATE_LIMITED);
         }
         RateLimiter::hit($key, $game->anarchyPerSeconds);
 
@@ -128,16 +128,16 @@ class ControlBus
         if ($needsApproval) {
             $this->awaitApproval($game, Mode::Anarchy, $action, 1, 1, null, $ballot);
 
-            return new Submission($ballot, 'Sent to the moderators for approval: '.$action->label().'.');
+            return new Submission($ballot, Submission::ACCEPTED);
         }
 
         if ($this->publish($game, Mode::Anarchy, $action, 1, 1, null, $ballot) === null) {
             $ballot->update(['status' => BallotStatus::Killed]);
 
-            return new Submission($ballot, 'The chat game is stopped.');
+            return new Submission($ballot, Submission::KILLED);
         }
 
-        return new Submission($ballot, 'Sent: '.$action->label().'.');
+        return new Submission($ballot, Submission::ACCEPTED);
     }
 
     /**
@@ -150,7 +150,7 @@ class ControlBus
         if ($reference !== null) {
             $option = $window->ballots()->where('option_number', $reference)->orderBy('id')->first();
             if ($option === null) {
-                return $this->refuse($base, BallotStatus::Invalid, "There is no option #{$reference} in this vote.");
+                return $this->refuse($base, BallotStatus::Invalid, Submission::NO_SUCH_OPTION);
             }
             $action = new Action((string) $option->verb, $option->argument);
             $base += ['verb' => $option->verb, 'argument' => $option->argument, 'action_key' => $option->action_key];
@@ -160,13 +160,13 @@ class ControlBus
         $key = $action->key();
 
         if ($window->ballots()->where('action_key', $key)->where('status', BallotStatus::Vetoed)->exists()) {
-            return $this->refuse($base, BallotStatus::Vetoed, 'A moderator vetoed that option.');
+            return $this->refuse($base, BallotStatus::Vetoed, Submission::VETOED_OPTION);
         }
 
         // Someone who backed a vetoed option sits out the rest of the window,
         // so a veto cannot be dodged by retyping the option some other way.
         if ($window->ballots()->where('user_id', $user->id)->where('status', BallotStatus::Vetoed)->exists()) {
-            return $this->refuse($base, BallotStatus::Vetoed, 'You backed an option a moderator vetoed, so you sit out this vote.');
+            return $this->refuse($base, BallotStatus::Vetoed, Submission::SAT_OUT);
         }
 
         $number = $window->ballots()->where('action_key', $key)->whereNotNull('option_number')->value('option_number')
@@ -178,7 +178,7 @@ class ControlBus
 
         $ballot = BusBallot::create($base + ['option_number' => $number, 'status' => BallotStatus::Counted]);
 
-        return new Submission($ballot, "Voted for #{$number}: {$action->label()}.");
+        return new Submission($ballot, Submission::ACCEPTED);
     }
 
     /**
@@ -212,9 +212,9 @@ class ControlBus
     /**
      * @param  array<string, mixed>  $base
      */
-    private function refuse(array $base, BallotStatus $status, string $reply): Submission
+    private function refuse(array $base, BallotStatus $status, string $reason): Submission
     {
-        return new Submission(BusBallot::create($base + ['status' => $status]), $reply);
+        return new Submission(BusBallot::create($base + ['status' => $status]), $reason);
     }
 
     // --- Windows ------------------------------------------------------------
