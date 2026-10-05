@@ -15,7 +15,10 @@ use App\Models\StreamSession;
 use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Twitch;
+use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\PumpStream;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -195,6 +198,102 @@ test('an oversized file, an empty file or a non-video answer is refused and not 
     'empty' => [['', 200, ['Content-Type' => 'video/mp4']], 'empty file'],
     'html' => [['<html>', 200, ['Content-Type' => 'text/html']], 'not a video'],
 ]);
+
+// --- #148: redirects and streaming size limit ---------------------------------
+
+test('a redirect to another CDN host is followed, with every hop checked', function () {
+    Http::fake([
+        CDN.'/landscape.mp4' => Http::response('', 302, ['Location' => 'https://edge.twitchcdn.net/real.mp4']),
+        'https://edge.twitchcdn.net/real.mp4' => mp4('real-bytes'),
+    ]);
+    $marker = readyClip();
+
+    fetchClip($marker)->assertNotFailed();
+
+    expect(Storage::disk('local')->get($marker->refresh()->landscape_file_path))->toBe('real-bytes');
+    Http::assertSentCount(2);
+});
+
+test('a relative redirect is resolved against the CDN URL', function () {
+    Http::fake([
+        CDN.'/landscape.mp4' => Http::response('', 301, ['Location' => '/v2/landscape.mp4']),
+        CDN.'/v2/landscape.mp4' => mp4('moved'),
+    ]);
+    $marker = readyClip();
+
+    fetchClip($marker);
+
+    expect(Storage::disk('local')->get($marker->refresh()->landscape_file_path))->toBe('moved');
+});
+
+test('a redirect off the allowlist, or to plain HTTP, is refused and never requested', function (string $location) {
+    Http::fake([
+        CDN.'/landscape.mp4' => Http::response('', 302, ['Location' => $location]),
+        '*' => mp4('should never be fetched'),
+    ]);
+    $marker = readyClip();
+
+    fetchClip($marker)->assertFailed();
+
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn (Request $r) => $r->url() === $location);
+    expect($marker->refresh()->fetch_error)->toContain('(a redirect)')
+        ->and($marker->landscape_file_path)->toBeNull();
+    Storage::disk('local')->assertDirectoryEmpty('/');
+})->with([
+    'another host' => ['https://evil.example/x.mp4'],
+    'a lookalike host' => ['https://twitchcdn.net.evil.example/x.mp4'],
+    'a downgrade to http' => ['http://production.assets.clips.twitchcdn.net/x.mp4'],
+    'an internal address' => ['https://169.254.169.254/latest/meta-data'],
+]);
+
+test('more than three redirects is refused', function () {
+    Http::fake([CDN.'/*' => Http::response('', 302, ['Location' => CDN.'/again.mp4'])]);
+    $marker = readyClip();
+
+    fetchClip($marker)->assertFailed();
+
+    Http::assertSentCount(4);
+    expect($marker->refresh()->fetch_error)->toContain('more than 3 times');
+});
+
+test('a Content-Length over the limit is refused before the body is read', function () {
+    config(['clips.max_file_bytes' => 1000]);
+    $read = 0;
+    $body = new PumpStream(function () use (&$read) {
+        $read += 100;
+
+        return str_repeat('x', 100);
+    });
+    Http::fake([CDN.'/*' => fn () => Create::promiseFor(new Psr7Response(200, ['Content-Type' => 'video/mp4', 'Content-Length' => '5000'], $body))]);
+    $marker = readyClip();
+
+    expect(fn () => fetchClip($marker))->toThrow(RuntimeException::class, '5000 bytes, over the 1000-byte limit');
+
+    expect($read)->toBe(0)
+        ->and($marker->refresh()->landscape_file_path)->toBeNull();
+    Storage::disk('local')->assertDirectoryEmpty('/');
+});
+
+test('an oversized stream with no Content-Length is cut off as it passes the limit', function () {
+    config(['clips.max_file_bytes' => 3 * 1024 * 1024]);
+    $read = 0;
+    // Never ends: only the streaming check can stop this download.
+    $body = new PumpStream(function (int $length) use (&$read) {
+        $read += $length;
+
+        return str_repeat('x', $length);
+    });
+    Http::fake([CDN.'/*' => fn () => Create::promiseFor(new Psr7Response(200, ['Content-Type' => 'video/mp4'], $body))]);
+    $marker = readyClip();
+
+    expect(fn () => fetchClip($marker))->toThrow(RuntimeException::class, 'stopped downloading');
+
+    // It stopped within one chunk (1 MB) of the limit.
+    expect($read)->toBeLessThanOrEqual(4 * 1024 * 1024 + 8192)
+        ->and($marker->refresh()->landscape_file_path)->toBeNull();
+    Storage::disk('local')->assertDirectoryEmpty('/');
+});
 
 test('when fetching finally gives up, the marker says so', function () {
     $marker = readyClip();

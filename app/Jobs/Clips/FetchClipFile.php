@@ -5,6 +5,8 @@ namespace App\Jobs\Clips;
 use App\Clips\ClipHelix;
 use App\Clips\StreamMarkerStatus;
 use App\Models\StreamMarker;
+use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -27,7 +29,8 @@ use Throwable;
  * moderate-gated clips.file route.
  *
  * Downloads use a plain HTTP client: the broadcaster's token is never sent to
- * the CDN, and only hosts in clips.download_hosts are fetched.
+ * the CDN, and only hosts in clips.download_hosts are fetched, on every
+ * redirect hop too. The size limit is enforced while the body streams.
  */
 class FetchClipFile implements ShouldQueue
 {
@@ -40,6 +43,12 @@ class FetchClipFile implements ShouldQueue
 
     /** Below the default supervisor's 60 s; see config/horizon.php. */
     public int $timeout = 55;
+
+    /** Redirects followed by hand, each checked against clips.download_hosts. */
+    private const MAX_REDIRECTS = 3;
+
+    /** Read the download in pieces this size, checking the size limit as it grows. */
+    private const CHUNK_BYTES = 1024 * 1024;
 
     /** Refresh URLs this close to their expiry rather than race it. */
     private const EXPIRY_MARGIN_SECONDS = 60;
@@ -102,18 +111,60 @@ class FetchClipFile implements ShouldQueue
     }
 
     /**
-     * Stream the file to a temporary file, check it, then write it to the
-     * disk. A failure throws, so the queue retries with backoff. False when
-     * the URL is not one we fetch at all, which no retry can fix.
+     * Download the file to a temporary file, check it, then write it to the
+     * disk. A failure throws, so the queue retries with backoff. False when a
+     * URL (the first, or any redirect) is not one we fetch at all, which no
+     * retry can fix.
+     *
+     * Redirects are followed by hand, at most MAX_REDIRECTS, so every hop's
+     * scheme and host is checked against clips.download_hosts (#148). The
+     * body is read in chunks and the download stops the moment it passes
+     * clips.max_file_bytes, so an oversized file never fills the disk.
      */
     private function download(StreamMarker $marker, Filesystem $disk, string $url, string $path): bool
     {
-        if (! self::allowedUrl($url)) {
-            $marker->update(['fetch_error' => 'Refused to fetch a clip file from '.(parse_url($url, PHP_URL_HOST) ?: 'an invalid URL').': not a Twitch download host.']);
-            $this->fail(new RuntimeException('Clip download URL is not on an allowed host.'));
+        $response = null;
+
+        for ($hop = 0; $hop <= self::MAX_REDIRECTS; $hop++) {
+            if (! self::allowedUrl($url)) {
+                $marker->update(['fetch_error' => 'Refused to fetch a clip file from '.(parse_url($url, PHP_URL_HOST) ?: 'an invalid URL').($hop > 0 ? ' (a redirect)' : '').': not a Twitch download host.']);
+                $this->fail(new RuntimeException('Clip download URL is not on an allowed host.'));
+
+                return false;
+            }
+
+            $response = Http::connectTimeout(5)
+                ->timeout(45)
+                ->withOptions(['allow_redirects' => false, 'stream' => true])
+                ->get($url);
+
+            if (! $response->redirect()) {
+                break;
+            }
+
+            $location = (string) $response->header('Location');
+            if ($location === '') {
+                throw new RuntimeException('The clip CDN redirected without a Location.');
+            }
+            $url = (string) UriResolver::resolve(new Uri($url), new Uri($location));
+            $response = null;
+        }
+
+        if ($response === null) {
+            $marker->update(['fetch_error' => 'The clip CDN redirected more than '.self::MAX_REDIRECTS.' times.']);
+            $this->fail(new RuntimeException('Too many redirects fetching a clip file.'));
 
             return false;
         }
+
+        if (in_array($response->status(), [401, 403, 404, 410], true)) {
+            // Most likely an expired URL: fetch fresh ones on the retry.
+            $marker->update(['download_urls_expire_at' => now()]);
+            throw new RuntimeException('The clip CDN answered HTTP '.$response->status().'; fetching new download URLs and retrying.');
+        }
+        $response->throw();
+
+        $this->checkHeaders($response);
 
         $tmp = tempnam(sys_get_temp_dir(), 'clip');
         if ($tmp === false) {
@@ -121,16 +172,7 @@ class FetchClipFile implements ShouldQueue
         }
 
         try {
-            $response = Http::connectTimeout(5)->timeout(45)->sink($tmp)->get($url);
-
-            if (in_array($response->status(), [401, 403, 404, 410], true)) {
-                // Most likely an expired URL: fetch fresh ones on the retry.
-                $marker->update(['download_urls_expire_at' => now()]);
-                throw new RuntimeException('The clip CDN answered HTTP '.$response->status().'; fetching new download URLs and retrying.');
-            }
-            $response->throw();
-
-            $this->check($response, $tmp);
+            $this->copyBounded($response, $tmp);
 
             $stream = fopen($tmp, 'rb');
             if ($stream === false || ! $disk->writeStream($path, $stream)) {
@@ -146,21 +188,55 @@ class FetchClipFile implements ShouldQueue
         return true;
     }
 
-    private function check(Response $response, string $tmp): void
+    /** Refuse a non-video answer, or one that says up front it is too big. */
+    private function checkHeaders(Response $response): void
     {
-        $max = (int) config('clips.max_file_bytes');
-        $size = (int) filesize($tmp);
-
-        if ($size === 0) {
-            throw new RuntimeException('The clip CDN returned an empty file.');
-        }
-        if ($size > $max) {
-            throw new RuntimeException("The clip file is {$size} bytes, over the {$max}-byte limit.");
-        }
-
         $type = strtolower((string) $response->header('Content-Type'));
         if ($type !== '' && ! str_starts_with($type, 'video/') && ! str_starts_with($type, 'application/octet-stream') && ! str_starts_with($type, 'binary/octet-stream')) {
             throw new RuntimeException("The clip CDN returned {$type}, not a video.");
+        }
+
+        $max = (int) config('clips.max_file_bytes');
+        $length = $response->header('Content-Length');
+        if (is_numeric($length) && (int) $length > $max) {
+            throw new RuntimeException("The clip file is {$length} bytes, over the {$max}-byte limit.");
+        }
+    }
+
+    /**
+     * Copy the response body to $tmp in chunks, stopping as soon as it passes
+     * the size limit. The Content-Length check alone is not enough: the
+     * header can be missing or wrong.
+     */
+    private function copyBounded(Response $response, string $tmp): void
+    {
+        $max = (int) config('clips.max_file_bytes');
+        $body = $response->toPsrResponse()->getBody();
+        $out = fopen($tmp, 'wb');
+        if ($out === false) {
+            throw new RuntimeException('Could not open the temporary file for the clip download.');
+        }
+
+        $written = 0;
+        try {
+            while (! $body->eof()) {
+                $chunk = $body->read(self::CHUNK_BYTES);
+                if ($chunk === '') {
+                    break;
+                }
+                $written += strlen($chunk);
+                if ($written > $max) {
+                    throw new RuntimeException("The clip file is over the {$max}-byte limit; stopped downloading.");
+                }
+                fwrite($out, $chunk);
+            }
+        } finally {
+            fclose($out);
+            $body->close();
+        }
+
+        if ($written === 0) {
+            throw new RuntimeException('The clip CDN returned an empty file.');
         }
     }
 
