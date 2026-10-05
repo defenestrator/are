@@ -122,6 +122,10 @@ export const options = {
     summaryTrendStats: ['p(50)', 'p(95)', 'p(99)', 'avg', 'max', 'count'],
     // Never follow a redirect off this host.
     maxRedirects: 3,
+    // Each virtual user is one browser: keep its session across iterations.
+    // k6 empties the cookie jar between iterations by default, which turned
+    // every poll after the first into a 419.
+    noCookiesReset: true,
     userAgent: 'ARE-loadtest/1 (k6; #176)',
 };
 
@@ -226,7 +230,9 @@ function openVotePage() {
     }
 
     const state = readPage(page.body || '');
-    const vote = state.components.find((component) => component.name === 'vote')
+    // The page component is an anonymous Volt fragment named
+    // "volt-anonymous-fragment-<base64 of {name: vote, ...}>".
+    const vote = state.components.find((component) => component.name === 'vote' || component.name.indexOf('volt-anonymous-fragment-') === 0)
         || state.components.find((component) => !['question-card', 'topic'].includes(component.name));
     const cards = state.components.filter((component) => component.name === 'question-card');
     check(page, { '/vote renders for the viewer': (r) => r.status === 200 && r.url.endsWith('/vote') && vote !== undefined });
