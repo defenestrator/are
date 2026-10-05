@@ -6,6 +6,7 @@ import { test, expect, fixtures, signIn } from './support.js';
 // here. Add new pages to this list.
 const pages = [
     ['/vote', null],
+    ['/settings', null],
     ['/moderation', 'Moderation'],
     ['/clips', 'Clips'],
     ['/bus', 'Chat Control Bus'],
@@ -29,10 +30,16 @@ for (const [path, heading] of pages) {
     });
 }
 
-// Known broken, found by this suite: the appearance switcher throws
-// "Alpine Expression Error: dark is not defined" (#167). Turn this back into
-// a normal test, and into the list above, when #167 is fixed.
-test.fixme('/settings renders for the broadcaster (#167)', async ({ page }) => {
+// #167: the appearance switcher threw "dark is not defined" on every load.
+// It must bind to $flux.appearance, and choosing a value must apply it.
+test('the appearance switcher on /settings switches to dark and back', async ({ page }) => {
     await signIn(page, fixtures.broadcaster, '/settings');
-    await page.waitForLoadState('networkidle');
+
+    await page.locator('ui-radio', { hasText: 'Dark' }).click();
+    await expect(page.locator('html')).toHaveClass(/(^|\s)dark(\s|$)/);
+    expect(await page.evaluate(() => window.localStorage.getItem('flux.appearance'))).toBe('dark');
+
+    await page.locator('ui-radio', { hasText: 'Light' }).click();
+    await expect(page.locator('html')).not.toHaveClass(/(^|\s)dark(\s|$)/);
+    expect(await page.evaluate(() => window.localStorage.getItem('flux.appearance'))).toBe('light');
 });
