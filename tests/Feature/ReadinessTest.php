@@ -1,8 +1,12 @@
 <?php
 
 use App\Models\BroadcasterToken;
+use App\Models\BusAdapterToken;
+use App\Models\BusControl;
+use App\Models\MusicPlayerToken;
 use App\Models\TwitchModerator;
 use App\Models\User;
+use App\Models\YouTubeChannelToken;
 use App\Readiness\Check;
 use App\Readiness\Probes;
 use App\Readiness\ReadinessChecks;
@@ -10,6 +14,7 @@ use App\Readiness\SchedulerHeartbeat;
 use App\Readiness\Status;
 use App\Twitch;
 use App\YouTube\Quota;
+use App\YouTube\YouTubeApi;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
@@ -156,14 +161,20 @@ test('no secret value is ever shown', function () {
         'broadcasting.connections.reverb.options.host' => 'ws.are.example',
         'services.youtube.api_key' => READY_SECRET,
         'are.leads.webhook_url' => 'https://hooks.example/'.READY_SECRET,
+        'services.youtube.oauth.client_id' => READY_SECRET,
+        'services.youtube.oauth.client_secret' => READY_SECRET,
+        'services.youtube.oauth.redirect' => 'https://are.example/youtube/broadcaster/callback',
     ]);
+    $busToken = BusAdapterToken::issue((string) array_key_first((array) config('bus.games')));
+    $playerToken = MusicPlayerToken::issue('obs');
     File::put($this->scratch.'/public/build/manifest.json', json_encode(['resources/js/app.js' => ['file' => 'assets/app.js']]));
     File::put($this->scratch.'/public/build/assets/app.js', 'key:"'.READY_SECRET.'"');
     $this->probes->redisError = 'RedisException: NOAUTH Authentication required. '.READY_SECRET;
     Http::fake(['*' => Http::response(['message' => READY_SECRET], 500)]);
 
     $this->actingAs(readinessBroadcaster());
-    Volt::test('admin.readiness')->assertDontSee(READY_SECRET)->assertSee('REDIS_PASSWORD is set');
+    Volt::test('admin.readiness')->assertDontSee(READY_SECRET)->assertDontSee($busToken)->assertDontSee($playerToken)
+        ->assertSee('REDIS_PASSWORD is set');
 });
 
 test('one check that throws does not hide the others or leak its message', function () {
@@ -462,8 +473,7 @@ test('YouTube without an API key is amber and its quota not applicable', functio
     config(['services.youtube.api_key' => null]);
 
     expect(readinessCheck('YouTube API key')->status)->toBe(Status::Warn)
-        ->and(readinessCheck('YouTube quota today')->status)->toBe(Status::Skip)
-        ->and(readinessCheck('YouTube OAuth client and connected channels')->status)->toBe(Status::Skip);
+        ->and(readinessCheck('YouTube quota today')->status)->toBe(Status::Skip);
 });
 
 test('YouTube quota turns amber at the alert ratio and red when spent', function () {
@@ -480,6 +490,129 @@ test('YouTube quota turns amber at the alert ratio and red when spent', function
     $spend(100);
     expect(readinessCheck('YouTube quota today')->status)->toBe(Status::Fail)
         ->and(readinessCheck('YouTube quota today')->summary)->toContain('100 of 100 units');
+});
+
+// YouTube OAuth (#126) ---------------------------------------------------------------
+
+function youtubeOAuthSet(): void
+{
+    config([
+        'services.youtube.oauth.client_id' => 'google-client',
+        'services.youtube.oauth.client_secret' => READY_SECRET,
+        'services.youtube.oauth.redirect' => 'https://are.example/youtube/broadcaster/callback',
+    ]);
+}
+
+function youtubeToken(string $channelId, array $scopes, ?string $title = null): void
+{
+    YouTubeChannelToken::create([
+        'channel_id' => $channelId, 'channel_title' => $title, 'access_token' => 'a', 'refresh_token' => 'r',
+        'expires_at' => now()->addHour(), 'scopes' => $scopes,
+    ]);
+}
+
+test('a missing YouTube OAuth client names the unset values', function () {
+    config(['services.youtube.oauth.client_id' => null, 'services.youtube.oauth.client_secret' => null, 'services.youtube.oauth.redirect' => 'x']);
+
+    $check = readinessCheck('YouTube OAuth client');
+
+    expect($check->status)->toBe(Status::Warn)
+        ->and($check->summary)->toContain('YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET not set')
+        ->and($check->fix)->toContain(route('youtube.broadcaster.callback'));
+});
+
+test('connected YouTube channels are listed with their missing scopes', function () {
+    youtubeOAuthSet();
+    config(['services.youtube.channel_ids' => ['UC-show', 'UC-second']]);
+    youtubeToken('UC-show', [YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES], 'The Show');
+    youtubeToken('UC-analytics-less', [YouTubeApi::POST_SCOPE]);
+    youtubeToken('UC-read-only', YouTubeApi::ANALYTICS_SCOPES);
+
+    expect(readinessCheck('YouTube OAuth client')->status)->toBe(Status::Ok)
+        ->and(readinessCheck('YouTube channel The Show (UC-show): connection and scopes')->status)->toBe(Status::Ok);
+
+    $notConnected = readinessCheck('YouTube channel UC-second: connection and scopes');
+    expect($notConnected->status)->toBe(Status::Warn)->and($notConnected->fix)->toContain(route('youtube.broadcaster.connect'));
+
+    $noAnalytics = readinessCheck('YouTube channel UC-analytics-less: connection and scopes');
+    expect($noAnalytics->status)->toBe(Status::Warn)
+        ->and($noAnalytics->details)->toBe(['youtube.readonly', 'yt-analytics.readonly']);
+
+    $cannotPost = readinessCheck('YouTube channel UC-read-only: connection and scopes');
+    expect($cannotPost->status)->toBe(Status::Fail)
+        ->and($cannotPost->details)->toBe(['youtube.force-ssl']);
+});
+
+test('YouTube chat replies: off is amber, on without a posting channel is red, on with one is green', function () {
+    youtubeOAuthSet();
+    config(['chat.replies.enabled' => true, 'chat.replies.youtube' => false]);
+    expect(readinessCheck('YouTube chat replies')->status)->toBe(Status::Warn);
+
+    config(['chat.replies.youtube' => true]);
+    expect(readinessCheck('YouTube chat replies')->status)->toBe(Status::Fail);
+
+    youtubeToken('UC-show', [YouTubeApi::POST_SCOPE]);
+    expect(readinessCheck('YouTube chat replies')->status)->toBe(Status::Ok);
+
+    config(['chat.replies.enabled' => false]);
+    expect(readinessCheck('YouTube chat replies')->status)->toBe(Status::Warn);
+});
+
+// Chat Control Bus (#123) -------------------------------------------------------------
+
+test('each bus game shows its adapter token and state, and the kill switch shows', function () {
+    $games = array_keys((array) config('bus.games'));
+    expect($games)->not->toBeEmpty();
+    $game = $games[0];
+    $label = (string) config("bus.games.{$game}.label");
+
+    expect(readinessCheck('Kill switch')->status)->toBe(Status::Ok)
+        ->and(readinessCheck("{$label}: state")->status)->toBe(Status::Ok)
+        ->and(readinessCheck("{$label}: adapter token")->fix)->toContain("php artisan bus:token {$game}");
+
+    BusAdapterToken::issue($game);
+    BusControl::create(['scope' => $game, 'paused_at' => now()]);
+    BusControl::create(['scope' => BusControl::GLOBAL, 'killed_at' => now(), 'active_game' => $game]);
+
+    expect(readinessCheck("{$label}: adapter token")->status)->toBe(Status::Ok)
+        ->and(readinessCheck("{$label}: state")->status)->toBe(Status::Warn)
+        ->and(readinessCheck("{$label}: state")->summary)->toContain('Paused')
+        ->and(readinessCheck('Kill switch')->status)->toBe(Status::Warn)
+        ->and(readinessCheck('Kill switch')->fix)->toContain('bus:kill --off');
+});
+
+test('the readiness page never creates bus control rows', function () {
+    readinessGroups();
+
+    expect(BusControl::count())->toBe(0);
+});
+
+// Music player (#141) ------------------------------------------------------------------
+
+test('music player tokens: none is amber, issued ones are listed without their token', function () {
+    expect(readinessCheck('Player tokens')->status)->toBe(Status::Warn);
+
+    $token = MusicPlayerToken::issue('obs');
+    $check = readinessCheck('Player tokens');
+
+    expect($check->status)->toBe(Status::Ok)
+        ->and($check->details)->toBe(['obs: never used'])
+        ->and(json_encode(readinessGroups()))->not->toContain($token);
+});
+
+// Twitch scopes --------------------------------------------------------------------------
+
+test('the required Twitch scopes include chat replies, clips and redemptions, and a missing one is flagged', function () {
+    expect(Twitch::BROADCASTER_SCOPES)->toContain('user:write:chat', 'channel:manage:clips', 'channel:manage:redemptions');
+
+    Http::fake(['*' => Http::response(['data' => helixSubscriptions()])]);
+    BroadcasterToken::create([
+        'broadcaster_id' => '1000', 'access_token' => 'a', 'refresh_token' => 'r', 'expires_at' => now()->addHour(),
+        'scopes' => array_values(array_diff(Twitch::BROADCASTER_SCOPES, ['user:write:chat', 'channel:manage:clips', 'channel:manage:redemptions'])),
+    ]);
+
+    expect(readinessCheck('Channel 1000: connection and scopes')->details)
+        ->toBe(['channel:manage:clips', 'user:write:chat', 'channel:manage:redemptions']);
 });
 
 // Mail and leads -------------------------------------------------------------------------

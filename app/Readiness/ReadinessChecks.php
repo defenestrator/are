@@ -3,10 +3,16 @@
 namespace App\Readiness;
 
 use App\Clips\ClipStorage;
+use App\ControlBus\Game;
 use App\Models\BroadcasterToken;
+use App\Models\BusAdapterToken;
+use App\Models\BusControl;
+use App\Models\MusicPlayerToken;
 use App\Models\User;
+use App\Models\YouTubeChannelToken;
 use App\Twitch;
 use App\YouTube\Quota;
+use App\YouTube\YouTubeApi;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Support\Carbon;
@@ -49,6 +55,8 @@ class ReadinessChecks
             'Live updates (Reverb)' => $this->guard('Live updates', fn () => $this->broadcasting()),
             'Scheduler' => $this->guard('Scheduler', fn () => [$this->scheduler()]),
             'YouTube' => $this->guard('YouTube', fn () => $this->youtube()),
+            'Chat Control Bus' => $this->guard('Chat Control Bus', fn () => $this->controlBus()),
+            'Music player' => $this->guard('Music player', fn () => [$this->musicPlayer()]),
             'Mail and leads' => $this->guard('Mail and leads', fn () => $this->mail()),
             'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck()]),
             'Deploy' => $this->guard('Deploy', fn () => $this->deploy()),
@@ -423,7 +431,7 @@ class ReadinessChecks
             default => Check::skip('YouTube channels', 'YouTube is not configured.', 'Set YOUTUBE_API_KEY and YOUTUBE_CHANNEL_IDS to read YouTube chat.'),
         };
 
-        $checks[] = Check::skip('YouTube OAuth client and connected channels', 'Arrives with #126 (chat replies on YouTube); nothing to set up yet.');
+        array_push($checks, ...$this->youtubeOAuth());
 
         $used = Quota::used(Quota::UNITS);
         $limit = Quota::limit(Quota::UNITS);
@@ -436,6 +444,119 @@ class ReadinessChecks
         };
 
         return $checks;
+    }
+
+    /**
+     * Google OAuth for channel owners (#126): posting chat replies needs
+     * youtube.force-ssl, YouTube Analytics needs the analytics scopes.
+     *
+     * @return list<Check>
+     */
+    private function youtubeOAuth(): array
+    {
+        $settings = [
+            'YOUTUBE_OAUTH_CLIENT_ID' => config('services.youtube.oauth.client_id'),
+            'YOUTUBE_OAUTH_CLIENT_SECRET' => config('services.youtube.oauth.client_secret'),
+            'YOUTUBE_OAUTH_REDIRECT_URL' => config('services.youtube.oauth.redirect'),
+        ];
+        $unset = array_keys(array_filter($settings, fn ($value) => blank($value)));
+        $checks = [];
+
+        $checks[] = $unset === []
+            ? Check::ok('YouTube OAuth client', 'YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET and YOUTUBE_OAUTH_REDIRECT_URL are set.')
+            : Check::warn('YouTube OAuth client', implode(', ', $unset).' not set, so channel owners cannot connect YouTube (needed for chat replies and analytics).', 'Create a Web OAuth client in Google Cloud, register '.route('youtube.broadcaster.callback').' as its redirect URI, and set the three YOUTUBE_OAUTH_* values.');
+
+        $tokens = YouTubeChannelToken::orderBy('channel_id')->get();
+        $configured = (array) config('services.youtube.channel_ids');
+        $channelIds = collect($configured)->merge($tokens->pluck('channel_id'))->unique()->values();
+        $connect = 'Sign in as a broadcaster and open '.route('youtube.broadcaster.connect').' with the channel\'s Google account.';
+
+        foreach ($channelIds as $channelId) {
+            $token = $tokens->firstWhere('channel_id', $channelId);
+            $label = $token?->channel_title ? "{$token->channel_title} ({$channelId})" : $channelId;
+            $name = "YouTube channel {$label}: connection and scopes";
+
+            if ($token === null) {
+                $checks[] = $unset === []
+                    ? Check::warn($name, 'Not connected, so ARE cannot reply in its chat or read its analytics.', $connect)
+                    : Check::skip($name, 'Needs the YouTube OAuth client first.');
+
+                continue;
+            }
+
+            $missing = array_values(array_diff([YouTubeApi::POST_SCOPE, ...YouTubeApi::ANALYTICS_SCOPES], (array) $token->scopes));
+            $short = array_map(fn ($scope) => str_replace('https://www.googleapis.com/auth/', '', $scope), $missing);
+            $checks[] = match (true) {
+                $missing === [] => Check::ok($name, 'Connected; can post chat replies and read analytics.'),
+                ! $token->canPost() => Check::fail($name, 'Connected without youtube.force-ssl, so chat replies cannot be posted.', 'Reconnect and grant every permission. '.$connect, $short),
+                default => Check::warn($name, 'Connected; chat replies work, but analytics scopes are missing.', 'Reconnect and grant every permission. '.$connect, $short),
+            };
+        }
+
+        $repliesOn = (bool) config('chat.replies.enabled') && (bool) config('chat.replies.youtube');
+        $canPost = $tokens->contains(fn (YouTubeChannelToken $token) => $token->canPost());
+        $checks[] = match (true) {
+            ! $repliesOn => Check::warn('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is off (or CHAT_REPLIES_ENABLED is), so ARE reads YouTube chat but never answers there.', 'Set CHAT_REPLIES_YOUTUBE=true once a channel is connected with youtube.force-ssl.'),
+            ! $canPost => Check::fail('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is on, but no connected channel can post.', $connect),
+            default => Check::ok('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is on, and a connected channel can post (each reply costs 50 quota units).'),
+        };
+
+        return $checks;
+    }
+
+    // Chat Control Bus --------------------------------------------------------
+
+    /**
+     * @return list<Check>
+     */
+    public function controlBus(): array
+    {
+        $games = Game::all();
+        if ($games === []) {
+            return [Check::skip('Games', 'No game is configured in config/bus.php.')];
+        }
+
+        // Read only: BusControl::for() would create rows.
+        $global = BusControl::find(BusControl::GLOBAL);
+        $controls = BusControl::whereIn('scope', array_keys($games))->get()->keyBy('scope');
+        $tokens = BusAdapterToken::whereIn('game', array_keys($games))->pluck('game')->all();
+
+        $checks = [$global?->killed_at !== null
+            ? Check::warn('Kill switch', 'ON since '.$global->killed_at->diffForHumans().': nothing is published to any game.', 'Reset it at '.route('bus').' (broadcaster) or run php artisan bus:kill --off.')
+            : Check::ok('Kill switch', 'Off: the bus publishes.')];
+
+        foreach ($games as $key => $game) {
+            $control = $controls->get($key);
+            $mode = ($control->mode ?? $game->defaultMode)->value;
+            $active = $global?->active_game === $key ? ', the running game' : '';
+
+            $checks[] = $control?->paused_at !== null
+                ? Check::warn("{$game->label}: state", "Paused since {$control->paused_at->diffForHumans()} ({$mode}{$active}).", 'Resume it at '.route('bus').'.')
+                : Check::ok("{$game->label}: state", "Running in {$mode} mode{$active}.");
+
+            $checks[] = in_array($key, $tokens, true)
+                ? Check::ok("{$game->label}: adapter token", 'Issued.')
+                : Check::warn("{$game->label}: adapter token", 'Not issued. An adapter that polls '.route('bus.actions', $key).' (no Reverb) cannot connect.', "Run php artisan bus:token {$key} and give the token to the adapter.");
+        }
+
+        return $checks;
+    }
+
+    // Music player ------------------------------------------------------------
+
+    public function musicPlayer(): Check
+    {
+        $players = MusicPlayerToken::orderBy('name')->get();
+
+        if ($players->isEmpty()) {
+            return Check::warn('Player tokens', 'No local player token is issued, so only moderators can advance the song request queue.', 'Run php artisan music:player-token obs (or another short name) and put the token in the player.');
+        }
+
+        return Check::ok(
+            'Player tokens',
+            $players->count().' player token(s) issued.',
+            $players->map(fn (MusicPlayerToken $player) => $player->name.': '.($player->last_used_at ? 'last used '.$player->last_used_at->diffForHumans() : 'never used'))->all(),
+        );
     }
 
     // Mail and leads ----------------------------------------------------------
