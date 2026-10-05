@@ -32,7 +32,7 @@ Before you search the web, read the framework docs vendored under `docs/vendor/`
 
 - Pest feature tests on in-memory SQLite (`phpunit.xml`). Use factories, not hand-built rows. Use `Http::fake`, `Queue::fake`, `Event::fake` and `Notification::fake` at the edges, and never make real network calls in tests.
 - Each change ships with tests that pin its behaviour. Each fix ships with a test that fails before the fix.
-- Before you push, run `./vendor/bin/pest`, `./vendor/bin/phpstan analyse` and `./vendor/bin/pint --dirty`. Report the real pass and fail counts in the PR.
+- Before you push, run `./vendor/bin/pest`, `./vendor/bin/phpstan analyse` and `./vendor/bin/pint --dirty`. Report the real pass and fail counts in the PR. CI runs `./vendor/bin/pint --test` over the whole repository, so an unformatted file fails `ci-gate`.
 - A fresh worktree needs `composer install` and `cp .env.example .env && php artisan key:generate`. Run `npm ci && npm run build` only when you change frontend assets.
 - Browser smoke tests live in `e2e/` (Playwright, #155). CI's `e2e` job serves the app against Postgres with `APP_ENV=testing`, seeds it with `E2eSeeder`, and fails on any console error or warning, any 4xx/5xx, or an overlay token in a request URL. A new page or overlay gets a spec there. Signing in uses `/_e2e/login/{user}`, which exists only when `APP_ENV=testing`. Running the suite locally starts a server, so it needs the `dev-stack` lock: `npx playwright install chromium`, then `npm run build && npm run test:e2e` against a seeded testing database.
 

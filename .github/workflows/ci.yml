@@ -56,6 +56,11 @@ jobs:
       - name: PHPStan
         run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
 
+      # The whole repository, not just the diff, so a violation cannot slip
+      # in and later turn someone else's `pint --dirty` into a reformat.
+      - name: Pint
+        run: ./vendor/bin/pint --test
+
   # Production runs on PostgreSQL 14, so the suite runs there as well. The DB_*
   # variables come from the job environment. phpunit.xml sets DB_CONNECTION
   # and DB_DATABASE without force="true", and PHPUnit only applies such an
