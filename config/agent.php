@@ -31,6 +31,10 @@ return [
     // How long the request log is kept (pruned daily).
     'log_days' => (int) env('AGENT_LOG_DAYS', 14),
 
+    // The most of each request and response body the log keeps, in KB
+    // (1 to 63). Longer bodies are cut and marked " [truncated]".
+    'log_body_kb' => (int) env('AGENT_LOG_BODY_KB', 16),
+
     // Agent tokens expire after this many days (agent:token --days overrides).
     'token_days' => (int) env('AGENT_TOKEN_DAYS', 30),
 

@@ -437,8 +437,8 @@ test('a huge body is logged truncated', function () {
 
     fresh()->withToken($token)->postJson('/api/agent/bus/actions', ['action' => str_repeat('x', 70_000)])->assertUnprocessable();
 
-    expect(strlen(AgentRequest::sole()->request))->toBeLessThan(AgentRequest::MAX_BODY + 20)
-        ->and(AgentRequest::sole()->request)->toEndWith('[truncated]');
+    expect(strlen(AgentRequest::sole()->request))->toBe(16 * 1024)
+        ->and(AgentRequest::sole()->request)->toEndWith(AgentRequest::TRUNCATED);
 });
 
 // --- The /agent page ----------------------------------------------------------
@@ -729,3 +729,48 @@ test('a CLI kill records its intermission cut as the CLI, never as a deleted use
         ->and($cut->details)->toMatchArray(['via' => 'cli', 'command' => 'bus:kill'])
         ->and($cut->actorName())->not->toBe('deleted user');
 });
+
+// #163: a runaway agent at the per-token limit for the whole retention
+// window must not be able to write gigabytes of log.
+test('stored bodies are capped at AGENT_LOG_BODY_KB, request and response alike', function () {
+    config(['agent.log_body_kb' => 2]);
+    [, $token] = agentWithToken();
+    $question = Question::factory()->create(['question' => str_repeat('q', 400)]);
+    fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/claim", ['reason' => str_repeat('r', 450)])->assertCreated();
+
+    fresh()->withToken($token)->postJson("/api/agent/questions/{$question->id}/answer", [
+        'answer' => str_repeat('a', 4000),
+        'moderation' => ['verdict' => 'allowed', 'notes' => str_repeat('n', 900)],
+    ])->assertCreated();
+
+    $logged = AgentRequest::where('route', 'agent.answer')->sole();
+    expect(strlen($logged->request))->toBe(2048)
+        ->and($logged->request)->toEndWith(AgentRequest::TRUNCATED)
+        ->and(strlen($logged->response))->toBe(2048)
+        ->and($logged->response)->toEndWith(AgentRequest::TRUNCATED)
+        ->and(AgentClaim::sole()->answer)->toBe(str_repeat('a', 4000));   // the stored answer is not cut
+});
+
+test('a body under the cap is kept whole, with no marker', function () {
+    [, $token] = agentWithToken();
+
+    fresh()->withToken($token)->postJson('/api/agent/expression', ['expression' => 'happy'])->assertOk();
+
+    expect(AgentRequest::sole()->request)->toBe('{"expression":"happy"}');
+});
+
+test('the cap never splits a multi-byte character', function () {
+    config(['agent.log_body_kb' => 1]);
+
+    $clipped = AgentRequest::clip(str_repeat('é', 2000));
+
+    expect(mb_check_encoding($clipped, 'UTF-8'))->toBeTrue()
+        ->and(strlen($clipped))->toBeLessThanOrEqual(1024)
+        ->and($clipped)->toEndWith(AgentRequest::TRUNCATED);
+});
+
+test('the body cap is held between 1 KB and 63 KB', function (int $configured, int $bytes) {
+    config(['agent.log_body_kb' => $configured]);
+
+    expect(AgentRequest::maxBodyBytes())->toBe($bytes);
+})->with([[16, 16384], [0, 1024], [-5, 1024], [63, 64512], [500, 64512]]);

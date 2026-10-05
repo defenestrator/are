@@ -30,8 +30,18 @@ class AgentRequest extends Model
 
     public const UPDATED_AT = null;
 
-    /** Longest body kept, in bytes. */
-    public const MAX_BODY = 65_535;
+    /** Marks a body cut to the cap. */
+    public const TRUNCATED = ' [truncated]';
+
+    /**
+     * The most of each body kept, in bytes: AGENT_LOG_BODY_KB (16), at most
+     * 63 so it fits a 64 KB text column on any database. At the per-token rate limit over
+     * the retention window, 16 KB keeps even a runaway agent's log bounded.
+     */
+    public static function maxBodyBytes(): int
+    {
+        return min(63, max(1, (int) config('agent.log_body_kb'))) * 1024;
+    }
 
     protected $fillable = [
         'agent_id',
@@ -71,7 +81,10 @@ class AgentRequest extends Model
             return null;
         }
 
-        return strlen($body) > self::MAX_BODY ? mb_strcut($body, 0, self::MAX_BODY).' [truncated]' : $body;
+        $max = self::maxBodyBytes();
+
+        // mb_strcut never splits a multi-byte character.
+        return strlen($body) > $max ? mb_strcut($body, 0, $max - strlen(self::TRUNCATED)).self::TRUNCATED : $body;
     }
 
     /**
