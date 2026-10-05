@@ -259,7 +259,7 @@ new class extends Component {
                     <li class="py-2 flex gap-3" wire:key="bus-ballot-{{ $ballot->id }}">
                         <span class="text-zinc-500 w-40 tabular-nums">{{ $ballot->created_at->toDateTimeString() }}</span>
                         <span class="w-32">{{ $ballot->user?->name ?? 'deleted user' }}</span>
-                        <span class="w-20 text-zinc-500">{{ $ballot->provider->label() }}</span>
+                        <span class="w-20 text-zinc-500">{{ $ballot->provider?->label() ?? 'Agent' }}</span>
                         <span class="flex-1">{{ trim(($ballot->option_number ? '#'.$ballot->option_number.' ' : '').$ballot->verb.' '.$ballot->argument) }}</span>
                         <span class="w-28 font-mono">{{ $ballot->status->value }}</span>
                     </li>

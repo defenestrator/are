@@ -30,6 +30,9 @@
                     <flux:navbar.item icon="puzzle-piece" href="{{ route('bus') }}" :current="request()->routeIs('bus')" wire:navigate>
                         {{ __('Chat game') }}
                     </flux:navbar.item>
+                    <flux:navbar.item icon="cpu-chip" href="{{ route('agent') }}" :current="request()->routeIs('agent')" wire:navigate>
+                        {{ __('Agent') }}
+                    </flux:navbar.item>
                 @endcan
                 {{-- Leads and attribution share one broadcaster-only rule: LeadPolicy::viewAny. --}}
                 @can('viewAny', App\Models\Lead::class)
@@ -126,6 +129,9 @@
                         </flux:navlist.item>
                         <flux:navlist.item icon="puzzle-piece" href="{{ route('bus') }}" wire:navigate>
                             {{ __('Chat game') }}
+                        </flux:navlist.item>
+                        <flux:navlist.item icon="cpu-chip" href="{{ route('agent') }}" wire:navigate>
+                            {{ __('Agent') }}
                         </flux:navlist.item>
                     @endcan
                     @can('viewAny', App\Models\Lead::class)

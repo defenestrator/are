@@ -13,11 +13,13 @@ use Illuminate\Database\Query\Grammars\PostgresGrammar;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    // Tokens here are moderators' kill-switch tokens (agent:kill-token, #10).
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable. Platform ids live on

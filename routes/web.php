@@ -59,6 +59,14 @@ Route::get('bus', function () {
 })
     ->middleware(['auth', 'not-banned', 'can:moderate'])
     ->name('bus');
+
+// VTuber agent bridge (#10): what the agent took and said, its request log,
+// and the kill switch. The agent's own API is in routes/api.php.
+Route::get('agent', function () {
+    return view('agent');
+})
+    ->middleware(['auth', 'not-banned', 'can:moderate'])
+    ->name('agent');
 Route::get('bus/{game}/actions', BusActionsController::class)
     ->where('game', '[a-z0-9_-]{1,64}')
     ->middleware('throttle:bus-adapter')

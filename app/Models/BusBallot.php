@@ -15,7 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $game
  * @property int|null $window_id
  * @property int|null $user_id
- * @property IdentityProvider $provider
+ * @property int|null $agent_id
+ * @property IdentityProvider|null $provider null when an agent cast it
  * @property string|null $verb
  * @property string|null $argument
  * @property string|null $action_key
@@ -29,6 +30,7 @@ class BusBallot extends Model
         'game',
         'window_id',
         'user_id',
+        'agent_id',
         'provider',
         'message_id',
         'verb',

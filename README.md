@@ -70,6 +70,23 @@ Chat drives games with `!do`. The first game is Chat Plays Orkestera: `!do task 
 - **Reverb:** subscribe to the public channel `bus.{game}` and listen for `bus.action` (an action to run), `bus.veto` (undo action `id`) and `bus.state` (paused, killed, mode, running). Payloads carry no user data. The channel also carries **`bus.tally`** for the on-stream overlay (below), which adapters can ignore.
 - **Polling**, until production has Reverb or for adapters that cannot hold a socket: `GET /bus/{game}/actions?after={cursor}` with `Authorization: Bearer <token>`. Issue the token with `php artisan bus:token {game}`. The response holds up to 50 actions after the cursor (vetoed ones left out), the next `cursor`, the ids `vetoed` in the last hour, and the bus state. While the kill switch is on it returns no actions. Replay is bounded: a poll without `after` starts from now, and a cursor older than `BUS_MAX_REPLAY_SECONDS` is clamped (`"clamped": true`), so a restarted adapter never runs old actions.
 
+## VTuber agent bridge (`/agent`, `/api/agent`)
+
+An Orkestera-driven VTuber can run the show while the hosts are away. It reads the queue, claims and answers questions, changes the avatar's expression and acts through the Chat Control Bus, all through `/api/agent` with a Sanctum token: `php artisan agent:token <name>`. Each token has abilities `agent:queue`, `agent:answer`, `agent:avatar` and `agent:bus`; pass `--ability` to limit one.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/agent/queue?limit=10` | The next questions, most votes first, leaving out ones another agent claimed or that were answered |
+| `POST /api/agent/questions/{id}/claim` `{"reason": "..."}` | Take a question and say why |
+| `POST /api/agent/questions/{id}/answer` `{"answer": "...", "moderation": {"verdict": "allowed\|flagged\|blocked", "categories": [], "model": "", "notes": ""}}` | Store what the agent said, with the verdict of the Orkestera workflow's output moderation (which runs before TTS) |
+| `POST /api/agent/expression` `{"expression": "happy"}` | Forward an expression to VTube Studio or Warudo (`AGENT_AVATAR_*`; only names in `config/agent.php` are accepted) |
+| `POST /api/agent/bus/actions` `{"action": "task Write the README"}` | Act through the Chat Control Bus exactly as `!do` from chat: one vote, and free text still waits for a moderator |
+
+- **The kill switch is a hard gate on every agent request.** It is the Chat Control Bus kill switch, read from the database on every request (nothing caches it), and again right before each effect. The first request after it is thrown gets `423 Locked`. Moderators can also stop only the agent on `/agent`; `AGENT_ENABLED=false` turns it off at deploy time.
+- **Throwing the kill switch** (from `/agent`, `/bus`, `bus:kill`, or `POST /api/kill-switch`) stops the agent and the chat game and **cuts the stream to the intermission scene**: `AGENT_OBS_DRIVER=obs_http` posts `SetCurrentProgramScene` to an obs-websocket HTTP bridge such as [obs-websocket-http](https://github.com/IRLToolkit/obs-websocket-http). With the default `log` driver OBS is not told. A failed cut is recorded and never undoes the kill. Only a broadcaster resets it, on `/bus`.
+- **Stream Deck button:** `php artisan agent:kill-token <moderator user id>` issues a token for `POST /api/kill-switch`. It can throw the switch, never reset it.
+- **Request log:** every request an agent token makes, refused ones included, is stored with its body and ARE's response (capped at 64 KB; headers and so tokens never). Moderators read it on `/agent`, next to what the agent claimed, why, and what it said with its verdict.
+
 ## Twitch setup
 
 1. In the Twitch developer console, register **both** callback URLs: `TWITCH_REDIRECT_URL` (viewer login) and `TWITCH_BROADCASTER_REDIRECT_URL` (channel connection).

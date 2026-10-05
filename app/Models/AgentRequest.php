@@ -1,0 +1,70 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
+
+/**
+ * One request to /api/agent and ARE's response, refusals included. Bodies
+ * are stored as sent and answered, capped in length; headers (and so the
+ * bearer token) are never stored.
+ *
+ * @property int $id
+ * @property int|null $agent_id
+ * @property string $method
+ * @property string $path
+ * @property int $status
+ * @property string|null $refused
+ * @property string|null $request
+ * @property string|null $response
+ * @property int $duration_ms
+ * @property Carbon $created_at
+ */
+class AgentRequest extends Model
+{
+    public const UPDATED_AT = null;
+
+    /** Longest body kept, in bytes. */
+    public const MAX_BODY = 65_535;
+
+    protected $fillable = [
+        'agent_id',
+        'token_id',
+        'method',
+        'path',
+        'route',
+        'status',
+        'refused',
+        'request',
+        'response',
+        'duration_ms',
+        'ip',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'status' => 'integer',
+            'duration_ms' => 'integer',
+        ];
+    }
+
+    public static function clip(?string $body): ?string
+    {
+        if ($body === null || $body === '') {
+            return null;
+        }
+
+        return strlen($body) > self::MAX_BODY ? mb_strcut($body, 0, self::MAX_BODY).' [truncated]' : $body;
+    }
+
+    /**
+     * @return BelongsTo<Agent, $this>
+     */
+    public function agent(): BelongsTo
+    {
+        return $this->belongsTo(Agent::class);
+    }
+}

@@ -64,6 +64,12 @@ class AppServiceProvider extends ServiceProvider
         // stops loops; which hits count as clicks is ShortLink::recordClick's job.
         RateLimiter::for('short-links', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
 
+        // The VTuber agent (#10), per token; and the kill-switch endpoint,
+        // generous enough that a panicked double-press never fails.
+        RateLimiter::for('agent', fn (Request $request) => Limit::perMinute((int) config('agent.requests_per_minute'))
+            ->by('agent:'.($request->user()?->currentAccessToken()?->getKey() ?? $request->ip())));
+        RateLimiter::for('kill-switch', fn (Request $request) => Limit::perMinute(30)->by((string) $request->ip()));
+
         // Game adapters polling the Chat Control Bus: once a second is plenty.
         RateLimiter::for('bus-adapter', fn (Request $request) => Limit::perMinute(120)
             ->by($request->ip().'|'.(string) $request->route('game')));

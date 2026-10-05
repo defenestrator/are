@@ -1,22 +1,43 @@
 <?php
 
+use App\Http\Middleware\EnsureAgent;
+use App\Http\Middleware\EnsureAgentMayAct;
+use App\Http\Middleware\EnsureNotBanned;
+use App\Http\Middleware\EnsureOverlayToken;
+use App\Http\Middleware\LogAgentRequest;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
-            'not-banned' => \App\Http\Middleware\EnsureNotBanned::class,
-            'overlay.token' => \App\Http\Middleware\EnsureOverlayToken::class,
+            'not-banned' => EnsureNotBanned::class,
+            'overlay.token' => EnsureOverlayToken::class,
+            'agent.log' => LogAgentRequest::class,
+            'agent.only' => EnsureAgent::class,
+            'agent.gate' => EnsureAgentMayAct::class,
+            'abilities' => CheckAbilities::class,
+            'ability' => CheckForAnyAbility::class,
         ]);
+
+        // The agent request log (#10) wraps authentication, so refused
+        // requests (bad tokens included) are logged too.
+        $middleware->prependToPriorityList(
+            before: AuthenticatesRequests::class,
+            prepend: LogAgentRequest::class,
+        );
 
         // Twitch signs EventSub webhooks with HMAC; there is no CSRF token to check.
         // The overlay token exchange carries its own credential (the overlay
@@ -27,5 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         Integration::handles($exceptions);
-    })->create();
 
+        // The agent API (#10) answers in JSON whatever the client accepts.
+        $exceptions->shouldRenderJsonWhen(fn ($request) => $request->is('api/*') || $request->expectsJson());
+    })->create();

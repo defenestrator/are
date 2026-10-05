@@ -5,6 +5,7 @@ namespace App\ControlBus;
 use App\Events\BusActionPublished;
 use App\Events\BusActionVetoed;
 use App\Events\BusStateChanged;
+use App\Events\KillSwitchThrown;
 use App\IdentityProvider;
 use App\Jobs\ResolveBusWindow;
 use App\Models\BusApproval;
@@ -60,11 +61,16 @@ class ControlBus
     /**
      * Record a chat action. $text is everything after "!do": an action such
      * as "task Write the README", or "#2" to back option 2 of the open window.
+     *
+     * An agent (#10) acts through its service user, with no chat platform
+     * ($provider null) and its own id: it gets one vote, like a person, and
+     * its free text waits for a moderator like anyone's.
      */
-    public function submit(User $user, IdentityProvider $provider, string $messageId, string $text): Submission
+    public function submit(User $user, ?IdentityProvider $provider, string $messageId, string $text, ?int $agentId = null): Submission
     {
         $base = [
             'user_id' => $user->id,
+            'agent_id' => $agentId,
             'provider' => $provider,
             'message_id' => $messageId !== '' ? $messageId : null,
             'subscriber' => $user->getHighestSubscription()->isSubscribed(),
@@ -641,6 +647,12 @@ class ControlBus
 
             foreach (array_keys(Game::all()) as $key) {
                 $this->announceState($key);
+            }
+
+            // After commit: the VTuber agent is refused from here on (it
+            // reads the same switch), and CutToIntermission cuts the scene.
+            if ($killed) {
+                KillSwitchThrown::dispatch($by?->id, $reason);
             }
         });
     }

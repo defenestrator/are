@@ -421,7 +421,7 @@ test('the kill switch stops every publish, and only a broadcaster can reset it',
     busSay(User::factory()->create(), '!do say Write the README');
 
     expect(BusPublication::count())->toBe(1)
-        ->and(ModerationAction::orderBy('id')->pluck('action')->all())->toBe(['bus.game', 'bus.mode', 'bus.killed', 'bus.restored'])
+        ->and(ModerationAction::orderBy('id')->pluck('action')->all())->toBe(['bus.game', 'bus.mode', 'bus.killed', 'bus.intermission', 'bus.restored'])
         ->and(ModerationAction::where('action', 'bus.killed')->first()->details)->toBe(['reason' => 'testing', 'voided' => ['publications' => 0, 'approvals' => 0, 'windows' => 0]]);
 });
 
