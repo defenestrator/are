@@ -6,4 +6,5 @@ maintenance.php
 routes.php
 routes.scanned.php
 schedule-*
+scheduler-heartbeat
 services.json

@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 use Livewire\Volt\Volt;
@@ -773,4 +774,12 @@ test('the overall verdict is the worst check', function () {
     expect(ReadinessChecks::worst(['a' => [Check::ok('x', 'y'), Check::warn('x', 'y', null)]]))->toBe(Status::Warn)
         ->and(ReadinessChecks::worst(['a' => [Check::ok('x', 'y')], 'b' => [Check::fail('x', 'y', null)]]))->toBe(Status::Fail)
         ->and(ReadinessChecks::worst(['a' => [Check::skip('x', 'y'), Check::ok('x', 'y')]]))->toBe(Status::Ok);
+});
+
+test('the scheduler heartbeat file is gitignored, so it never shows as untracked in a checkout', function () {
+    // beforeEach points storage at a scratch directory; ask git about the
+    // same path inside this checkout's real storage/.
+    $relative = 'storage/'.Str::after(SchedulerHeartbeat::path(), storage_path().'/');
+
+    expect(Process::path(base_path())->run(['git', 'check-ignore', '-q', $relative])->successful())->toBeTrue();
 });
