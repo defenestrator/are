@@ -70,10 +70,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # OPcache as production runs it (#188). artisan serve uses PHP's
+      # built-in server, which is the CLI SAPI, where OPcache is off unless
+      # opcache.enable_cli is set. Without it every request recompiled the
+      # framework. validate_timestamps=0 matches production; nothing changes
+      # on disk once the server starts.
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: pdo_pgsql, pgsql, mbstring, intl
+          extensions: pdo_pgsql, pgsql, mbstring, intl, opcache
+          ini-values: opcache.enable=1, opcache.enable_cli=1, opcache.validate_timestamps=0, opcache.memory_consumption=256, opcache.interned_strings_buffer=16, opcache.max_accelerated_files=20000
           coverage: none
 
       - name: Cache Composer downloads
@@ -134,6 +140,27 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8124/up > /dev/null && exit 0; sleep 1; done
           echo "The app did not come up"; cat storage/logs/serve.log; exit 1
 
+      # Prove the served app really runs with OPcache. The probe is a file in
+      # public/ on this runner only, never committed; it is deleted after the run.
+      - name: Check OPcache in the served app
+        run: |
+          cat > public/__opcache-probe.php <<'PHP'
+          <?php
+          $s = function_exists('opcache_get_status') ? opcache_get_status(false) : false;
+          header('Content-Type: application/json');
+          echo json_encode([
+              'enabled' => (bool) ($s['opcache_enabled'] ?? false),
+              'validate_timestamps' => (bool) ini_get('opcache.validate_timestamps'),
+              'cached_scripts' => $s['opcache_statistics']['num_cached_scripts'] ?? 0,
+              'hit_rate' => round($s['opcache_statistics']['opcache_hit_rate'] ?? 0, 2),
+          ]);
+          PHP
+          curl -fsS http://127.0.0.1:8124/up > /dev/null
+          probe=$(curl -fsS http://127.0.0.1:8124/__opcache-probe.php)
+          echo "OPcache before the run: $probe"
+          echo "$probe" | jq -e '.enabled == true and .validate_timestamps == false' > /dev/null \
+            || { echo "::error::OPcache is not enabled in the served app"; exit 1; }
+
       # Thresholds are informational for now (#176): a crossed threshold
       # (k6 exit code 99) is reported as a warning, not a failed job, because
       # these numbers are the baseline #173, #179 and #180 set out to improve.
@@ -162,6 +189,15 @@ jobs:
             exit 0
           fi
           exit "$code"
+
+      - name: Record OPcache after the run
+        if: always()
+        run: |
+          if [ -f public/__opcache-probe.php ]; then
+            probe=$(curl -fsS http://127.0.0.1:8124/__opcache-probe.php || echo '{}')
+            rm -f public/__opcache-probe.php
+            printf '\nOPcache in the served app after the run: %s\n' "$probe" >> loadtest-summary.md
+          fi
 
       - name: Time how long the worker takes to drain the chat burst
         if: always()
