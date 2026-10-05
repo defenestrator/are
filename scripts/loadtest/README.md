@@ -2,7 +2,7 @@
 
 `are.js` is a [k6](https://k6.io/) script. **Run it from a machine that is not the server under test.** A load generator on the app box competes with PHP-FPM for CPU, so its numbers say little.
 
-It reports p50, p95 and p99 latency and the error rate for each scenario, on stdout and in `loadtest-summary.md`. Thresholds fail the run with exit code 99.
+It reports p50, p95 and p99 latency and the error rate for each scenario, plus a breakdown by request (first page loads versus polls), on stdout and in `loadtest-summary.md`. Thresholds fail the run with exit code 99. In CI that is reported as a warning for now (see below).
 
 ## Scenarios
 
@@ -46,9 +46,13 @@ Copy `.fixtures.json` to the machine that runs k6. It holds that instance's over
 - It uses `artisan serve` with 8 workers, a Postgres service and a `queue:work` worker on `broadcasts,default`.
 - Start it from the Actions tab (**Run workflow**), where duration, viewers, overlay sources and rates are inputs. It also runs on pull requests that change the load test.
 - It is not in `ci-gate`.
-- The run's summary has the table, plus how long the worker took to drain the chat burst.
+- The run's summary has the tables, plus how long the worker took to drain the chat burst.
+- **Thresholds are informational for now.** A crossed threshold (k6 exit 99) makes the job warn, not fail, while #173, #179 and #180 work on the costs it measures. The thresholds are unchanged. A script error or an aborted run still fails the job.
+- **All `vote` viewers and overlay sources start at once,** as when a link drops in chat. Their first page loads (`/vote` is the costliest) queue behind each other, and most of the p95/p99 tail comes from that opening burst. The breakdown table shows it.
 
-`php artisan serve` is not PHP-FPM, and the runner is shared. CI numbers compare CI runs with each other; they are not production numbers.
+`php artisan serve` is not PHP-FPM, the runner is shared, and in CI k6 runs on the same runner as the app: exactly the compromise this script exists to avoid elsewhere. CI numbers compare CI runs with each other; they are not production numbers. They also vary from run to run on a busy runner, so compare medians of a few runs, not a single one.
+
+Each virtual user is one browser, so its cookies (its session) last across iterations (`noCookiesReset`). Without that, k6 empties the jar every iteration, and every poll after the first gets a 419.
 
 ## Production (profile `production-safe`): read-only, low rate
 
