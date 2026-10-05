@@ -76,13 +76,15 @@ class ClipMarker implements ModeratorChatCommand
 
         $marker = null;
         $reason = 'Twitch did not return the marker.';
+        $twitchSays = '';
         try {
             $response = $this->helix->createMarker($channelId, $description);
             if ($response->successful()) {
                 $marker = $response->json('data.0');
                 $reason = is_array($marker) && ! empty($marker['id']) ? null : $reason;
             } else {
-                $reason = $this->markerFailure($response->status(), ClipHelix::message($response));
+                $reason = $this->markerFailure($response->status());
+                $twitchSays = ClipHelix::message($response);
             }
         } catch (ConnectionException) {
             $reason = 'Could not reach Twitch to add a marker. Try !clip again.';
@@ -101,9 +103,10 @@ class ClipMarker implements ModeratorChatCommand
                 'description' => $description,
                 'created_by_user_id' => $user->id,
                 'status' => StreamMarkerStatus::MarkerFailed,
-                'error' => $reason,
+                'error' => $twitchSays !== '' ? $reason.' Twitch said: '.$twitchSays : $reason,
             ]);
 
+            // A fixed template (#132): Twitch's own words go only to /clips.
             return ChatCommandResult::rejected($reason);
         }
 
@@ -120,7 +123,9 @@ class ClipMarker implements ModeratorChatCommand
         CreateClipForMarker::dispatch($streamMarker->id)
             ->delay(now()->addSeconds((int) config('clips.create_delay_seconds')));
 
-        return ChatCommandResult::done('Marked at '.$streamMarker->position().'. Clipping the minute around it.');
+        // A fixed template plus the position (#132). Kept short, because
+        // PostChatReply refuses a reply containing the mod's note as a word.
+        return ChatCommandResult::done('Marked at '.$streamMarker->position().'.');
     }
 
     /**
@@ -138,16 +143,14 @@ class ClipMarker implements ModeratorChatCommand
     /**
      * What to tell the mod when Twitch refuses the marker.
      */
-    private function markerFailure(int $status, string $twitchSays): string
+    private function markerFailure(int $status): string
     {
-        $reason = match (true) {
+        return match (true) {
             $status === 404 => 'Twitch would not add a marker: the channel must be live, not a rerun or premiere, with "Store past broadcasts" turned on.',
             $status === 429 => 'Twitch is rate-limiting this channel. Try !clip again in a minute.',
             $status === 401, $status === 403 => 'Twitch refused the broadcaster\'s token for markers. The broadcaster needs to reconnect at /twitch/broadcaster/connect.',
             $status === 400 => 'Twitch rejected the marker request.',
             default => 'Twitch could not add a marker right now (HTTP '.$status.').',
         };
-
-        return $twitchSays !== '' ? $reason.' Twitch said: '.$twitchSays : $reason;
     }
 }

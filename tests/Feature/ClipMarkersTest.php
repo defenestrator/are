@@ -230,7 +230,7 @@ test('!clip answers in chat: the position to a mod, a refusal to a viewer', func
     runClip('!clip');
     runClip('!clip', chatterId: '4145994');
 
-    Queue::assertPushed(PostChatReply::class, fn (PostChatReply $job) => $job->channelId === '1000' && $job->reply === 'Marked at 0:02:05. Clipping the minute around it.');
+    Queue::assertPushed(PostChatReply::class, fn (PostChatReply $job) => $job->channelId === '1000' && $job->reply === 'Marked at 0:02:05.');
     Queue::assertPushed(PostChatReply::class, fn (PostChatReply $job) => $job->reply === 'Only moderators of this channel can use !clip.');
 });
 
@@ -264,6 +264,23 @@ test('the broadcaster of A can !clip A, and only A', function () {
         ->and(runClip('!clip theirs', chatterId: '1000', channel: '2000')->status)->toBe(ChatCommandStatus::Rejected)
         ->and(StreamMarker::sole()->broadcaster_id)->toBe('1000');
 });
+
+test('!clip replies are fixed templates that never repeat the note or the name (#132)', function (string $note) {
+    clipBroadcasterToken();
+    clipModerator();
+    Queue::fake([CreateClipForMarker::class, PostChatReply::class]);
+    fakeMarker(position: 125);
+
+    $result = runClip('!clip '.$note, name: 'ModName');
+
+    expect($result->reply)->toBe('Marked at 0:02:05.')
+        ->and(PostChatReply::echoesChatter($result->reply, 'ModName', $note))->toBeFalse();
+    Queue::assertPushed(PostChatReply::class, 1);
+})->with([
+    'a phrase' => ['that drop was huge'],
+    'one word' => ['minute'],
+    'a link' => ['visit evil.example now'],
+]);
 
 // --- !clip: rate limit ---------------------------------------------------------
 
@@ -305,7 +322,8 @@ test('a marker Twitch refuses because VOD storage is off or the channel is offli
     $result = runClip('!clip nope');
 
     expect($result->status)->toBe(ChatCommandStatus::Rejected)
-        ->and($result->reply)->toContain('Store past broadcasts');
+        ->and($result->reply)->toContain('Store past broadcasts')
+        ->and($result->reply)->not->toContain('Twitch said');
 
     $marker = StreamMarker::sole();
     expect($marker->status)->toBe(StreamMarkerStatus::MarkerFailed)
