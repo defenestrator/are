@@ -32,6 +32,13 @@ use Throwable;
  */
 class ReadinessChecks
 {
+    /**
+     * The queues a worker must cover, in priority order. Vote updates, topic
+     * changes and Chat Control Bus windows ride `broadcasts`; everything else
+     * is `default`. A worker on `default` alone leaves the live views frozen.
+     */
+    public const WORKER_QUEUES = 'broadcasts,default';
+
     /** A ready database job older than this means no worker is draining the queue. */
     public const QUEUE_STALE_SECONDS = 120;
 
@@ -62,6 +69,7 @@ class ReadinessChecks
             'Clips' => $this->guard('Clips', fn () => [ClipStorage::readinessCheck()]),
             'VTuber agent' => $this->guard('VTuber agent', fn () => [AgentTokens::readinessCheck()]),
             'Deploy' => $this->guard('Deploy', fn () => $this->deploy()),
+            'Error reporting' => $this->guard('Error reporting', fn () => [$this->sentry()]),
         ];
     }
 
@@ -240,8 +248,8 @@ class ReadinessChecks
                 $name,
                 "{$count} job(s) waiting; the oldest for ".$this->ago($age).'. No worker is draining the database queue.',
                 $connection === 'database'
-                    ? 'Add a Forge daemon: php artisan queue:work database --queue=default (or move QUEUE_CONNECTION to redis and run Horizon).'
-                    : "QUEUE_CONNECTION is {$connection}, so these were left behind. Drain them once: php artisan queue:work database --stop-when-empty.",
+                    ? 'Add a Forge daemon: php artisan queue:work database --queue='.self::WORKER_QUEUES.' (or move QUEUE_CONNECTION to redis and run Horizon).'
+                    : "QUEUE_CONNECTION is {$connection}, so these were left behind. Drain them once: php artisan queue:work database --queue=".self::WORKER_QUEUES.' --stop-when-empty.',
                 $byQueue,
             );
         } else {
@@ -685,6 +693,19 @@ class ReadinessChecks
     private function resolvePath(string $path, string $relativeTo): string
     {
         return str_starts_with($path, '/') ? $path : $relativeTo.'/'.$path;
+    }
+
+    // Error reporting ---------------------------------------------------------
+
+    /**
+     * Whether errors reach Sentry. config/sentry.php reads SENTRY_LARAVEL_DSN,
+     * falling back to SENTRY_DSN. The DSN itself is never shown.
+     */
+    public function sentry(): Check
+    {
+        return filled(config('sentry.dsn'))
+            ? Check::ok('Sentry', 'SENTRY_LARAVEL_DSN is set, so errors are reported to Sentry.')
+            : Check::warn('Sentry', 'SENTRY_LARAVEL_DSN is not set, so errors only reach the log on the server.', 'Copy the DSN from the Sentry project\'s Client Keys page into SENTRY_LARAVEL_DSN, then php artisan optimize.');
     }
 
     // -------------------------------------------------------------------------

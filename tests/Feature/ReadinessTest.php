@@ -163,6 +163,7 @@ test('no secret value is ever shown', function () {
         'are.leads.webhook_url' => 'https://hooks.example/'.READY_SECRET,
         'services.youtube.oauth.client_id' => READY_SECRET,
         'services.youtube.oauth.client_secret' => READY_SECRET,
+        'sentry.dsn' => 'https://'.READY_SECRET.'@o1.ingest.sentry.io/1',
         'services.youtube.oauth.redirect' => 'https://are.example/youtube/broadcaster/callback',
     ]);
     $busToken = BusAdapterToken::issue((string) array_key_first((array) config('bus.games')));
@@ -303,7 +304,7 @@ test('an old database job means no worker is draining the queue', function () {
 
     expect($check->status)->toBe(Status::Fail)
         ->and($check->summary)->toContain('No worker is draining the database queue')
-        ->and($check->fix)->toContain('queue:work database')
+        ->and($check->fix)->toContain('queue:work database --queue=broadcasts,default')
         ->and($check->details)->toContain('default: 1', 'broadcasts: 1');
 });
 
@@ -325,8 +326,36 @@ test('jobs stranded in the database after a move to Redis are red, and a missing
     $horizon->shouldReceive('all')->andReturn([]);
     $this->app->instance(MasterSupervisorRepository::class, $horizon);
 
-    expect(readinessCheck('Database queue backlog')->fix)->toContain('--stop-when-empty')
+    expect(readinessCheck('Database queue backlog')->fix)->toContain('--queue=broadcasts,default --stop-when-empty')
         ->and(readinessCheck('Horizon')->status)->toBe(Status::Fail);
+});
+
+test('the worker queue list covers every queue a job or Horizon uses', function () {
+    $covered = explode(',', ReadinessChecks::WORKER_QUEUES);
+
+    // Queues named in code: ->onQueue('x') and broadcastQueue() returning 'x'.
+    $named = collect(File::allFiles(app_path()))
+        ->flatMap(function ($file) {
+            $code = $file->getContents();
+            preg_match_all("/onQueue\\(\\s*'([^']+)'/", $code, $onQueue);
+            preg_match_all("/function broadcastQueue\\(\\)[^{]*\\{\\s*return '([^']+)'/", $code, $broadcast);
+
+            return array_merge($onQueue[1], $broadcast[1]);
+        })
+        ->push('default')
+        ->unique();
+
+    $horizon = collect(config('horizon.defaults'))->flatMap(fn ($supervisor) => (array) ($supervisor['queue'] ?? []))->unique();
+
+    expect($named)->toContain('broadcasts')
+        ->and($named->diff($covered)->all())->toBe([])
+        ->and($horizon->diff($covered)->all())->toBe([])
+        ->and($covered[0])->toBe('broadcasts');
+});
+
+test('the README and the dev command name the same worker queues', function () {
+    expect(File::get(base_path('README.md')))->toContain('--queue='.ReadinessChecks::WORKER_QUEUES)
+        ->and(File::get(base_path('composer.json')))->toContain('--queue='.ReadinessChecks::WORKER_QUEUES);
 });
 
 test('failed jobs in the last day are amber', function () {
@@ -659,6 +688,24 @@ test('the deployed commit is read from .git, in a plain clone and a worktree', f
     File::put($clone.'/.git/packed-refs', "# pack-refs\n{$sha} refs/heads/main\n");
     expect(app(ReadinessChecks::class)->gitHead($clone)[0])->toBe($sha)
         ->and(app(ReadinessChecks::class)->gitHead($this->scratch.'/nowhere'))->toBe([null, null]);
+});
+
+// Error reporting -------------------------------------------------------------------------
+
+test('Sentry is amber until SENTRY_LARAVEL_DSN is set, and the DSN is never shown', function () {
+    config(['sentry.dsn' => null]);
+    $check = readinessCheck('Sentry');
+    expect($check->status)->toBe(Status::Warn)->and($check->fix)->toContain('SENTRY_LARAVEL_DSN');
+
+    config(['sentry.dsn' => 'https://public-key@o1.ingest.sentry.io/42']);
+    $check = readinessCheck('Sentry');
+    expect($check->status)->toBe(Status::Ok)
+        ->and(json_encode($check))->not->toContain('public-key');
+});
+
+test('.env.example lists SENTRY_LARAVEL_DSN, which config/sentry.php reads', function () {
+    expect(File::get(base_path('.env.example')))->toMatch('/^SENTRY_LARAVEL_DSN=$/m')
+        ->and(File::get(config_path('sentry.php')))->toContain("env('SENTRY_LARAVEL_DSN'");
 });
 
 test('the overall verdict is the worst check', function () {
