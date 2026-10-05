@@ -46,12 +46,6 @@ return [
         'eventsub_callback' => env('TWITCH_EVENTSUB_CALLBACK_URL'),
     ],
 
-    'facebook' => [
-        'client_id' => env('FACEBOOK_CLIENT_ID'),
-        'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
-        'redirect' => env('FACEBOOK_REDIRECT_URL'),
-    ],
-
     // YouTube Live Chat ingestion (#24). Read with an API key; see spike #23.
     'youtube' => [
         'api_key' => env('YOUTUBE_API_KEY'),

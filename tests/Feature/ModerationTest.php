@@ -37,9 +37,9 @@ function vote(Question $question, User $user, int $count = 1): void
     DB::table('question_votes')->insert(['question_id' => $question->id, 'user_id' => $user->id, 'count' => $count]);
 }
 
-test('a local ban blocks a Facebook-only user and is logged', function () {
+test('a local ban blocks a YouTube-only user and is logged', function () {
     $mod = moderator();
-    $target = User::factory()->facebook('fb-9')->create(['name' => 'Facebook Troll']);
+    $target = User::factory()->youtube('UC-9')->create(['name' => 'YouTube Troll']);
 
     Moderation::ban($mod, $target, null, 'spam');
 

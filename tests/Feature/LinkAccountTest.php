@@ -102,7 +102,7 @@ test('an unconfirmed link attaches nothing', function () {
         ->and(LinkCode::pending()->sole()->pending_provider_user_id)->toBe('UC-viewer');
 
     // Until it is confirmed, the chatter's !vote is not the owner's.
-    $question = Question::factory()->for(User::factory()->facebook())->create();
+    $question = Question::factory()->for(User::factory()->youtube())->create();
     expect(linkChat("!vote {$question->id}", 'UC-viewer')->status)->toBe(ChatCommandStatus::Unlinked)
         ->and($question->voteCount())->toBe(0);
 });
@@ -142,7 +142,7 @@ test('confirmation attaches the channel, which then votes as the owner', functio
         ->and(User::count())->toBe(1);
 
     // One person, one vote: !vote from YouTube and from Twitch count once.
-    $question = Question::factory()->for(User::factory()->facebook())->create();
+    $question = Question::factory()->for(User::factory()->youtube())->create();
     linkChat("!vote {$question->id}", 'UC-viewer');
     linkChat("!vote {$question->id}", '42', IdentityProvider::Twitch);
     expect($question->voteCount())->toBe(1);
@@ -357,7 +357,7 @@ test('a linked chatter who is banned is stopped by the registry before !link run
 // Twitch chat
 
 test('Twitch chat can link a Twitch account the same way, once confirmed', function () {
-    $user = User::factory()->facebook('fb-1')->create();
+    $user = User::factory()->youtube('UC-1')->create();
     $code = LinkCode::issueFor($user);
 
     (new HandleChatMessage((string) Str::uuid(), now()->toIso8601ZuluString(), [

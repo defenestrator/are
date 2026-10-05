@@ -151,7 +151,7 @@ test('a sign-in where every lookup answers queues nothing', function () {
 test('linking Twitch while Helix is down still links, and queues a retry', function () {
     Queue::fake();
     Http::fake(['api.twitch.tv/*' => Http::failedConnection()]);
-    $user = User::factory()->facebook('fb-1')->create();
+    $user = User::factory()->youtube('UC-1')->create();
     twitchLoginReturns('42');
 
     $this->actingAs($user)->withSession(['identities.linking' => 'twitch'])->get('/twitch/auth')
@@ -185,10 +185,10 @@ test('the retry job throws to be retried while a lookup still fails', function (
 
 test('the retry job does nothing without a Twitch identity or a stored token', function () {
     Http::fake();
-    $facebookOnly = User::factory()->facebook('fb-1')->create();
+    $youtubeOnly = User::factory()->youtube('UC-1')->create();
     $noToken = User::factory()->twitch('42')->create();
 
-    (new RefreshTwitchSubscriptions($facebookOnly->id))->handle();
+    (new RefreshTwitchSubscriptions($youtubeOnly->id))->handle();
     (new RefreshTwitchSubscriptions($noToken->id))->handle();
     (new RefreshTwitchSubscriptions(999999))->handle();
 

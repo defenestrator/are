@@ -2,6 +2,7 @@
 
 use App\Events\QuestionSubmitted;
 use App\Exceptions\QuestionRejected;
+use App\IdentityProvider;
 use App\Models\Question;
 use App\Models\Topic;
 use App\Models\TwitchBan;
@@ -240,10 +241,10 @@ test('a crafted delete naming a closed or made-up question does nothing', functi
     expect(Question::find($archived->id))->not->toBeNull();
 });
 
-test('a Facebook-only user can be created without Twitch fields', function () {
-    $user = User::factory()->facebook('fb-1')->create(['name' => 'Facebook Person', 'email' => 'fb@example.com']);
+test('a YouTube-only user can be created without Twitch fields', function () {
+    $user = User::factory()->youtube('UC-1')->create(['name' => 'YouTube Person', 'email' => 'yt@example.com']);
 
-    expect($user->twitch_id)->toBeNull()->and($user->facebook_id)->toBe('fb-1');
+    expect($user->twitch_id)->toBeNull()->and($user->identityFor(IdentityProvider::YouTube)->provider_user_id)->toBe('UC-1');
 
     expect($user->isBanned())->toBeFalse()
         ->and($user->isAdminUser())->toBeFalse()

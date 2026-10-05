@@ -16,7 +16,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
-use Laravel\Socialite\Two\FacebookProvider;
 use Laravel\Socialite\Two\InvalidStateException;
 use Laravel\Socialite\Two\TwitchProvider;
 use Laravel\Socialite\Two\User as SocialiteUser;
@@ -45,8 +44,7 @@ function providerAccount(string $id, string $name = 'Viewer', ?string $token = '
  */
 function fakeProviderAccount(string $driver, SocialiteUser $account): void
 {
-    $class = $driver === 'facebook' ? FacebookProvider::class : TwitchProvider::class;
-    $provider = Mockery::mock($class);
+    $provider = Mockery::mock(TwitchProvider::class);
     $provider->shouldReceive('user')->andReturn($account);
     $provider->shouldReceive('scopes')->andReturnSelf();
     $provider->shouldReceive('redirect')->andReturn(redirect("https://{$driver}.example/oauth"));
@@ -91,77 +89,64 @@ test('signing in again finds the same user and refreshes the identity', function
         ->and($user->identities()->sole()->access_token)->toBe('new-token');
 });
 
-test('Facebook sign-in creates a user through an identity and keeps no token', function () {
-    fakeProviderAccount('facebook', providerAccount('fb-7', 'Face Person'));
-
-    $this->get('/auth/facebook/callback')->assertRedirect('/vote');
-
-    $identity = Identity::sole();
-    expect($identity->provider)->toBe(IdentityProvider::Facebook)
-        ->and($identity->provider_user_id)->toBe('fb-7')
-        ->and($identity->access_token)->toBeNull()
-        ->and($identity->user->facebook_id)->toBe('fb-7')
-        ->and($identity->user->twitch_id)->toBeNull();
-});
-
 test('signing in with a linked account reaches the same user', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-7')->create();
-    fakeProviderAccount('facebook', providerAccount('fb-7'));
+    $user = User::factory()->youtube('UC-7')->twitch('42')->create();
+    fakeProviderAccount('twitch', providerAccount('42'));
 
-    $this->get('/auth/facebook/callback')->assertRedirect('/vote');
+    $this->get('/twitch/auth')->assertRedirect('/vote');
 
     $this->assertAuthenticatedAs($user);
     expect(User::count())->toBe(1);
 });
 
 test('a failed provider callback does not sign anyone in', function () {
-    $provider = Mockery::mock(FacebookProvider::class);
+    $provider = Mockery::mock(TwitchProvider::class);
     $provider->shouldReceive('user')->andThrow(new InvalidStateException);
-    Socialite::shouldReceive('driver')->with('facebook')->andReturn($provider);
+    Socialite::shouldReceive('driver')->with('twitch')->andReturn($provider);
 
-    $this->get('/auth/facebook/callback')->assertRedirect('/?failed_facebook_login=1');
+    $this->get('/twitch/auth')->assertRedirect('/?failed_twitch_login=1');
     $this->assertGuest();
 });
 
 // Linking from Settings
 
 test('a signed-in user can link another provider from Settings', function () {
-    $user = User::factory()->twitch('42')->create();
-    fakeProviderAccount('facebook', providerAccount('fb-7', 'Face Person', null));
+    $user = User::factory()->youtube('UC-1')->create();
+    fakeProviderAccount('twitch', providerAccount('42', 'Kale Fan'));
 
-    $this->actingAs($user)->get(route('identities.link', 'facebook'))
-        ->assertRedirect('https://facebook.example/oauth')
-        ->assertSessionHas('identities.linking', 'facebook');
+    $this->actingAs($user)->get(route('identities.link', 'twitch'))
+        ->assertRedirect('https://twitch.example/oauth')
+        ->assertSessionHas('identities.linking', 'twitch');
 
-    $this->get('/auth/facebook/callback')
+    $this->get('/twitch/auth')
         ->assertRedirect(route('settings'))
-        ->assertSessionHas('identity_status', 'Facebook account linked.');
+        ->assertSessionHas('identity_status', 'Twitch account linked.');
 
     expect(User::count())->toBe(1)
-        ->and($user->fresh()->facebook_id)->toBe('fb-7')
+        ->and($user->fresh()->twitch_id)->toBe('42')
         ->and($user->identities()->count())->toBe(2);
 });
 
 test('the callback does nothing for a signed-in user who did not ask to link', function () {
-    $user = User::factory()->twitch('42')->create();
-    fakeProviderAccount('facebook', providerAccount('fb-7'));
+    $user = User::factory()->youtube('UC-1')->create();
+    fakeProviderAccount('twitch', providerAccount('42'));
 
-    $this->actingAs($user)->get('/auth/facebook/callback')->assertRedirect('/vote');
+    $this->actingAs($user)->get('/twitch/auth')->assertRedirect('/vote');
 
-    expect(Identity::where('provider', 'facebook')->exists())->toBeFalse();
+    expect(Identity::where('provider', 'twitch')->exists())->toBeFalse();
 });
 
 test('linking an account another user owns fails clearly and merges nothing', function () {
-    $owner = User::factory()->facebook('fb-7')->create();
-    $user = User::factory()->twitch('42')->create();
-    fakeProviderAccount('facebook', providerAccount('fb-7'));
+    $owner = User::factory()->twitch('7')->create();
+    $user = User::factory()->youtube('UC-1')->create();
+    fakeProviderAccount('twitch', providerAccount('7'));
 
-    $this->actingAs($user)->get(route('identities.link', 'facebook'));
-    $this->get('/auth/facebook/callback')
+    $this->actingAs($user)->get(route('identities.link', 'twitch'));
+    $this->get('/twitch/auth')
         ->assertRedirect(route('settings'))
         ->assertSessionHas('identity_error', fn (string $message) => str_contains($message, 'already linked to a different ARE account'));
 
-    expect(Identity::for(IdentityProvider::Facebook, 'fb-7')->sole()->user_id)->toBe($owner->id)
+    expect(Identity::for(IdentityProvider::Twitch, '7')->sole()->user_id)->toBe($owner->id)
         ->and($user->identities()->count())->toBe(1)
         ->and(User::count())->toBe(2);
 });
@@ -188,24 +173,26 @@ test('YouTube cannot be linked through Socialite until Google sign-in exists', f
 });
 
 test('Settings lists linked accounts and offers the others', function () {
-    $user = User::factory()->twitch('42')->create();
-
-    $this->actingAs($user)->get('/settings')
+    $this->actingAs(User::factory()->youtube('UC-1')->create())->get('/settings')
         ->assertOk()
         ->assertSee('Linked accounts')
-        ->assertSee('Link Facebook')
-        ->assertDontSee('Link Twitch');
+        ->assertSee('Link Twitch');
+
+    $this->actingAs(User::factory()->twitch('42')->create())->get('/settings')
+        ->assertOk()
+        ->assertDontSee('Link Twitch')
+        ->assertDontSee('Facebook');
 });
 
 // Unlinking
 
 test('a user can unlink an identity but not their last one', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-7')->create();
-    $facebook = $user->identityFor(IdentityProvider::Facebook);
+    $user = User::factory()->twitch('42')->youtube('UC-7')->create();
+    $youtube = $user->identityFor(IdentityProvider::YouTube);
     $twitch = $user->identityFor(IdentityProvider::Twitch);
 
     $this->actingAs($user);
-    Volt::test('settings.linked-accounts')->call('unlink', $facebook->id)->assertHasNoErrors();
+    Volt::test('settings.linked-accounts')->call('unlink', $youtube->id)->assertHasNoErrors();
 
     expect($user->identities()->pluck('provider')->all())->toBe([IdentityProvider::Twitch]);
 
@@ -215,18 +202,18 @@ test('a user can unlink an identity but not their last one', function () {
 });
 
 test('a user cannot unlink someone else\'s identity', function () {
-    $other = User::factory()->twitch('99')->facebook('fb-9')->create();
+    $other = User::factory()->twitch('99')->youtube('UC-9')->create();
     $user = User::factory()->twitch('42')->create();
 
     $this->actingAs($user);
-    expect(fn () => Volt::test('settings.linked-accounts')->call('unlink', $other->identityFor(IdentityProvider::Facebook)->id))
+    expect(fn () => Volt::test('settings.linked-accounts')->call('unlink', $other->identityFor(IdentityProvider::YouTube)->id))
         ->toThrow(ModelNotFoundException::class);
 
     expect($other->identities()->count())->toBe(2);
 });
 
 test('a banned user cannot shed the identity the ban came through', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-7')->create();
+    $user = User::factory()->twitch('42')->youtube('UC-7')->create();
     TwitchBan::create(['broadcaster_id' => '1000', 'twitch_user_id' => '42']);
 
     expect(fn () => Identities::unlink($user, $user->identityFor(IdentityProvider::Twitch)))
@@ -236,7 +223,7 @@ test('a banned user cannot shed the identity the ban came through', function () 
 });
 
 test('unlinking a Twitch identity drops the tier it brought', function () {
-    $user = User::factory()->facebook('fb-1')->twitch('42')->create();
+    $user = User::factory()->youtube('UC-1')->twitch('42')->create();
     UserTwitchSubscription::create(['user_id' => $user->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier3]);
 
     Identities::unlink($user, $user->identityFor(IdentityProvider::Twitch));
@@ -245,10 +232,10 @@ test('unlinking a Twitch identity drops the tier it brought', function () {
 });
 
 test('unlinking a non-Twitch identity keeps the Twitch tier', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-1')->create();
+    $user = User::factory()->twitch('42')->youtube('UC-1')->create();
     UserTwitchSubscription::create(['user_id' => $user->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier3]);
 
-    Identities::unlink($user, $user->identityFor(IdentityProvider::Facebook));
+    Identities::unlink($user, $user->identityFor(IdentityProvider::YouTube));
 
     expect($user->fresh()->getHighestSubscription())->toBe(TwitchSubscription::Tier3);
 });
@@ -285,12 +272,12 @@ test('linking a YouTube identity to a Twitch user does not create a second voter
 });
 
 test('question limits count per user across identities', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-7')->create();
+    $user = User::factory()->twitch('42')->youtube('UC-7')->create();
     UserTwitchSubscription::create(['user_id' => $user->id, 'broadcaster_id' => '1000', 'twitch_subscription' => TwitchSubscription::Tier1]);
     Topic::set('Songs about kale');
     Question::factory()->count(6)->for($user)->create();
 
-    expect(Identities::findUser(IdentityProvider::Facebook, 'fb-7')->canSubmitQuestion())->toBeFalse();
+    expect(Identities::findUser(IdentityProvider::YouTube, 'UC-7')->canSubmitQuestion())->toBeFalse();
 });
 
 // Bans
@@ -305,17 +292,8 @@ test('a Twitch ban blocks the linked YouTube identity', function () {
         ->and($viaYouTube->canSubmitQuestion())->toBeFalse();
 });
 
-test('a Twitch ban turns the person away at Facebook sign-in', function () {
-    User::factory()->twitch('42')->facebook('fb-7')->create();
-    TwitchBan::create(['broadcaster_id' => '1000', 'twitch_user_id' => '42']);
-    fakeProviderAccount('facebook', providerAccount('fb-7'));
-
-    $this->get('/auth/facebook/callback')->assertRedirect('/?banned=1');
-    $this->assertGuest();
-});
-
 test('linking a banned Twitch account bans the user it is linked to', function () {
-    $user = User::factory()->facebook('fb-7')->create();
+    $user = User::factory()->youtube('UC-7')->create();
     TwitchBan::create(['broadcaster_id' => '1000', 'twitch_user_id' => '42']);
     expect($user->isBanned())->toBeFalse();
 
@@ -325,14 +303,14 @@ test('linking a banned Twitch account bans the user it is linked to', function (
 });
 
 test('a local ban follows the user to every linked identity', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-7')->create();
+    $user = User::factory()->twitch('42')->youtube('UC-7')->create();
     $mod = User::factory()->twitch('77')->create();
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => '77']);
     Moderation::ban($mod, $user, null, 'spam');
-    fakeProviderAccount('facebook', providerAccount('fb-7'));
+    fakeProviderAccount('twitch', providerAccount('42'));
 
-    expect(Identities::findUser(IdentityProvider::Facebook, 'fb-7')->isLocallyBanned())->toBeTrue();
-    $this->get('/auth/facebook/callback')->assertRedirect('/?banned=1');
+    expect(Identities::findUser(IdentityProvider::YouTube, 'UC-7')->isLocallyBanned())->toBeTrue();
+    $this->get('/twitch/auth')->assertRedirect('/?banned=1');
     $this->assertGuest();
 });
 

@@ -47,11 +47,6 @@ class UserFactory extends Factory
         return $this->withIdentity(IdentityProvider::Twitch, $twitchId);
     }
 
-    public function facebook(?string $facebookId = null): static
-    {
-        return $this->withIdentity(IdentityProvider::Facebook, $facebookId);
-    }
-
     public function youtube(?string $channelId = null): static
     {
         return $this->withIdentity(IdentityProvider::YouTube, $channelId);

@@ -137,7 +137,7 @@ test('inside a request the ban answer is asked once, and every ban change is see
 test('inside a request, lifting one ban and linking a banned account are seen at once', function () {
     $mod = User::factory()->twitch('77')->create();
     TwitchModerator::create(['broadcaster_id' => '1000', 'twitch_user_id' => '77']);
-    $user = User::factory()->facebook('fb-1')->create();
+    $user = User::factory()->youtube('UC-1')->create();
     $troll = User::factory()->twitch('99')->create();
     $ban = Moderation::ban($mod, $troll, null);
     $troll->delete();

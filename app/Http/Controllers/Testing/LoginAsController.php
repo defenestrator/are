@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Auth;
 
 /**
  * GET /_e2e/login/{user}?to=/vote: sign in as a seeded user, for the browser
- * end-to-end suite only (#155). Sign-in is otherwise Twitch or Facebook OAuth,
+ * end-to-end suite only (#155). Sign-in is otherwise Twitch OAuth,
  * which a headless browser in CI cannot do.
  *
  * Registered only when APP_ENV=testing (bootstrap/app.php), and refusing with

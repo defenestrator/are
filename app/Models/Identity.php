@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One account on one platform (a Twitch login, a Facebook login, a YouTube
+ * One account on one platform (a Twitch login, a YouTube
  * channel), belonging to exactly one user.
  *
  * @property IdentityProvider $provider

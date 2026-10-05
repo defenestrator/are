@@ -24,7 +24,6 @@ return [
     'platform_latency_seconds' => [
         'twitch' => (int) env('BUS_LATENCY_TWITCH', 3),
         'youtube' => (int) env('BUS_LATENCY_YOUTUBE', 12),
-        'facebook' => (int) env('BUS_LATENCY_FACEBOOK', 10),
     ],
 
     // Platforms whose chat feeds the bus right now, comma separated.

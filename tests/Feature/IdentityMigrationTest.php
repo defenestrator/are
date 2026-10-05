@@ -82,11 +82,12 @@ test('the migration back-fills identities from users and keeps users, questions 
         ->and($identity->access_token)->toBe('legacy-token')
         ->and(DB::table('identities')->where('id', $identity->id)->value('access_token'))->not->toBe('legacy-token');
 
-    $facebook = User::find($ids['facebook']);
-    expect($facebook->facebook_id)->toBe('fb-7')
-        ->and($facebook->facebook_avatar_url)->toBe('https://example.com/fb.png')
-        ->and($facebook->identityFor(IdentityProvider::Facebook)->email)->toBe('fb@example.com')
-        ->and($facebook->twitch_id)->toBeNull();
+    // Facebook is no longer an IdentityProvider, so this row is read raw.
+    $facebook = DB::table('identities')->where('user_id', $ids['facebook'])->sole();
+    expect($facebook->provider)->toBe('facebook')
+        ->and($facebook->provider_user_id)->toBe('fb-7')
+        ->and($facebook->avatar_url)->toBe('https://example.com/fb.png')
+        ->and($facebook->email)->toBe('fb@example.com');
 
     expect(User::find($ids['neither'])->identities)->toBeEmpty()
         ->and(User::find($ids['twitch'])->votes()->count())->toBe(1);
@@ -120,7 +121,8 @@ test('the migration rolls back to the old columns with their values', function (
 });
 
 test('rolling back restores Twitch and Facebook ids for users created after the migration', function () {
-    $user = User::factory()->twitch('42')->facebook('fb-7')->create();
+    $user = User::factory()->twitch('42')->create();
+    DB::table('identities')->insert(['user_id' => $user->id, 'provider' => 'facebook', 'provider_user_id' => 'fb-7', 'created_at' => now(), 'updated_at' => now()]);
     Identity::where('provider', 'twitch')->update(['access_token' => Crypt::encryptString('fresh-token')]);
     [$create, $drop] = identityMigrations();
 

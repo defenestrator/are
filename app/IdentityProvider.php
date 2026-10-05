@@ -9,7 +9,6 @@ namespace App;
 enum IdentityProvider: string
 {
     case Twitch = 'twitch';
-    case Facebook = 'facebook';
 
     // Sign-in arrives with #7 (Google). Present now so chat ingestion and
     // tests can attach YouTube identities to a user.
@@ -19,7 +18,6 @@ enum IdentityProvider: string
     {
         return match ($this) {
             self::Twitch => 'Twitch',
-            self::Facebook => 'Facebook',
             self::YouTube => 'YouTube',
         };
     }
@@ -51,15 +49,6 @@ enum IdentityProvider: string
     public static function signInProviders(): array
     {
         return array_values(array_filter(self::cases(), fn (self $provider) => $provider->supportsSignIn()));
-    }
-
-    /**
-     * Whether to keep this provider's OAuth tokens. Twitch tokens read
-     * subscriptions and chat; Facebook's are not used, so are not kept.
-     */
-    public function storesTokens(): bool
-    {
-        return $this !== self::Facebook;
     }
 
     /**

@@ -141,22 +141,6 @@ class User extends Authenticatable
             ->first(fn (?string $url) => filled($url)));
     }
 
-    /**
-     * @return Attribute<mixed, never>
-     */
-    protected function facebookId(): Attribute
-    {
-        return Attribute::get(fn (): ?string => $this->identityFor(IdentityProvider::Facebook)?->provider_user_id);
-    }
-
-    /**
-     * @return Attribute<mixed, never>
-     */
-    protected function facebookAvatarUrl(): Attribute
-    {
-        return Attribute::get(fn (): ?string => $this->identityFor(IdentityProvider::Facebook)?->avatar_url);
-    }
-
     public static function getBroadcasterID(): string
     {
         return config('services.twitch.broadcaster_id');

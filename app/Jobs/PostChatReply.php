@@ -107,7 +107,6 @@ class PostChatReply implements ShouldQueue
         return match ($provider) {
             IdentityProvider::Twitch => true,
             IdentityProvider::YouTube => (bool) config('chat.replies.youtube'),
-            default => false,
         };
     }
 
@@ -148,7 +147,6 @@ class PostChatReply implements ShouldQueue
         match ($this->provider) {
             IdentityProvider::Twitch => $this->postToTwitch($context),
             IdentityProvider::YouTube => $this->postToYouTube($context),
-            default => $this->unsupported($context),
         };
     }
 
@@ -279,14 +277,6 @@ class PostChatReply implements ShouldQueue
     private function returnStreamBudget(YouTubeLiveChat $chat): void
     {
         YouTubeLiveChat::whereKey($chat->id)->where('replies_sent', '>', 0)->decrement('replies_sent');
-    }
-
-    /**
-     * @param  array<string, string>  $context
-     */
-    private function unsupported(array $context): void
-    {
-        Log::warning('Chat replies are enabled for this platform, but posting to it is not implemented.', $context);
     }
 
     /**

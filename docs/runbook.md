@@ -166,7 +166,7 @@ Set these in Forge's Environment panel, then run `php artisan optimize`. The def
 | `CLIPS_PER_CHANNEL_PER_MINUTE`, `CLIPS_CREATE_DELAY_SECONDS`, `CLIPS_DOWNLOAD_URL_TTL_SECONDS` | `!clip` limits and timing | #95 |
 | `CLIPS_DISK`, `CLIPS_MAX_FILE_BYTES`, `CLIPS_DOWNLOAD_HOSTS` | Where clip files go, their size cap and allowed hosts | #142 |
 | `CLIPS_KEEP_REJECTED_DAYS`, `CLIPS_KEEP_APPROVED_DAYS`, `CLIPS_DISK_WARN_BYTES`, `CLIPS_DISK_MIN_FREE_BYTES` | Clip retention and the readiness page's disk thresholds | #145 |
-| `BUS_ENABLED`, `BUS_PLATFORMS`, `BUS_LATENCY_TWITCH`, `BUS_LATENCY_YOUTUBE`, `BUS_LATENCY_FACEBOOK` | Deploy-time bus switch; platforms feeding it and their chat lag | #123 |
+| `BUS_ENABLED`, `BUS_PLATFORMS`, `BUS_LATENCY_TWITCH`, `BUS_LATENCY_YOUTUBE` | Deploy-time bus switch; platforms feeding it and their chat lag | #123 |
 | `BUS_ORKESTERA_MODE`, `BUS_ORKESTERA_WINDOW_SECONDS`, `BUS_APPROVAL_TIMEOUT_SECONDS`, `BUS_KILL_UNDO_SECONDS`, `BUS_MAX_REPLAY_SECONDS` | Orkestera's default mode and window; approval timeout; kill-switch undo; adapter replay | #123 |
 | `ARE_OVERLAY_GRANT_SECONDS`, `ARE_OVERLAY_ALLOW_QUERY_TOKEN` | Overlay grant lifetime; turn the old `?token=` URLs off | #74 |
 | `ARE_CTA_ROTATE_SECONDS`, `ARE_CTA_ORKESTERA_URL`, `ARE_CTA_ORKESTERA_DISPLAY_URL`, `ARE_CTA_EDOS_URL`, `ARE_CTA_EDOS_DISPLAY_URL` | The CTA lower-third | #50 |

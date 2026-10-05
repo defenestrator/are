@@ -34,8 +34,6 @@
                 
                 <a class="text-white bg-violet-500 hover:bg-violet-600 focus:ring-4 focus:outline-none focus:ring-violet-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-violet-600 dark:hover:bg-violet-700 dark:focus:ring-violet-900" href="{{ route('login') }}">Login with Twitch</a>
                 
-                <a class="text-white bg-[#1877F2] hover:bg-[#166FE5] focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-[#1877F2] dark:hover:bg-[#166FE5] dark:focus:ring-blue-800" href="{{ route('login.facebook') }}">Login with Facebook</a>
-                
                 @if (request()->query("failed_to_login") == "1")
                     <div class="bg-red-200 dark:bg-red-900 dark:text-red-200 p-2 rounded-sm mt-2">Failed Authentication</div>
                 @endif
@@ -44,9 +42,6 @@
                     <div class="bg-red-200 dark:bg-red-900 dark:text-red-200 p-2 rounded-sm mt-2">Failed Twitch Authentication</div>
                 @endif
 
-                @if (request()->query("failed_facebook_login") == "1")
-                    <div class="bg-red-200 dark:bg-red-900 dark:text-red-200 p-2 rounded-sm mt-2">Failed Facebook Authentication</div>
-                @endif
                 @if (request()->query("banned") == "1")
                     <div class="bg-red-200 dark:bg-red-900 dark:text-red-200 p-2 rounded-sm mt-2">You are banned or timed out in this channel.</div>
                 @endif

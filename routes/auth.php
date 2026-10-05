@@ -12,10 +12,6 @@ Route::middleware('guest')->group(function () {
     Route::get('login', [SocialiteController::class, 'redirect'])
         ->defaults('provider', IdentityProvider::Twitch->value)
         ->name('login');
-
-    Route::get('login/facebook', [SocialiteController::class, 'redirect'])
-        ->defaults('provider', IdentityProvider::Facebook->value)
-        ->name('login.facebook');
 });
 
 // These are the callback URLs registered with each provider. They finish both
@@ -23,10 +19,6 @@ Route::middleware('guest')->group(function () {
 Route::get('twitch/auth', [SocialiteController::class, 'callback'])
     ->defaults('provider', IdentityProvider::Twitch->value)
     ->name('auth.twitch.callback');
-
-Route::get('auth/facebook/callback', [SocialiteController::class, 'callback'])
-    ->defaults('provider', IdentityProvider::Facebook->value)
-    ->name('auth.facebook.callback');
 
 Route::get('settings/linked-accounts/{provider}/link', [SocialiteController::class, 'link'])
     ->middleware(['auth', 'not-banned'])

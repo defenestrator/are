@@ -195,7 +195,7 @@ class Identities
             'avatar_url' => $account->getAvatar(),
         ];
 
-        if ($provider->storesTokens() && $account instanceof OAuth2Account) {
+        if ($account instanceof OAuth2Account) {
             $attributes['access_token'] = $account->token;
             $attributes['token_expires_at'] = $account->expiresIn ? now()->addSeconds((int) $account->expiresIn) : null;
 
