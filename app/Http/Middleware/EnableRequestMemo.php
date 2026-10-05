@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Turns RequestMemo on for one web request, and off and empty again once the
+ * Opens a RequestMemo scope for one web request, and closes it once the
  * response is built, so nothing memoised outlives the request (#173). That
  * includes tests, where one application serves many requests.
  */
@@ -23,7 +23,7 @@ class EnableRequestMemo
         try {
             return $next($request);
         } finally {
-            $this->memo->reset();
+            $this->memo->release();
         }
     }
 }

@@ -11,6 +11,7 @@ use App\YouTube\StoredAnalyticsTokens;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
@@ -46,6 +47,14 @@ class AppServiceProvider extends ServiceProvider
         // Any moderator can throw the Chat Control Bus kill switch; only a
         // broadcaster can reset it.
         Gate::define('restoreBus', fn (User $user) => $user->isBroadcaster() && ! $user->isBanned());
+
+        // Queued jobs get their own memo scope (#173): a chat job asked the same
+        // ban question once per step of !q or !vote. Closed when the job ends,
+        // however it ends, so a long-running worker never carries a value from
+        // one job into the next (the scoped binding is reset between jobs too).
+        Queue::before(fn () => app(RequestMemo::class)->enable());
+        Queue::after(fn () => app(RequestMemo::class)->release());
+        Queue::exceptionOccurred(fn () => app(RequestMemo::class)->release());
 
         // Livewire actions arrive at /livewire/update, which runs only its
         // persistent middleware. Re-apply the ban check to every action on a

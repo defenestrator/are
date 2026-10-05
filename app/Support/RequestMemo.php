@@ -5,39 +5,59 @@ namespace App\Support;
 use Closure;
 
 /**
- * Values memoised for the length of one web request (#173): ban standing per
- * user, the current topic. A /vote render asked the same questions once per
- * card, gate and component.
+ * Values memoised for the length of one web request or one queued job
+ * (#173): ban standing per user, the current topic. A /vote render asked the
+ * same questions once per card, gate and component, and a chat job once per
+ * step of !q or !vote.
  *
- * It is on only inside a web request (EnableRequestMemo turns it on and
- * clears it when the response is ready), so queue jobs, console commands
- * and code that calls the models directly always read fresh. Anything that
- * changes a memoised fact calls forget() or flush(); see the callers.
+ * It is on only inside a scope: EnableRequestMemo opens one per web request,
+ * and the queue's before/after events one per job (AppServiceProvider).
+ * Scopes nest (a sync job inside a request), and the values are dropped when
+ * the outermost one closes, so nothing outlives its request or job, even on a
+ * long-running Horizon worker. Console commands and code that calls the
+ * models directly outside a scope always read fresh. Anything that changes a
+ * memoised fact calls forget() or flush(); see the callers.
  */
 class RequestMemo
 {
-    private bool $enabled = false;
+    /** How many scopes are open. */
+    private int $depth = 0;
 
     /** @var array<string, mixed> */
     private array $values = [];
 
+    /**
+     * Open a scope: a web request or a queued job starts.
+     */
     public function enable(): void
     {
-        $this->enabled = true;
+        $this->depth++;
     }
 
     /**
-     * Turn the memo off and drop everything in it.
+     * Close a scope. Closing the outermost one drops every value.
+     */
+    public function release(): void
+    {
+        $this->depth = max(0, $this->depth - 1);
+
+        if ($this->depth === 0) {
+            $this->values = [];
+        }
+    }
+
+    /**
+     * Close every scope and drop everything.
      */
     public function reset(): void
     {
-        $this->enabled = false;
+        $this->depth = 0;
         $this->values = [];
     }
 
     public function enabled(): bool
     {
-        return $this->enabled;
+        return $this->depth > 0;
     }
 
     /**
@@ -48,7 +68,7 @@ class RequestMemo
      */
     public function remember(string $key, Closure $resolve): mixed
     {
-        if (! $this->enabled) {
+        if ($this->depth === 0) {
             return $resolve();
         }
 
