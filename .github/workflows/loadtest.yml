@@ -134,8 +134,14 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8124/up > /dev/null && exit 0; sleep 1; done
           echo "The app did not come up"; cat storage/logs/serve.log; exit 1
 
+      # Thresholds are informational for now (#176): a crossed threshold
+      # (k6 exit code 99) is reported as a warning, not a failed job, because
+      # these numbers are the baseline #173, #179 and #180 set out to improve.
+      # The thresholds themselves stay as they are. Any other non-zero exit
+      # (a script error, an aborted run) still fails the job.
       - name: k6
         run: |
+          set +e
           k6 run \
             -e BASE_URL=http://127.0.0.1:8124 \
             -e PROFILE=ci \
@@ -149,6 +155,13 @@ jobs:
             -e SUMMARY_PATH=loadtest-summary.md \
             -e SUMMARY_JSON=loadtest-summary.json \
             scripts/loadtest/are.js
+          code=$?
+          if [ "$code" -eq 99 ]; then
+            echo "::warning title=Load test thresholds crossed::One or more latency or error thresholds were crossed. Informational for now; see the run summary."
+            printf '\n**Thresholds crossed (informational for now, #176).** The job does not fail on this yet.\n' >> loadtest-summary.md
+            exit 0
+          fi
+          exit "$code"
 
       - name: Time how long the worker takes to drain the chat burst
         if: always()

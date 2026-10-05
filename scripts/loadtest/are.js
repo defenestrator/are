@@ -116,6 +116,20 @@ for (const name of SELECTED) {
     thresholds[`http_req_failed{scenario:${name}}`] = ['rate<0.01'];
 }
 
+// A breakdown by request, so a slow scenario says which request is slow
+// (a first page load or a poll). These never fail the run: k6 only reports
+// a tagged sub-metric that has a threshold, so each gets one that always holds.
+const BREAKDOWN = {
+    anonymous: ['GET /', 'GET /about', 'GET /music', 'GET /up'],
+    overlays: ['POST /overlay/{overlay}/session', 'GET /overlay/{overlay}', 'POST livewire/update (overlay refresh)'],
+    vote: ['GET /_e2e/login -> /vote', 'POST livewire/update (vote $refresh)', 'POST livewire/update (vote card)'],
+    chat: ['POST /twitch/eventsub (chat)'],
+};
+const BREAKDOWN_NAMES = SELECTED.reduce((names, scenario) => names.concat(BREAKDOWN[scenario]), []);
+for (const name of BREAKDOWN_NAMES) {
+    thresholds[`http_req_duration{name:${name}}`] = ['max>=0'];
+}
+
 export const options = {
     scenarios: Object.fromEntries(SELECTED.map((name) => [name, scenarios[name]])),
     thresholds,
@@ -204,7 +218,7 @@ export function overlay() {
 
     const response = http.post(`${BASE_URL}${source.updateUri}`, updateBody(source.csrf, source.snapshot), {
         headers: UPDATE_HEADERS,
-        tags: { name: `POST livewire/update (overlay ${source.overlay.name})` },
+        tags: { name: 'POST livewire/update (overlay refresh)', overlay: source.overlay.name },
     });
     const snapshot = nextSnapshot(response);
     check(response, { 'overlay refresh is 200 with a snapshot': (r) => r.status === 200 && snapshot !== null });
@@ -355,6 +369,17 @@ export function handleSummary(data) {
         ...rows,
         '',
         `Checks passed: ${checks}%.`,
+        '',
+        '### By request',
+        '',
+        '| Request | Count | p50 | p95 | p99 | max |',
+        '|---|---|---|---|---|---|',
+        ...BREAKDOWN_NAMES.map((name) => {
+            const metric = data.metrics[`http_req_duration{name:${name}}`];
+            const values = metric ? metric.values : {};
+
+            return `| ${name} | ${values.count || 0} | ${ms(values['p(50)'])} | ${ms(values['p(95)'])} | ${ms(values['p(99)'])} | ${ms(values.max)} |`;
+        }),
         '',
     ].join('\n');
 
