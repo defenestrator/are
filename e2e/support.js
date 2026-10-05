@@ -8,6 +8,20 @@ export const fixtures = JSON.parse(fs.readFileSync(new URL('./.fixtures.json', i
 
 const secrets = Object.values(fixtures.overlayTokens);
 
+/**
+ * Console messages Chromium itself writes when headless Chromium renders
+ * WebGL in software (the visualizer). They come from the browser's GPU
+ * process, not from ARE, and a real OBS source on a GPU does not see them.
+ * Keep this list to Chromium's own messages only.
+ */
+const CHROMIUM_GPU_NOISE = [
+    /^\[\.WebGL-[^\]]+\]GL Driver Message \(OpenGL, Performance, [^)]*\): GPU stall due to ReadPixels/,
+    /Automatic fallback to software WebGL has been deprecated/,
+];
+
+/** A URL without its #fragment, which may hold an overlay token. */
+const safe = (url) => url.split('#')[0];
+
 // A 1x1 transparent PNG, for stubbed images.
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
 
@@ -32,14 +46,15 @@ export async function guard(page, origin) {
     });
 
     page.on('console', (message) => {
-        if (message.type() === 'error' || message.type() === 'warning') {
-            problems.push(`console ${message.type()} on ${page.url()}: ${message.text()}`);
+        if ((message.type() === 'error' || message.type() === 'warning')
+            && !CHROMIUM_GPU_NOISE.some((pattern) => pattern.test(message.text()))) {
+            problems.push(`console ${message.type()} on ${safe(page.url())}: ${message.text()}`);
         }
     });
-    page.on('pageerror', (error) => problems.push(`uncaught error on ${page.url()}: ${error.message}`));
+    page.on('pageerror', (error) => problems.push(`uncaught error on ${safe(page.url())}: ${error.message}`));
     page.on('response', (response) => {
         if (response.status() >= 400 && new URL(response.url()).origin === origin) {
-            problems.push(`HTTP ${response.status()} for ${response.request().method()} ${response.url()}`);
+            problems.push(`HTTP ${response.status()} for ${response.request().method()} ${safe(response.url())}`);
         }
     });
     page.on('request', (request) => {

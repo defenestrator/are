@@ -7,13 +7,17 @@ import { test, expect, fixtures } from './support.js';
 // request URL that carries the token.
 const layouts = { horizontal: { width: 1920, height: 1080 }, vertical: { width: 1080, height: 1920 } };
 
+// Extra query parameters an operator gives an overlay in OBS. The visualizer
+// listens to show audio; without ?audio= it warns that it has none.
+const extraQuery = { visualizer: '&audio=default' };
+
 for (const [overlay, token] of Object.entries(fixtures.overlayTokens)) {
     for (const [layout, size] of Object.entries(layouts)) {
         test(`overlay ${overlay} (${layout}) loads with its fragment token on a transparent page`, async ({ page }) => {
             await page.setViewportSize(size);
 
             const exchanged = page.waitForResponse((response) => response.url().endsWith(`/overlay/${overlay}/session`));
-            await page.goto(`/overlay/${overlay}?layout=${layout}#token=${token}`);
+            await page.goto(`/overlay/${overlay}?layout=${layout}${extraQuery[overlay] ?? ''}#token=${token}`);
             expect((await exchanged).status()).toBe(204);
 
             // After the reload the real overlay is served, not the bootstrap page.

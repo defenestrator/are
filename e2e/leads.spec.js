@@ -6,8 +6,8 @@ test('a /go link lands on /about, and the lead sent from there is stored with it
     await expect(page).toHaveURL(/\/about\?.*utm_campaign=e2e-smoke/);
 
     const email = `e2e-${Date.now()}@example.test`;
-    await page.getByLabel('Name').fill('E2E Lead');
-    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Name', { exact: true }).fill('E2E Lead');
+    await page.getByLabel('Email', { exact: true }).fill(email);
     await page.getByLabel('What are you working on?').fill('Checking the lead form end to end.');
 
     // Without consent the form refuses and says why.

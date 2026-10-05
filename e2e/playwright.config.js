@@ -33,7 +33,17 @@ export default defineConfig({
         trace: 'retain-on-failure',
     },
     projects: [
-        { name: 'chromium', use: { ...devices['Desktop Chrome'], userAgent } },
+        {
+            name: 'chromium',
+            use: {
+                ...devices['Desktop Chrome'],
+                userAgent,
+                // A fake microphone, granted without a prompt, so the
+                // visualizer overlay can open ?audio=default as OBS would.
+                permissions: ['microphone'],
+                launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+            },
+        },
     ],
     webServer: {
         // Several workers, so Livewire requests and the vote page's polling
