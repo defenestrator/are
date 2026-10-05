@@ -332,6 +332,10 @@ describe('/go starts no session (#90)', function () {
 
 describe('the attribution cookie', function () {
     test('is first-party, HTTP-only and SameSite=Lax, and lasts as long as a session', function () {
+        // The expiry is compared to the second, so freeze the clock: a slow
+        // run crossing a second boundary between the request and the
+        // assertion used to fail by exactly one second (#185).
+        $this->freezeTime();
         $link = ShortLink::factory()->create();
 
         $cookie = $this->get($link->url())->getCookie(ShortLink::ATTRIBUTION_COOKIE, decrypt: false);
