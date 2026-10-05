@@ -37,7 +37,7 @@ Do these in order. Later steps assume the earlier ones are done.
 Production runs PostgreSQL 14 (#61, #62, #63).
 
 - `.env` in Forge: `DB_CONNECTION=pgsql`, `DB_HOST=127.0.0.1`, `DB_PORT=5432`, `DB_DATABASE=are`, `DB_USERNAME=are_app`, and `DB_PASSWORD` set in Forge's Environment editor.
-- The one-off move from SQLite is `php artisan db:copy`. Follow the rehearsal and cutover steps in #64 exactly: `.env` must point at Postgres, with the config cache cleared, **before** `migrate` and `db:copy`. Always pass `--source-path` with an absolute path. Try `--dry-run` first.
+- The move from SQLite was verified on 2026-10-04 (#64, #66), and the one-off importer has been removed. Keep the old SQLite file and the pre-cutover backup offline until normal backup retention expires. Nothing at runtime reads them.
 - **Back up the database before any deploy whose PR says a migration drops columns** (#45 did). Never run `migrate:fresh` or `migrate:reset` in production.
 
 ### 1.3 Queues and the scheduler
@@ -291,4 +291,4 @@ Rotate it. The old one stops working at once, so update whatever used it.
 
 ## PRs behind this runbook
 
-#30 /about and short links · #37 EventSub · #40 Redis and Horizon · #43 music catalogue · #45 identities · #48 Reverb · #50 overlays · #60 `npm ci` · #64 `db:copy` · #65 deploy script · #70 lead mail · #72 visualizer audio · #74 fragment tokens · #77 chat commands · #86 test guard · #87 tracked links · #91 YouTube chat · #92 sub end · #93 chat replies · #95 `!clip` · #97 attribution cookie · #107 song requests · #108 weekly summary · #109 broadcast jobs · #115 live overlays · #119 viewer stats · #123 Chat Control Bus · #126 YouTube replies · #129 and #134 refunds · #139 readiness page · #140 show windows · #141 player hook · #142 and #145 clip files · #144 YouTube Analytics · #149 CLI audit names · #151 YouTube channel ids · #154 bus overlay
+#30 /about and short links · #37 EventSub · #40 Redis and Horizon · #43 music catalogue · #45 identities · #48 Reverb · #50 overlays · #60 `npm ci` · #64 SQLite cutover · #65 deploy script · #70 lead mail · #72 visualizer audio · #74 fragment tokens · #77 chat commands · #86 test guard · #87 tracked links · #91 YouTube chat · #92 sub end · #93 chat replies · #95 `!clip` · #97 attribution cookie · #107 song requests · #108 weekly summary · #109 broadcast jobs · #115 live overlays · #119 viewer stats · #123 Chat Control Bus · #126 YouTube replies · #129 and #134 refunds · #139 readiness page · #140 show windows · #141 player hook · #142 and #145 clip files · #144 YouTube Analytics · #149 CLI audit names · #151 YouTube channel ids · #154 bus overlay

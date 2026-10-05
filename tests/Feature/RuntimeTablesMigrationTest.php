@@ -13,14 +13,7 @@ function runtimeTableRepair(): Migration
 }
 
 test('an empty database can migrate before cache clearing and repeat deployment preparation', function () {
-    if (DB::getDriverName() === 'sqlite') {
-        // SQLite's dropAllTables also VACUUMs, which cannot run in the test transaction.
-        foreach (Schema::getTableListing() as $table) {
-            Schema::drop($table);
-        }
-    } else {
-        Schema::dropAllTables();
-    }
+    Schema::dropAllTables();
     config(['cache.default' => 'database']);
 
     $this->artisan('migrate', ['--force' => true])->assertSuccessful();

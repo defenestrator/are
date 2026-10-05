@@ -449,7 +449,6 @@ test('deleting an account broadcasts new totals for the questions it had voted o
 });
 
 // Pins which rows the locking read covers and that it runs before the delete.
-// SQLite's grammar drops FOR UPDATE; on PostgreSQL the lock clause is asserted.
 test('deleting an account locks its own open questions and those it voted on, in id order, before the delete', function () {
     Event::fake([VoteCast::class, QuestionArchived::class]);
     $leaver = User::factory()->create();
@@ -466,7 +465,7 @@ test('deleting an account locks its own open questions and those it voted on, in
     $log = collect(DB::getQueryLog())->values();
 
     // whereKey() inlines integer ids into the SQL rather than binding them.
-    $pattern = '/^select \* from "questions" where "questions"\."id" in \(([\d, ]*)\) order by "id" asc( for update)?$/';
+    $pattern = '/^select \* from "questions" where "questions"\."id" in \(([\d, ]*)\) order by "id" asc for update$/';
     $lockAt = $log->search(fn (array $q) => preg_match($pattern, $q['query']) === 1);
     $deleteAt = $log->search(fn (array $q) => str_starts_with($q['query'], 'delete from "users"'));
 
@@ -479,9 +478,7 @@ test('deleting an account locks its own open questions and those it voted on, in
         ->and($lockedIds)->not->toContain($ownArchived->id)
         ->and($lockedIds)->not->toContain($untouched->id);
 
-    if (DB::getDriverName() === 'pgsql') {
-        expect($log[$lockAt]['query'])->toEndWith('for update');
-    }
+    expect($log[$lockAt]['query'])->toEndWith('for update');
 
     Event::assertDispatched(QuestionArchived::class, fn (QuestionArchived $e) => $e->questionIds === [$ownOpen->id]);
 });

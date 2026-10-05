@@ -189,15 +189,6 @@ test('a decision that changes after the selection is respected', function () {
             DB::table('stream_markers')->where('id', $marker->id)->update(['review_status' => ClipReviewStatus::Pending->value]);
         }
     });
-    // SQLite has no FOR UPDATE, so flip on the re-check instead when the lock is a no-op.
-    if (DB::connection()->getDriverName() === 'sqlite') {
-        StreamMarker::retrieved(function (StreamMarker $m) use ($marker, &$flipped) {
-            if (! $flipped && $m->id === $marker->id) {
-                $flipped = true;
-                DB::table('stream_markers')->where('id', $marker->id)->update(['review_status' => ClipReviewStatus::Pending->value]);
-            }
-        });
-    }
 
     prune();
 

@@ -14,13 +14,7 @@ use Livewire\Volt\Volt;
 // PostgreSQL aborts the whole transaction after a failed statement, so any
 // query after the unique-index violation used to fail with SQLSTATE[25P02].
 // SQLite and MySQL let the next query run, which is why only Postgres showed
-// the 500 (#103). These run in the `Pest on PostgreSQL 14` CI job.
-
-beforeEach(function () {
-    if (DB::getDriverName() !== 'pgsql') {
-        $this->markTestSkipped('Only PostgreSQL aborts a transaction after a failed statement.');
-    }
-});
+// the 500 (#103).
 
 /** Insert another user's identity for $channel the moment linkAccount() tries to insert its own. */
 function identityWinsTheRace(User $other, string $channel): void

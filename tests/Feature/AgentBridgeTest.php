@@ -601,7 +601,6 @@ test('a kill landing during an answer rolls the answer back', function () {
 test('every agent effect holds the switch rows FOR SHARE, and the kill and the agent stop take them FOR UPDATE', function () {
     [, $token] = agentWithToken();
     $question = Question::factory()->create();
-    $pgsql = DB::getDriverName() === 'pgsql';
     // The lock query itself (AgentGate::refusal() reads the same rows, but
     // selects only its columns and takes no lock).
     $switchRows = fn (array $q) => str_starts_with($q['query'], 'select * from "bus_controls" where "scope" in') && str_contains($q['query'], 'order by "scope" asc');
@@ -616,15 +615,13 @@ test('every agent effect holds the switch rows FOR SHARE, and the kill and the a
         $call()->assertSuccessful();
         $log = collect(DB::getQueryLog());
 
-        $locked = $log->filter($switchRows)->filter(fn ($q) => ! $pgsql || str_ends_with($q['query'], 'for share'));
+        $locked = $log->filter($switchRows)->filter(fn ($q) => str_ends_with($q['query'], 'for share'));
         expect($locked)->not->toBeEmpty();
     }
 
-    if ($pgsql) {
-        DB::flushQueryLog();
-        app(AgentControls::class)->stop(agentModerator());
-        expect(collect(DB::getQueryLog())->contains(fn ($q) => str_contains($q['query'], 'from "bus_controls" where "bus_controls"."scope" = ?') && str_ends_with($q['query'], 'for update')))->toBeTrue();
-    }
+    DB::flushQueryLog();
+    app(AgentControls::class)->stop(agentModerator());
+    expect(collect(DB::getQueryLog())->contains(fn ($q) => str_contains($q['query'], 'from "bus_controls" where "bus_controls"."scope" = ?') && str_ends_with($q['query'], 'for update')))->toBeTrue();
 });
 
 test('agent tokens expire, after AGENT_TOKEN_DAYS or --days', function () {

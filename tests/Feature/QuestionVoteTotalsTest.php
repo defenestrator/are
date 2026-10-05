@@ -122,10 +122,7 @@ test('on PostgreSQL, the re-count under the row lock uses the question_id index'
 
     expect($plan)->toContain('question_votes_question_id_index')
         ->and($plan)->not->toContain('Seq Scan on question_votes');
-})->skip(
-    fn () => DB::connection()->getDriverName() !== 'pgsql',
-    'EXPLAIN plans are PostgreSQL-specific. The tests-pgsql CI job runs this.',
-);
+});
 
 test('on PostgreSQL, the queue lists read votes through the index, not a scan of every vote', function (string $list) {
     seedVotesForPlanner();
@@ -134,10 +131,7 @@ test('on PostgreSQL, the queue lists read votes through the index, not a scan of
 
     expect($plan)->toContain('question_votes_question_id_index')
         ->and($plan)->not->toContain('Seq Scan on question_votes');
-})->with(['getSortedQuestions', 'getRecentQuestions'])->skip(
-    fn () => DB::connection()->getDriverName() !== 'pgsql',
-    'EXPLAIN plans are PostgreSQL-specific. The tests-pgsql CI job runs this.',
-);
+})->with(['getSortedQuestions', 'getRecentQuestions']);
 
 test('voteCount and the lists agree on every question', function () {
     $questions = collect([[1, 1, -1], [], [-1, -1, -1], [1]])->map(fn ($votes) => questionWithVotes($votes));

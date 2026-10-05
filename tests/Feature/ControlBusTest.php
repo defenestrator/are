@@ -788,7 +788,6 @@ test('a Reverb send marks the action delivered', function () {
 
 test('publishing holds the kill switch row FOR SHARE and the kill takes it FOR UPDATE, so they serialize', function () {
     busStart(Mode::Anarchy);
-    $pgsql = DB::getDriverName() === 'pgsql';
     $globalRow = fn (array $q) => str_starts_with($q['query'], 'select * from "bus_controls" where "bus_controls"."scope" = ?') && $q['bindings'] === ['*'];
 
     DB::flushQueryLog();
@@ -801,13 +800,11 @@ test('publishing holds the kill switch row FOR SHARE and the kill takes it FOR U
     $kill = collect(DB::getQueryLog());
 
     // The shared read comes before the publication is written.
-    $shared = $publish->search(fn ($q) => $globalRow($q) && (! $pgsql || str_ends_with($q['query'], 'for share')));
+    $shared = $publish->search(fn ($q) => $globalRow($q) && str_ends_with($q['query'], 'for share'));
     $insert = $publish->search(fn ($q) => str_starts_with($q['query'], 'insert into "bus_publications"'));
     expect($shared)->not->toBeFalse()->and($shared)->toBeLessThan($insert);
 
-    if ($pgsql) {
-        expect($kill->contains(fn ($q) => $globalRow($q) && str_ends_with($q['query'], 'for update')))->toBeTrue();
-    }
+    expect($kill->contains(fn ($q) => $globalRow($q) && str_ends_with($q['query'], 'for update')))->toBeTrue();
 });
 
 test('the kill switch cancels approvals still waiting', function () {

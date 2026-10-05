@@ -379,12 +379,8 @@ test('a request locks the requester row before the track and before counting the
         ->and($trackLock)->toBeLessThan($count)
         ->and($count)->toBeLessThan($insert);
 
-    // SQLite has no row locks (it locks the whole database for writes), so its
-    // grammar drops FOR UPDATE. Production runs PostgreSQL, where it must be there.
-    if (DB::connection()->getDriverName() === 'pgsql') {
-        expect(strtolower($queries[$userLock]))->toContain('for update')
-            ->and(strtolower($queries[$trackLock]))->toContain('for update');
-    }
+    expect(strtolower($queries[$userLock]))->toContain('for update')
+        ->and(strtolower($queries[$trackLock]))->toContain('for update');
 });
 
 test('a request with no linked requester takes no user lock', function () {

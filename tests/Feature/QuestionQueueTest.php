@@ -313,11 +313,7 @@ test('a submission locks the user row before counting their open questions', fun
         ->and($lock)->toBeLessThan($count)
         ->and($count)->toBeLessThan($insert);
 
-    // SQLite has no row locks (it locks the whole database for writes), so its
-    // grammar drops FOR UPDATE. Production runs PostgreSQL, where it must be there.
-    if (DB::connection()->getDriverName() === 'pgsql') {
-        expect(strtolower($queries[$lock]))->toContain('for update');
-    }
+    expect(strtolower($queries[$lock]))->toContain('for update');
 });
 
 test('the cap still holds once the lock is in place', function () {

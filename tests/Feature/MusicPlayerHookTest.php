@@ -94,10 +94,7 @@ test('advance locks the playing and next requests before changing them', functio
         ->and($firstWrite)->toBeInt()
         ->and($reads->max())->toBeLessThan($firstWrite);
 
-    // SQLite drops FOR UPDATE; production runs PostgreSQL, where it must be there.
-    if (DB::connection()->getDriverName() === 'pgsql') {
-        $reads->each(fn (int $i) => expect(strtolower($queries[$i]))->toContain('for update'));
-    }
+    $reads->each(fn (int $i) => expect(strtolower($queries[$i]))->toContain('for update'));
 });
 
 test('advance is moderator-only', function () {

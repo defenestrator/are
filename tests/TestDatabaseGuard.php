@@ -32,15 +32,11 @@ final class TestDatabaseGuard
         $driver = (string) ($resolved['driver'] ?? '');
         $database = (string) ($resolved['database'] ?? '');
 
-        if ($driver === 'sqlite' && $database === ':memory:') {
+        if ($driver === 'pgsql' && str_ends_with($database, '_test')) {
             return;
         }
 
-        if ($driver !== 'sqlite' && str_ends_with($database, '_test')) {
-            return;
-        }
-
-        self::refuse("connection '{$connectionName}' uses {$driver} database '{$database}'. Tests run only on sqlite :memory: or a database whose name ends in _test.");
+        self::refuse("connection '{$connectionName}' uses {$driver} database '{$database}'. Tests run only on a PostgreSQL database whose name ends in _test.");
     }
 
     private static function refuse(string $reason): never
