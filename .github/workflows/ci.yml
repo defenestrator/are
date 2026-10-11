@@ -238,7 +238,7 @@ jobs:
 
       - name: Keep the report and server log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-report
           path: |
