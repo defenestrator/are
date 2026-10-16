@@ -14,9 +14,10 @@ use Throwable;
  * The Helix calls behind !clip, all made with the broadcaster's stored token:
  * moderators are not channel editors, so their own tokens cannot do this.
  *
- * Every call has short timeouts and retries once on a connection failure or a
- * 5xx. Other answers (4xx, 429) come back as the Response for the caller to
- * read; nothing here throws on them.
+ * Every call has short timeouts. Reads retry once on a connection failure or
+ * 5xx; writes never retry here, because Twitch may have acted before the
+ * connection failed. The clip job reconciles ambiguous writes on its next
+ * attempt. Other answers (4xx, 429) return for the caller to classify.
  *
  * @see https://dev.twitch.tv/docs/api/reference/#create-stream-marker
  * @see https://dev.twitch.tv/docs/api/reference/#create-clip-from-vod
@@ -35,7 +36,7 @@ class ClipHelix
     /** POST /streams/markers. user_id and description go in the JSON body. */
     public function createMarker(string $broadcasterId, string $description): Response
     {
-        return $this->request($broadcasterId)->post('/streams/markers', array_filter([
+        return $this->request($broadcasterId, retrySafe: false)->post('/streams/markers', array_filter([
             'user_id' => $broadcasterId,
             'description' => $description,
         ], fn ($value) => $value !== ''));
@@ -70,7 +71,7 @@ class ClipHelix
             'title' => $title,
         ], '', '&', PHP_QUERY_RFC3986);
 
-        return $this->request($broadcasterId)->post('/videos/clips?'.$query);
+        return $this->request($broadcasterId, retrySafe: false)->post('/videos/clips?'.$query);
     }
 
     /** GET /clips?id=... Answers 200 with empty data until the clip exists. */
@@ -139,17 +140,20 @@ class ClipHelix
         return is_numeric($reset) ? max(1, (int) $reset - now()->getTimestamp()) : 60;
     }
 
-    private function request(string $broadcasterId): PendingRequest
+    private function request(string $broadcasterId, bool $retrySafe = true): PendingRequest
     {
-        return Twitch::asBroadcaster($broadcasterId)
+        $request = Twitch::asBroadcaster($broadcasterId)
             ->acceptJson()
             ->connectTimeout(self::CONNECT_TIMEOUT)
-            ->timeout(self::TIMEOUT)
-            ->retry(
+            ->timeout(self::TIMEOUT);
+
+        return $retrySafe
+            ? $request->retry(
                 2,
                 250,
                 fn (Throwable $e) => $e instanceof ConnectionException || ($e instanceof RequestException && $e->response->serverError()),
                 throw: false,
-            );
+            )
+            : $request;
     }
 }

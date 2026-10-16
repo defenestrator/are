@@ -17,6 +17,7 @@ use App\Models\TwitchModerator;
 use App\Models\User;
 use App\Twitch;
 use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -672,4 +673,44 @@ test('the clips page re-checks the gate on every Livewire request', function () 
 test('moderators get a Clips link in the nav, viewers do not', function () {
     $this->actingAs(clipModerator())->get('/vote')->assertSee(route('clips.index'));
     $this->actingAs(User::factory()->twitch('4145994')->create())->get('/vote')->assertDontSee(route('clips.index'));
+});
+
+test('mutating clip calls never automatically repeat an ambiguous server error', function (string $operation) {
+    clipBroadcasterToken();
+    Http::fakeSequence()->push(['message' => 'ambiguous result'], 503)->push(['data' => [['id' => 'duplicate']]], 200);
+    $helix = app(ClipHelix::class);
+    $response = $operation === 'marker'
+        ? $helix->createMarker('1000', 'that drop')
+        : $helix->createClipFromVod('1000', '555', 615, 60, 'that drop');
+
+    expect($response->status())->toBe(503);
+    Http::assertSentCount(1);
+})->with(['marker', 'clip']);
+
+test('mutating clip calls do not repeat an ambiguous connection exception', function (string $operation) {
+    clipBroadcasterToken();
+    $attempts = 0;
+    Http::fake(function () use (&$attempts) {
+        $attempts++;
+        if ($attempts === 1) {
+            throw new ConnectionException('read timeout after send');
+        }
+
+        return Http::response(['data' => [['id' => 'duplicate']]]);
+    });
+    $helix = app(ClipHelix::class);
+    $write = fn () => $operation === 'marker'
+        ? $helix->createMarker('1000', 'that drop')
+        : $helix->createClipFromVod('1000', '555', 615, 60, 'that drop');
+
+    expect($write)->toThrow(ConnectionException::class)
+        ->and($attempts)->toBe(1);
+})->with(['marker', 'clip']);
+
+test('safe clip reads retain their bounded retry after a transient server error', function () {
+    clipBroadcasterToken();
+    Http::fakeSequence()->push(['message' => 'try again'], 503)->push(['data' => [['id' => 'existing']]], 200);
+
+    expect(app(ClipHelix::class)->getClip('1000', 'existing')->json('data.0.id'))->toBe('existing');
+    Http::assertSentCount(2);
 });

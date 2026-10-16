@@ -20,6 +20,7 @@ use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\PumpStream;
 use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -612,4 +613,26 @@ test('Get Clips duration is stored when the clip is ready, and bounds the trim',
     expect($marker->refresh()->clip_duration_seconds)->toBe(59.9)
         ->and($marker->clipDuration())->toBe(59.9);
     Queue::assertPushed(FetchClipFile::class);
+});
+
+test('a job retry reconciles an ambiguous clip creation before sending another write', function () {
+    $writes = 0;
+    Http::fake([
+        'api.twitch.tv/helix/videos/clips*' => function () use (&$writes) {
+            $writes++;
+
+            // Twitch may have created the clip despite this server error.
+            return Http::response(['message' => 'ambiguous result'], 503);
+        },
+        'api.twitch.tv/helix/clips*' => Http::response(['data' => [earlierClip()]]),
+    ]);
+    $marker = retriedMarker(['clip_attempted_at' => null]);
+
+    expect(fn () => runCreateClip($marker))->toThrow(RequestException::class);
+    expect($marker->refresh()->clip_attempted_at)->not->toBeNull();
+
+    runCreateClip($marker)->assertReleased(CreateClipForMarker::POLL_SECONDS);
+
+    expect($writes)->toBe(1)
+        ->and($marker->refresh()->clip_id)->toBe('EarlierClip');
 });
