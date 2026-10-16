@@ -7,7 +7,15 @@ php_bin="${FORGE_PHP:-php8.3}"
 composer_bin="${FORGE_COMPOSER:-composer}"
 fpm_service="${FORGE_PHP_FPM:-php8.3-fpm}"
 
-"$composer_bin" install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+# Forge may supply "php8.3 /usr/local/bin/composer" rather than one executable.
+# Preserve an exact executable path (including spaces); otherwise split Forge's
+# whitespace-separated command into argv. Never evaluate shell syntax here.
+if command -v -- "$composer_bin" >/dev/null 2>&1; then
+    composer_command=("$composer_bin")
+else
+    read -r -a composer_command <<< "$composer_bin"
+fi
+"${composer_command[@]}" install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 npm ci
 npm run build
 
