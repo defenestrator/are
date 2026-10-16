@@ -15,6 +15,9 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    // Captured by config:cache; long-lived workers retain their boot revision.
+    'deployment_revision' => env('ARE_DEPLOY_REVISION'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

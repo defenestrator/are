@@ -18,7 +18,7 @@ npm run build
 "$php_bin" artisan cache:clear
 "$php_bin" artisan view:clear
 "$php_bin" artisan route:clear
-"$php_bin" artisan optimize
+ARE_DEPLOY_REVISION="$(git rev-parse HEAD)" "$php_bin" artisan optimize
 "$php_bin" artisan queue:restart
 # Signals the Reverb daemon through the cache; Supervisor starts it again on
 # the new code. Harmless when Reverb is not enabled yet.
@@ -26,3 +26,8 @@ npm run build
 
 # Production disables opcode timestamp checks. Clearing Blade caches is insufficient.
 sudo -n service "$fpm_service" reload
+
+# queue:restart does not restart Horizon. Verify actual per-lane execution
+# after terminating the old master. Keep the deploy check within Forge's
+# ten-minute deployment limit; a long encode may require manual verification.
+"$php_bin" artisan queue:verify-deployment --restart --timeout=90

@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
+use Laravel\Horizon\Contracts\SupervisorRepository;
 use Throwable;
 
 /**
@@ -293,9 +294,27 @@ class ReadinessChecks
             return Check::fail('Horizon', 'QUEUE_CONNECTION is redis, but Redis cannot be reached to ask Horizon.', 'Fix the Redis connection below first.');
         }
 
-        return $masters === []
-            ? Check::fail('Horizon', 'QUEUE_CONNECTION is redis but no Horizon supervisor is running.', 'Add a Forge daemon: php artisan horizon.')
-            : Check::ok('Horizon', count($masters).' Horizon supervisor(s) running.');
+        if ($masters === []) {
+            return Check::fail('Horizon', 'QUEUE_CONNECTION is redis but no Horizon supervisor is running.', 'Add a Forge daemon: php artisan horizon.');
+        }
+
+        $running = collect($masters)->where('status', 'running')->pluck('name');
+        $covered = [];
+        foreach (app(SupervisorRepository::class)->all() as $supervisor) {
+            if ($supervisor->status !== 'running' || ! $running->contains($supervisor->master)) {
+                continue;
+            }
+            foreach ((array) $supervisor->processes as $lane => $processes) {
+                if ($processes > 0) {
+                    $covered[] = $lane;
+                }
+            }
+        }
+        $missing = array_diff(['redis:broadcasts', 'redis:default', 'redis-long:clips'], $covered);
+
+        return $missing !== []
+            ? Check::fail('Horizon', 'Horizon has paused or uncovered queue lanes: '.implode(', ', $missing), 'Resume Horizon and verify supervisors, then php artisan queue:verify-deployment.')
+            : Check::ok('Horizon', 'Running workers cover broadcasts, default and clips. Verify deployed revision and progress with php artisan queue:verify-deployment.');
     }
 
     // Redis -------------------------------------------------------------------
