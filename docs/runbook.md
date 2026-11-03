@@ -101,6 +101,40 @@ While `BROADCAST_CONNECTION` is `log`, nothing is queued for broadcasting (#109)
    The first line is for the primary channel. Put the printed ids, comma-separated, in `MUSIC_SONG_REQUEST_REWARD_ID`, then run `php artisan optimize`. **Don't use a reward made in the Twitch dashboard:** Twitch only lets the client id that created a reward refund its redemptions, so ARE can't refund it. Disable or delete any old dashboard reward.
 7. **Moderators** are the Twitch moderators of the served channels. EventSub keeps them current, and `twitch:sync-moderation` runs hourly. To force a refresh, run `php artisan twitch:sync-moderation`.
 
+### Private S3 clip storage
+
+The Flysystem S3 adapter is included. Set `CLIPS_DISK=s3`, `AWS_DEFAULT_REGION`,
+`AWS_BUCKET` and `AWS_ROOT=are` to store clip files under a dedicated `are/` prefix
+in the private marketing-assets bucket. The disk sends SSE-S3 (`AES256`) and
+`bucket-owner-full-control`, which is accepted by `BucketOwnerEnforced` buckets.
+Keep S3 public-access blocks enabled. Clip downloads continue through ARE's
+existing authenticated routes.
+
+Use scoped workload credentials for the host and workers. With `AWS_ACCESS_KEY_ID`
+and `AWS_SECRET_ACCESS_KEY` empty, the AWS SDK uses its default credential chain.
+For temporary explicit credentials set all three values, including
+`AWS_SESSION_TOKEN`. Renew temporary credentials before expiry and restart workers
+after changing cached configuration. Scope object permissions to `are/*` and scope
+bucket listing to that prefix. The pipeline needs read, write and delete access
+for its own files, including multipart upload permissions for large files.
+
+`AWS_ROOT` applies to all users of the `s3` disk. Before changing a live clip disk,
+pause capture/format/prune workers, copy every retained source and rendered object
+under the new prefix while preserving its relative key, verify the copies, update
+configuration, rebuild the config cache, and restart workers. Stored clip rows
+contain relative paths, so changing the disk or prefix requires that migration.
+Rehearse on a separate environment before changing a running show.
+
+Reusable brand assets retain the `edos-marketing-assets` repository's asset IDs,
+ledger and existing upload workflow. ARE-generated files use their dedicated
+prefix so clip pruning operates on ARE's files. General artifact ingestion and
+version-bound delivery records are separate application integrations.
+
+Validate a deployment with a representative clip capture, authenticated download,
+format and retention dry run. Automated tests exercise the installed S3 adapter
+with a fake AWS transport. Live IAM, bucket policy, credential renewal and network
+performance require deployment verification.
+
 ### 1.8 Google and YouTube
 
 1. **API key** (#91): a key restricted to YouTube Data API v3 and the server's IP, in `YOUTUBE_API_KEY`. Set `YOUTUBE_CHANNEL_IDS` to the channels' `UC…` ids, comma-separated. **Both are required:** with the key set and no channel ids, no YouTube chat is read (#151), and the readiness page shows it in red.
