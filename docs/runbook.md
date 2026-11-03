@@ -326,3 +326,28 @@ Rotate it. The old one stops working at once, so update whatever used it.
 ## PRs behind this runbook
 
 #30 /about and short links · #37 EventSub · #40 Redis and Horizon · #43 music catalogue · #45 identities · #48 Reverb · #50 overlays · #60 `npm ci` · #64 SQLite cutover · #65 deploy script · #70 lead mail · #72 visualizer audio · #74 fragment tokens · #77 chat commands · #86 test guard · #87 tracked links · #91 YouTube chat · #92 sub end · #93 chat replies · #95 `!clip` · #97 attribution cookie · #107 song requests · #108 weekly summary · #109 broadcast jobs · #115 live overlays · #119 viewer stats · #123 Chat Control Bus · #126 YouTube replies · #129 and #134 refunds · #139 readiness page · #140 show windows · #141 player hook · #142 and #145 clip files · #144 YouTube Analytics · #149 CLI audit names · #151 YouTube channel ids · #154 bus overlay
+
+## Agent clip production API
+
+The production API reuses downloaded Twitch clips and the existing formatter. Issue a dedicated token with explicit abilities:
+
+```sh
+php artisan agent:token marketing-producer \
+  --ability=agent:clips:read \
+  --ability=agent:clips:render \
+  --ability=agent:clips:release
+```
+
+Default show-agent tokens retain their existing abilities. Every production route uses the existing agent authentication, rate limits, request log and pause/kill gates.
+
+1. `GET /api/agent/clips?after=<id>` lists up to 50 ready, unpruned clips. `GET /api/agent/clips/{id}` returns a `clip_revision`, trim/title state and protected media URLs. Send the bearer token when downloading each file. Hash the downloaded rendered bytes with SHA-256.
+2. `POST /api/agent/clips/{id}/render` accepts `clip_revision`, `title`, `trim_start` and `trim_end`. The agent's service user records the edit and approval in the existing audit history, then queues formatting after the transaction commits. A changed revision returns 409. Poll the clip until `render_current` is true. Existing moderators continue to use the same review actions.
+3. Run the external production QA checks over the rendered file. `POST /api/agent/clips/{id}/releases` accepts the current `clip_revision`, a UUID `request_id`, `artifact_sha256`, `policy_revision`, a `verdict` of `allowed` or `rejected`, and `checks`. Each check contains `name`, boolean `passed` and an `evidence` string. An allowed verdict requires all supplied checks to pass.
+4. The response is 202 with `status=pending` and `status_url`. A job on the existing long-running `clips` lane reads the actual stored bytes, verifies their SHA-256 and size, rechecks the clip revision and token validity, and records `released`, `rejected`, `stale` or `failed`. Reusing a request ID with identical content returns the same record. Reusing it for different content returns 409.
+5. Poll `GET /api/agent/clips/{id}/releases/{releaseId}`. Changes to title, trim, review state, render metadata, storage selection or pruning make the effective status stale. `verification_status` and `verified_at` preserve the original verification result for audit.
+
+The policy revision and semantic QA evidence come from the scoped caller. ARE validates their shape and artifact integrity. The production agent must execute the actual checks. A release is a verification of a particular artifact at a point in time. A future publisher must fetch the current clip/release, confirm a released current revision, and verify the downloaded bytes against `artifact_sha256` immediately before dispatch. Out-of-band storage changes can occur after verification.
+
+This slice adds one `clip_releases` migration. Deploy with the usual migrations and restart queue workers. The existing `clips` long-job connection must have `retry_after` above `CLIPS_FFMPEG_TIMEOUT + 60`. Remote media hashing runs on that lane and retries temporary storage failures. If the agent gate is stopped or credentials expire during verification, the job cannot release the artifact. Resolve the failure and submit a new request ID when necessary.
+
+General source ingestion, ASR/caption generation, GPU worker leasing and destination publishing are subsequent integrations. `published_at` is unaffected by a release decision.

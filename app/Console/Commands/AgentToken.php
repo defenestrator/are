@@ -11,7 +11,7 @@ class AgentToken extends Command
         {name : The agent, e.g. "orkestera-vtuber"; created if new}
         {--rotate : Revoke the agent\'s existing tokens first}
         {--days= : Days until the token expires (default: AGENT_TOKEN_DAYS, 30)}
-        {--ability=* : Limit the token to these abilities (default: all of them)}';
+        {--ability=* : Token abilities (default: show bridge only; clip abilities are opt-in)}';
 
     protected $description = 'Issue an API token for a VTuber agent and print it once';
 
@@ -25,9 +25,10 @@ class AgentToken extends Command
         }
 
         $abilities = (array) $this->option('ability') ?: Agent::ABILITIES;
-        $unknown = array_diff($abilities, Agent::ABILITIES);
+        $available = [...Agent::ABILITIES, ...Agent::CLIP_ABILITIES];
+        $unknown = array_diff($abilities, $available);
         if ($unknown !== []) {
-            $this->error('Unknown abilities: '.implode(', ', $unknown).'. Choose from: '.implode(', ', Agent::ABILITIES).'.');
+            $this->error('Unknown abilities: '.implode(', ', $unknown).'. Choose from: '.implode(', ', $available).'.');
 
             return self::INVALID;
         }

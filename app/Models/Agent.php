@@ -26,6 +26,9 @@ class Agent extends Authenticatable
     /** Every ability an agent token gets by default. */
     public const ABILITIES = ['agent:queue', 'agent:answer', 'agent:avatar', 'agent:bus'];
 
+    /** Production abilities require explicit opt-in when issuing a token. */
+    public const CLIP_ABILITIES = ['agent:clips:read', 'agent:clips:render', 'agent:clips:release'];
+
     protected $fillable = [
         'name',
         'user_id',

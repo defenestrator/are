@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AgentClipController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\KillSwitchController;
 use Illuminate\Support\Facades\Route;
@@ -15,6 +16,12 @@ Route::prefix('agent')
     ->middleware(['agent.ip', 'agent.log', 'auth:sanctum', 'agent.only', 'throttle:agent', 'agent.gate'])
     ->name('agent.')
     ->group(function () {
+        Route::get('clips', [AgentClipController::class, 'index'])->middleware('abilities:agent:clips:read')->name('clips.index');
+        Route::get('clips/{marker}', [AgentClipController::class, 'show'])->middleware('abilities:agent:clips:read')->name('clips.show');
+        Route::get('clips/{marker}/files/{variant}', [AgentClipController::class, 'file'])->whereIn('variant', ['landscape', 'portrait', 'short'])->middleware('abilities:agent:clips:read')->name('clips.file');
+        Route::post('clips/{marker}/render', [AgentClipController::class, 'render'])->middleware('abilities:agent:clips:render')->name('clips.render');
+        Route::post('clips/{marker}/releases', [AgentClipController::class, 'release'])->middleware('abilities:agent:clips:release')->name('clips.release');
+        Route::get('clips/{marker}/releases/{release}', [AgentClipController::class, 'releaseStatus'])->middleware('abilities:agent:clips:read')->name('clips.release-status');
         Route::get('queue', [AgentController::class, 'queue'])->middleware('abilities:agent:queue')->name('queue');
         Route::post('questions/{question}/claim', [AgentController::class, 'claim'])->middleware('abilities:agent:answer')->name('claim');
         Route::post('questions/{question}/answer', [AgentController::class, 'answer'])->middleware('abilities:agent:answer')->name('answer');

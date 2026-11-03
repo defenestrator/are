@@ -687,12 +687,16 @@ test('rolling back the migration deletes agent ballots rather than leaving an in
     $viewer = User::factory()->create();
     app(ChatCommandRegistry::class)->run(IdentityProvider::Twitch, '1000', (string) $viewer->twitch_id, $viewer->name, (string) Str::uuid(), '!do task Fix the tests');
 
+    // Roll dependent tables back first, as the migrator does in production.
+    $releases = require database_path('migrations/2026_11_03_165500_create_clip_releases_table.php');
+    $releases->down();
     $migration = require database_path('migrations/2026_10_05_010611_create_agent_bridge_tables.php');
     $migration->down();
 
     expect(DB::table('bus_ballots')->pluck('provider')->all())->toBe(['twitch']);
 
     $migration->up();
+    $releases->up();
 });
 
 // Andras's direct tests on #153: each layer of the kill-switch endpoint's

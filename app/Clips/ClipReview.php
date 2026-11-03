@@ -30,7 +30,7 @@ class ClipReview
     /**
      * @throws ValidationException
      */
-    public static function approve(StreamMarker $marker, User $by): void
+    public static function approve(StreamMarker $marker, User $by, bool $queueAfterCommit = false): void
     {
         self::ensureReviewable($marker);
 
@@ -38,7 +38,11 @@ class ClipReview
 
         // Make the Shorts cut now (#146). If the file is not fetched yet,
         // FetchClipFile queues this again when it is.
-        FormatClipForShorts::queueFor($marker);
+        if ($queueAfterCommit) {
+            DB::afterCommit(fn () => FormatClipForShorts::queueFor($marker));
+        } else {
+            FormatClipForShorts::queueFor($marker);
+        }
     }
 
     /**
