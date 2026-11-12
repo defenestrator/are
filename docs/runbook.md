@@ -227,7 +227,7 @@ Jeremy and Dan simulcast to Twitch and YouTube from both of their accounts, so A
 - [ ] `YOUTUBE_API_KEY` is set, and `YOUTUBE_CHANNEL_IDS` lists **both** `UC…` channel ids. A video from an unlisted channel is refused.
 - [ ] The OAuth client is set up and published (section 1.8). Jeremy and Dan have each opened `/youtube/broadcaster/connect` with the Google account that **owns** their channel, not a manager account. The readiness page shows two connected YouTube channels.
 - [ ] `YOUTUBE_SHOW_WINDOWS` and `YOUTUBE_SHOW_TIMEZONE` cover the show, or you start reading by hand once both streams are live with `php artisan youtube:chat --auto`.
-- [ ] **Quota.** Two chats at the default `YOUTUBE_POLL_FLOOR_MS` (3000) spend the default 10,000-unit day in under an hour. ARE under-counts this until #211 is fixed. Until #23 settles the budget, set `YOUTUBE_POLL_FLOOR_MS` to at least `12000` for a 3-hour show, or get a quota increase. Keep `CHAT_REPLIES_YOUTUBE=false` unless the budget allows replies.
+- [ ] **Quota.** Two chats at the default `YOUTUBE_POLL_FLOOR_MS` (3000) spend the default 10,000-unit day in under an hour (5 units per read, #211). For a 3-hour show, set `YOUTUBE_POLL_FLOOR_MS` to at least `12000` (about 9,000 units), or get a quota increase. YouTube replies (20 units each) stop once the day reaches the 80% alert threshold, so keep `CHAT_REPLIES_YOUTUBE=false` unless the budget allows them.
 
 **Workers, scheduler and overlays**
 
