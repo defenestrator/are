@@ -13,7 +13,7 @@
         "@tailwindcss/vite": "^4.0.7",
         "autoprefixer": "^10.4.20",
         "axios": "^1.7.4",
-        "concurrently": "^9.2.5",
+        "concurrently": "^10.0.6",
         "dat.gui": "^0.7.9",
         "laravel-vite-plugin": "^1.0",
         "postcss": "^8.5.3",
