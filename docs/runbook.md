@@ -208,6 +208,42 @@ Set these in Forge's Environment panel, then run `php artisan optimize`. The def
 | `ARE_WEEKLY_SUMMARY_WEBHOOK_URL`, `ARE_WEEKLY_SUMMARY_DAY`, `ARE_WEEKLY_SUMMARY_TIME` | Weekly attribution summary (Mondays 09:00 UTC) | #108 |
 | `ARE_CHAT_ORKESTERA_URL`, `ARE_CHAT_EDOS_URL`, `ARE_CHAT_LINK_COOLDOWN_SECONDS` | `!orkestera` and `!edos` links | #87 |
 
+### 1.12 Two-broadcaster simulcast (Twitch and YouTube)
+
+Jeremy and Dan simulcast to Twitch and YouTube from both of their accounts, so ARE serves **four** chats at once. Every item below must be true in production. The readiness page checks most of them; the rest you check in Forge or in the platform dashboards.
+
+**Twitch, both channels**
+
+- [ ] `TWITCH_CHANNEL_ID` is Jeremy's Twitch user id. Dan's (`1426542672`, dansdumpsterfire) is committed in `config/services.php`, so it needs no variable. Leave `TWITCH_BROADCASTER_IDS` empty unless a third channel joins.
+- [ ] Both callbacks are registered on the Twitch app (section 1.7).
+- [ ] Jeremy **and** Dan have each signed in to ARE and opened `/twitch/broadcaster/connect` with their own Twitch account. The readiness page shows two green "Channel …: connection and scopes" lines.
+- [ ] `php artisan twitch:eventsub-subscribe` ran **after** both connected. The readiness page's EventSub line shows every subscription enabled for both channels.
+- [ ] `php artisan twitch:sync-moderation` ran, so each channel's Twitch moderators can moderate in ARE.
+- [ ] "Store past broadcasts" is on for both channels, or `!clip` fails on that channel.
+- [ ] The song-request reward exists on both channels if both are Affiliate or Partner (section 1.7, step 6), and both ids are in `MUSIC_SONG_REQUEST_REWARD_ID`.
+
+**YouTube, both channels**
+
+- [ ] `YOUTUBE_API_KEY` is set, and `YOUTUBE_CHANNEL_IDS` lists **both** `UC…` channel ids. A video from an unlisted channel is refused.
+- [ ] The OAuth client is set up and published (section 1.8). Jeremy and Dan have each opened `/youtube/broadcaster/connect` with the Google account that **owns** their channel, not a manager account. The readiness page shows two connected YouTube channels.
+- [ ] `YOUTUBE_SHOW_WINDOWS` and `YOUTUBE_SHOW_TIMEZONE` cover the show, or you start reading by hand once both streams are live with `php artisan youtube:chat --auto`.
+- [ ] **Quota.** Two chats at the default `YOUTUBE_POLL_FLOOR_MS` (3000) spend the default 10,000-unit day in under an hour. ARE under-counts this until #211 is fixed. Until #23 settles the budget, set `YOUTUBE_POLL_FLOOR_MS` to at least `12000` for a 3-hour show, or get a quota increase. Keep `CHAT_REPLIES_YOUTUBE=false` unless the budget allows replies.
+
+**Workers, scheduler and overlays**
+
+- [ ] Horizon is running with the `broadcasts`, `default` and `clips` supervisors, or the two database daemons are running (section 1.3). Without a worker, no chat command, EventSub event or vote update is processed.
+- [ ] The Forge scheduler is on. It runs the YouTube watchdog and `youtube:chat --auto`.
+- [ ] `BUS_PLATFORMS=twitch,youtube`, so bus vote windows stretch by `BUS_LATENCY_YOUTUBE` and YouTube viewers see the whole window.
+- [ ] Each overlay source in OBS loads, on each streaming machine that uses it. Without Reverb, overlays poll every 5 to 10 s (section 1.4).
+
+**How four chats behave**
+
+- Commands from all four chats feed the **same** question queue, votes, song queue and bus. Topics and votes are not per channel.
+- One person gets one vote. `!vote` and `!do` need a linked ARE account, and ballots belong to that user, so a viewer who votes in two chats with accounts linked to the same user is counted once.
+- Twitch Shared Chat relays each message to every channel in the session. ARE runs a relayed command only once, in the channel it was typed in, and does not count the relayed copy as a chatter.
+- Each reply goes back to the chat the command came from, using that channel's broadcaster token. On YouTube this needs `youtube.force-ssl` and `CHAT_REPLIES_YOUTUBE=true`.
+- Moderation in ARE (`/moderation`) applies to every channel. A Twitch ban in either channel arrives through EventSub.
+
 ---
 
 ## 2. Show-day preflight
