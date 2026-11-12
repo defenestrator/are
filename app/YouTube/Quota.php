@@ -26,17 +26,19 @@ class Quota
     public const SEARCH = 'search';
 
     /**
-     * Cost per call, in [bucket, cost]. Re-check against Google's calculator
-     * before trusting it: the quota model changed in 2026 (spike #23).
+     * Cost per call, in [bucket, cost], from Google's quota table (#211):
+     * https://developers.google.com/youtube/v3/determine_quota_cost
+     * liveChatMessages.list is 5 and insert is 20. Re-check it there when
+     * adding a method; tests/Unit/YouTubeQuotaCostsTest.php pins every row.
      *
      * @var array<string, array{0: string, 1: int}>
      */
     public const COSTS = [
         'videos.list' => [self::UNITS, 1],
-        'liveChatMessages.list' => [self::UNITS, 1],
+        'liveChatMessages.list' => [self::UNITS, 5],
         'liveBroadcasts.list' => [self::UNITS, 1],
         'channels.list' => [self::UNITS, 1],
-        'liveChatMessages.insert' => [self::UNITS, 50],
+        'liveChatMessages.insert' => [self::UNITS, 20],
         'search.list' => [self::SEARCH, 1],
     ];
 
@@ -100,7 +102,7 @@ class Quota
     /**
      * Charge one call to $method only if that keeps the bucket at or under
      * $ceiling, in one conditional UPDATE. Returns whether it was charged.
-     * Use it before an expensive call (liveChatMessages.insert, 50 units):
+     * Use it before an expensive call (liveChatMessages.insert, 20 units):
      * parallel workers cannot all pass, because each re-checks the WHERE on
      * the locked row (Postgres READ COMMITTED) before adding to it.
      */

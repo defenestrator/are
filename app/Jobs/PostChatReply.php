@@ -38,7 +38,7 @@ use RuntimeException;
  * Twitch uses Helix Send Chat Message as the broadcaster, replying to the
  * source message. YouTube uses liveChatMessages.insert with the channel
  * owner's OAuth token (#110). It is behind chat.replies.youtube, off by
- * default, because each message costs 50 quota units; a hard per-stream
+ * default, because each message costs 20 quota units; a hard per-stream
  * budget (chat.replies.youtube_per_stream) and the quota alert threshold
  * bound what replies can spend.
  */
@@ -228,7 +228,7 @@ class PostChatReply implements ShouldQueue
         }
 
         try {
-            // Each insert costs 50 units, reserved atomically. Replies never
+            // Each insert costs 20 units, reserved atomically. Replies never
             // take the day's units past the alert threshold: polling needs
             // what is left.
             $response = YouTubeApi::insertChatMessage($this->channelId, $chat->live_chat_id, $this->reply, Quota::alertThreshold(Quota::UNITS));

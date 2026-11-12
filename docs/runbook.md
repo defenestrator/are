@@ -142,7 +142,7 @@ performance require deployment verification.
 3. **Publish the consent screen "In production".** In "Testing", Google's refresh tokens expire after 7 days. Expect the unverified-app screen: only the channel owners connect, so the 100-user cap doesn't matter.
 4. **Enable the YouTube Analytics API** in that project (#126, #144). It is separate from the Data API.
 5. **Each channel owner** signs in to ARE as a broadcaster and opens `/youtube/broadcaster/connect` with the Google account that owns the channel, once per channel.
-6. **Replies on YouTube** cost 50 quota units each, so they are off until you set `CHAT_REPLIES_YOUTUBE=true`. Optionally cap them with `CHAT_REPLIES_YOUTUBE_PER_STREAM` (default 40).
+6. **Replies on YouTube** cost 20 quota units each, so they are off until you set `CHAT_REPLIES_YOUTUBE=true`. Optionally cap them with `CHAT_REPLIES_YOUTUBE_PER_STREAM` (default 40).
 7. **Show windows** (#140): set `YOUTUBE_SHOW_WINDOWS` (for example `sun 17:00-21:00,wed 18:00-20:00`) and `YOUTUBE_SHOW_TIMEZONE` (for example `America/Denver`). Inside a window, the scheduler runs `youtube:chat --auto` to find each channel's live video.
 8. **The YouTube API audit isn't needed yet.** It is needed for Shorts upload (#11, #25), which isn't on `main`.
 

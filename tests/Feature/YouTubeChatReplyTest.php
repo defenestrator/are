@@ -91,7 +91,7 @@ test('a YouTube !q gets its reply posted into the live chat as the channel owner
         && $r['snippet']['type'] === 'textMessageEvent'
         && str_contains($r['snippet']['textMessageDetails']['messageText'], "#{$question->id}"));
 
-    expect(Quota::used(Quota::UNITS))->toBe(50)
+    expect(Quota::used(Quota::UNITS))->toBe(20)
         ->and($this->chat->fresh()->replies_sent)->toBe(1)
         ->and(ChatCommandRun::firstWhere('message_id', 'LCC.src-1')->reply_sent_at)->not->toBeNull();
 });
@@ -114,7 +114,7 @@ test('a retried or duplicated job posts once', function () {
     $job->handle();
 
     expect(ytInserts())->toBe(1)
-        ->and(Quota::used(Quota::UNITS))->toBe(50);
+        ->and(Quota::used(Quota::UNITS))->toBe(20);
 });
 
 test('an expiring token is refreshed first, and the new token is stored encrypted', function () {
@@ -191,7 +191,7 @@ test('the per-stream reply budget is a hard cap', function () {
 
     expect(ytInserts())->toBe(2)
         ->and($this->chat->fresh()->replies_sent)->toBe(2)
-        ->and(Quota::used(Quota::UNITS))->toBe(100);
+        ->and(Quota::used(Quota::UNITS))->toBe(40);
 });
 
 test('the budget is per stream: a new live chat starts again', function () {
@@ -211,13 +211,13 @@ test('the budget is per stream: a new live chat starts again', function () {
 test('replies stop before they would take the day\'s units past the alert threshold', function () {
     connectYouTube();
     Http::fake(ytInserted());
-    DB::table('youtube_quota_usage')->insert(['day' => Quota::day(), 'bucket' => Quota::UNITS, 'used' => 7960, 'calls' => 7960, 'failed_calls' => 0, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('youtube_quota_usage')->insert(['day' => Quota::day(), 'bucket' => Quota::UNITS, 'used' => 7990, 'calls' => 7990, 'failed_calls' => 0, 'created_at' => now(), 'updated_at' => now()]);
     Log::spy();
 
     ytReplyJob()->handle();
 
     expect(ytInserts())->toBe(0)
-        ->and(Quota::used(Quota::UNITS))->toBe(7960);
+        ->and(Quota::used(Quota::UNITS))->toBe(7990);
     Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message) => str_contains($message, 'alert threshold'));
 });
 
@@ -237,7 +237,7 @@ test('a 5xx releases the claim and the budget slot, and the retry posts once', f
     expect(ytInserts())->toBe(2)
         ->and($this->chat->fresh()->replies_sent)->toBe(1)
         // Both calls are billed, the failed one too.
-        ->and(Quota::used(Quota::UNITS))->toBe(100)
+        ->and(Quota::used(Quota::UNITS))->toBe(40)
         ->and(Quota::failedCalls(Quota::UNITS))->toBe(1);
 });
 
@@ -251,7 +251,7 @@ test('a refused reply is logged with YouTube\'s reason, without the token, and n
     Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context = []) => str_contains($message, 'YouTube refused')
         && $context['reason'] === 'liveChatEnded'
         && ! str_contains(json_encode($context), YT_TOKEN));
-    expect(Quota::used(Quota::UNITS))->toBe(50);
+    expect(Quota::used(Quota::UNITS))->toBe(20);
 });
 
 // --- Connecting a channel ------------------------------------------------------------------
@@ -371,12 +371,12 @@ test('A126-1: a chatter-chosen display name is echoed into the reply ARE posts a
     });
 });
 
-test('the 50 units are reserved in one conditional update, so the alert threshold is never overshot', function () {
+test('the 20 units are reserved in one conditional update, so the alert threshold is never overshot', function () {
     connectYouTube();
     config(['chat.replies.per_channel' => 100]);
     Http::fake(ytInserted());
-    // 7,920 used of an 8,000 threshold: room for one 50-unit insert, not two.
-    DB::table('youtube_quota_usage')->insert(['day' => Quota::day(), 'bucket' => Quota::UNITS, 'used' => 7920, 'calls' => 7920, 'failed_calls' => 0, 'created_at' => now(), 'updated_at' => now()]);
+    // 7,970 used of an 8,000 threshold: room for one 20-unit insert, not two.
+    DB::table('youtube_quota_usage')->insert(['day' => Quota::day(), 'bucket' => Quota::UNITS, 'used' => 7970, 'calls' => 7970, 'failed_calls' => 0, 'created_at' => now(), 'updated_at' => now()]);
 
     DB::enableQueryLog();
     ytReplyJob('yt-a')->handle();
@@ -385,7 +385,7 @@ test('the 50 units are reserved in one conditional update, so the alert threshol
     DB::disableQueryLog();
 
     expect(ytInserts())->toBe(1)
-        ->and(Quota::used(Quota::UNITS))->toBe(7970)
+        ->and(Quota::used(Quota::UNITS))->toBe(7990)
         ->and($reservations)->toHaveCount(2)
         // The refused reply gave its per-stream slot back.
         ->and($this->chat->fresh()->replies_sent)->toBe(1);

@@ -113,9 +113,9 @@ class YouTubeApi
     }
 
     /**
-     * liveChatMessages.insert (50 units): post a message as the channel owner.
+     * liveChatMessages.insert (20 units): post a message as the channel owner.
      *
-     * The 50 units are reserved first, in one conditional update that keeps
+     * The 20 units are reserved first, in one conditional update that keeps
      * the day's units at or under $quotaCeiling. Returns null, without
      * sending anything, when that reservation is refused.
      *

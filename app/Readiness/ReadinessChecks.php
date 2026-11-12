@@ -544,7 +544,7 @@ class ReadinessChecks
         $checks[] = match (true) {
             ! $repliesOn => Check::warn('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is off (or CHAT_REPLIES_ENABLED is), so ARE reads YouTube chat but never answers there.', 'Set CHAT_REPLIES_YOUTUBE=true once a channel is connected with youtube.force-ssl.'),
             ! $canPost => Check::fail('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is on, but no connected channel can post.', $connect),
-            default => Check::ok('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is on, and a connected channel can post (each reply costs 50 quota units).'),
+            default => Check::ok('YouTube chat replies', 'CHAT_REPLIES_YOUTUBE is on, and a connected channel can post (each reply costs 20 quota units; each chat read costs 5).'),
         };
 
         return $checks;

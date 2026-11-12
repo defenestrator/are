@@ -218,7 +218,7 @@ test('a poll asks for the next page, keeps its place and queues the next poll at
         ->and($chat->poll_interval_ms)->toBe(5113)
         // Rounded up to the next whole second, never down below YouTube's interval.
         ->and($chat->next_poll_at->equalTo(now()->addSeconds(6)))->toBeTrue()
-        ->and(Quota::used(Quota::UNITS))->toBe(1);
+        ->and(Quota::used(Quota::UNITS))->toBe(5);
     Queue::assertPushed(PollYouTubeLiveChat::class, fn ($job) => $job->chatId === $chat->id && $job->delay->equalTo(now()->addSeconds(6)));
 });
 
@@ -257,7 +257,7 @@ test('rateLimitExceeded doubles the wait, up to a minute', function () {
     ytPoll($chat);
     expect($chat->fresh()->poll_interval_ms)->toBe(60000)
         ->and($chat->fresh()->status)->toBe(YouTubeLiveChat::POLLING)
-        ->and(Quota::used(Quota::UNITS))->toBe(2)
+        ->and(Quota::used(Quota::UNITS))->toBe(10)
         ->and(Quota::failedCalls(Quota::UNITS))->toBe(2);
     // The fake queue never starts the first successor, so its unique lock still
     // drops the second; on a real worker the lock is released when a job starts.
@@ -333,7 +333,7 @@ test('a connection failure is charged to the quota and retried later', function 
     ytPoll($chat);
 
     expect($chat->fresh()->consecutive_errors)->toBe(1)
-        ->and(Quota::used(Quota::UNITS))->toBe(1)
+        ->and(Quota::used(Quota::UNITS))->toBe(5)
         ->and(Quota::failedCalls(Quota::UNITS))->toBe(1);
     Queue::assertPushed(PollYouTubeLiveChat::class, 1);
 });
@@ -383,29 +383,30 @@ test('quota is counted per Pacific Time day', function () {
         ->and(Quota::day())->toBe('2026-10-05');
 });
 
-test('the static cost table charges 50 for an insert, and search.list to its own bucket', function () {
+test('the static cost table charges 20 for an insert, 5 for a chat read, and search.list to its own bucket', function () {
     Quota::charge('liveChatMessages.insert');
+    Quota::charge('liveChatMessages.list');
     Quota::charge('search.list');
 
-    expect(Quota::used(Quota::UNITS))->toBe(50)
+    expect(Quota::used(Quota::UNITS))->toBe(25)
         ->and(Quota::used(Quota::SEARCH))->toBe(1);
     expect(fn () => Quota::charge('activities.list'))->toThrow(InvalidArgumentException::class);
 });
 
 test('crossing 80% of a bucket alerts once a day', function () {
     Event::fake([YouTubeQuotaThresholdReached::class]);
-    config(['services.youtube.quota.daily_units' => 10, 'services.youtube.quota.daily_search_calls' => 5]);
+    config(['services.youtube.quota.daily_units' => 50, 'services.youtube.quota.daily_search_calls' => 5]);
 
     foreach (range(1, 7) as $i) {
         Quota::charge('liveChatMessages.list');
     }
     Event::assertNotDispatched(YouTubeQuotaThresholdReached::class);
 
-    Quota::charge('liveChatMessages.list'); // 8 of 10
+    Quota::charge('liveChatMessages.list'); // 40 of 50
     Quota::charge('liveChatMessages.list');
     Quota::charge('liveChatMessages.list');
     Event::assertDispatchedTimes(YouTubeQuotaThresholdReached::class, 1);
-    Event::assertDispatched(YouTubeQuotaThresholdReached::class, fn ($e) => $e->bucket === 'units' && $e->used === 8 && $e->limit === 10 && $e->day === '2026-10-04');
+    Event::assertDispatched(YouTubeQuotaThresholdReached::class, fn ($e) => $e->bucket === 'units' && $e->used === 40 && $e->limit === 50 && $e->day === '2026-10-04');
 
     foreach (range(1, 4) as $i) {
         Quota::charge('search.list'); // 4 of 5 = 80%
@@ -413,14 +414,15 @@ test('crossing 80% of a bucket alerts once a day', function () {
     Event::assertDispatched(YouTubeQuotaThresholdReached::class, fn ($e) => $e->bucket === 'search' && $e->used === 4);
 });
 
-test('a 50-unit call that jumps past 80% still alerts', function () {
+test('a 20-unit call that jumps past 80% still alerts', function () {
     Event::fake([YouTubeQuotaThresholdReached::class]);
-    config(['services.youtube.quota.daily_units' => 100]);
+    config(['services.youtube.quota.daily_units' => 45]); // alert at 36
 
-    Quota::charge('liveChatMessages.insert');
-    Quota::charge('liveChatMessages.insert');
+    Quota::charge('liveChatMessages.insert'); // 20
+    Event::assertNotDispatched(YouTubeQuotaThresholdReached::class);
+    Quota::charge('liveChatMessages.insert'); // 40: jumps from below 36 to above it
 
-    Event::assertDispatched(YouTubeQuotaThresholdReached::class, fn ($e) => $e->used === 100);
+    Event::assertDispatched(YouTubeQuotaThresholdReached::class, fn ($e) => $e->used === 40);
 });
 
 test('the quota alert is logged as a warning', function () {
